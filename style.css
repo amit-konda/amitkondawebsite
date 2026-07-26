@@ -2,7 +2,8 @@
   --page-bg: #ffffff;
   --ink: #111111;
   --muted: #4a4a4a;
-  --aff-font: clamp(1rem, 1.7vw, 1.25rem);
+  --aff-school-font: clamp(1.5rem, 2.8vw, 2.1rem);
+  --aff-class-font: clamp(0.68rem, 1vw, 0.8rem);
 }
 
 * {
@@ -19,8 +20,17 @@ body {
   color: var(--ink);
   font-family: "EB Garamond", Georgia, "Times New Roman", serif;
 }
+
+a {
+  color: var(--ink);
+}
+
+a:visited {
+  color: var(--ink);
+}
+
 .school-logo {
-  height: calc(var(--aff-font) * 2.4 + 2px);
+  height: calc(var(--aff-school-font) * 1.15 + var(--aff-class-font) * 1.15 + 3px);
   width: auto;
   flex-shrink: 0;
 }
@@ -42,31 +52,33 @@ body {
 .affiliation {
   display: flex;
   align-items: center;
-  gap: 10px;
-  text-align: right;
+  gap: 12px;
 }
 
-.longhorn {
-  width: clamp(28px, 3.6vw, 40px);
-  height: auto;
-  color: var(--ink);
-  flex-shrink: 0;
+.affiliation-text {
+  display: flex;
+  flex-direction: column;
 }
 
 .affiliation .school {
-  font-family: "Playfair Display", "EB Garamond", serif;
+  font-family: "EB Garamond", serif;
   font-variant: small-caps;
   font-weight: 700;
-  font-size: var(--aff-font);
+  font-size: var(--aff-school-font);
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-align: right;
 }
 
 .affiliation .class {
-  font-size: var(--aff-font);
-  letter-spacing: 0.14em;
+  font-family: "EB Garamond", serif;
+  font-size: var(--aff-class-font);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 3px;
+  text-align: justify;
+  text-align-last: justify;
 }
 
 .center {
@@ -79,7 +91,7 @@ body {
 }
 
 .center h1 {
-  font-family: "Playfair Display", "EB Garamond", serif;
+  font-family: "EB Garamond", serif;
   font-variant: small-caps;
   font-weight: 700;
   font-size: clamp(2rem, 6vw, 3.6rem);
@@ -117,16 +129,20 @@ body {
 
 .row.bottom {
   justify-content: center;
-  border-top: 1px solid var(--ink);
-  padding-top: clamp(10px, 2vw, 16px);
 }
 
 .row.bottom .previously {
   color: var(--ink);
-  font-size: clamp(0.85rem, 1.5vw, 1.05rem);
-  letter-spacing: 0.12em;
+  font-size: clamp(0.8rem, 1.4vw, 1rem);
+  letter-spacing: 0.06em;
   font-variant: small-caps;
   margin: 0;
+  text-align: center;
+}
+
+.row.bottom .previously .sep {
+  margin: 0 8px;
+  color: var(--muted);
 }
 
 @media (max-width: 560px) {

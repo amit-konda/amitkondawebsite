@@ -2,6 +2,7 @@
   --page-bg: #ffffff;
   --ink: #111111;
   --muted: #4a4a4a;
+  --aff-font: clamp(1rem, 1.7vw, 1.25rem);
 }
 
 * {
@@ -17,6 +18,11 @@ body {
   background: var(--page-bg);
   color: var(--ink);
   font-family: "EB Garamond", Georgia, "Times New Roman", serif;
+}
+.school-logo {
+  height: calc(var(--aff-font) * 2.4 + 2px);
+  width: auto;
+  flex-shrink: 0;
 }
 
 .card {
@@ -51,13 +57,13 @@ body {
   font-family: "Playfair Display", "EB Garamond", serif;
   font-variant: small-caps;
   font-weight: 700;
-  font-size: clamp(1.3rem, 2.6vw, 2rem);
+  font-size: var(--aff-font);
   letter-spacing: 0.02em;
 }
 
 .affiliation .class {
-  font-size: clamp(0.7rem, 1.1vw, 0.85rem);
-  letter-spacing: 0.18em;
+  font-size: var(--aff-font);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
   margin-top: 2px;

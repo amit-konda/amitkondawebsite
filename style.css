@@ -2,8 +2,7 @@
   --page-bg: #ffffff;
   --ink: #111111;
   --muted: #4a4a4a;
-  --aff-school-font: clamp(1.5rem, 2.8vw, 2.1rem);
-  --aff-class-font: 18px;
+  --aff-class-font: 12px;
 }
 
 * {
@@ -18,7 +17,7 @@ body {
   margin: 0;
   background: var(--page-bg);
   color: var(--ink);
-  font-family: "EB Garamond", Georgia, "Times New Roman", serif;
+  font-family: "Times New Roman", Times, serif;
 }
 
 a {
@@ -30,7 +29,7 @@ a:visited {
 }
 
 .school-logo {
-  height: calc((var(--aff-school-font) * 1.15 + var(--aff-class-font) * 1.15 + 3px) * 0.75);
+  height: clamp(26px, 3.2vw, 34px);
   width: auto;
   flex-shrink: 0;
 }
@@ -60,25 +59,11 @@ a:visited {
   flex-direction: column;
 }
 
-.affiliation .school {
-  font-family: "EB Garamond", serif;
-  font-variant: small-caps;
-  font-weight: 700;
-  font-size: var(--aff-school-font);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  text-align: right;
-}
-
 .affiliation .class {
-  font-family: "EB Garamond", serif;
   font-size: var(--aff-class-font);
   letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--muted);
-  margin-top: 3px;
-  text-align: left;
-  text-align-last: left;
+  text-align: right;
 }
 
 .center {
@@ -91,7 +76,6 @@ a:visited {
 }
 
 .center h1 {
-  font-family: "EB Garamond", serif;
   font-variant: small-caps;
   font-weight: 700;
   font-size: clamp(2rem, 6vw, 3.6rem);
@@ -103,7 +87,6 @@ a:visited {
   font-variant: small-caps;
   letter-spacing: 0.05em;
   font-size: clamp(1rem, 2vw, 1.35rem);
-  color: var(--muted);
   margin: 12px 0 0;
 }
 
@@ -135,14 +118,12 @@ a:visited {
   color: var(--ink);
   font-size: clamp(0.8rem, 1.4vw, 1rem);
   letter-spacing: 0.06em;
-  font-variant: small-caps;
   margin: 0;
   text-align: center;
 }
 
 .row.bottom .previously .sep {
-  margin: 0 8px;
-  color: var(--muted);
+  color: black;
 }
 
 @media (max-width: 560px) {

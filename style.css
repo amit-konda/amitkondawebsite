@@ -2,7 +2,6 @@
   --page-bg: #ffffff;
   --ink: #111111;
   --muted: #4a4a4a;
-  --aff-class-font: 12px;
 }
 
 * {
@@ -28,12 +27,6 @@ a:visited {
   color: var(--ink);
 }
 
-.school-logo {
-  height: clamp(26px, 3.2vw, 34px);
-  width: auto;
-  flex-shrink: 0;
-}
-
 .card {
   min-height: 100vh;
   display: flex;
@@ -46,24 +39,6 @@ a:visited {
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
-}
-
-.affiliation {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.affiliation-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.affiliation .class {
-  font-size: var(--aff-class-font);
-  letter-spacing: 0.05em;
-  color: var(--muted);
-  text-align: right;
 }
 
 .center {

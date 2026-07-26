@@ -1,6 +1,5 @@
 :root {
-  --frame-bg: #17171a;
-  --card-bg: #ffffff;
+  --page-bg: #ffffff;
   --ink: #111111;
   --muted: #4a4a4a;
 }
@@ -15,16 +14,13 @@ html, body {
 
 body {
   margin: 0;
-  background: var(--frame-bg);
+  background: var(--page-bg);
   color: var(--ink);
   font-family: "EB Garamond", Georgia, "Times New Roman", serif;
 }
 
 .card {
-  position: fixed;
-  inset: clamp(10px, 2.5vw, 22px);
-  background: var(--card-bg);
-  border: 3px solid var(--ink);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -33,23 +29,22 @@ body {
 
 .row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: flex-start;
 }
 
-.row.top .email {
-  font-size: clamp(0.95rem, 1.6vw, 1.35rem);
-  letter-spacing: 0.03em;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.row.top .email:hover {
-  text-decoration: underline;
-}
-
 .affiliation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   text-align: right;
+}
+
+.longhorn {
+  width: clamp(28px, 3.6vw, 40px);
+  height: auto;
+  color: var(--ink);
+  flex-shrink: 0;
 }
 
 .affiliation .school {
@@ -86,12 +81,32 @@ body {
   margin: 0;
 }
 
-.center .experience {
+.center .position {
   font-variant: small-caps;
   letter-spacing: 0.05em;
-  font-size: clamp(0.95rem, 1.8vw, 1.25rem);
+  font-size: clamp(1rem, 2vw, 1.35rem);
   color: var(--muted);
-  margin: 14px 0 0;
+  margin: 12px 0 0;
+}
+
+.center .contact {
+  margin: 18px 0 0;
+  font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+  letter-spacing: 0.03em;
+}
+
+.center .contact a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.center .contact a:hover {
+  text-decoration: underline;
+}
+
+.center .contact .sep {
+  margin: 0 10px;
+  color: var(--muted);
 }
 
 .row.bottom {
@@ -100,25 +115,22 @@ body {
   padding-top: clamp(10px, 2vw, 16px);
 }
 
-.row.bottom a {
+.row.bottom .previously {
   color: var(--ink);
-  text-decoration: none;
   font-size: clamp(0.85rem, 1.5vw, 1.05rem);
   letter-spacing: 0.12em;
   font-variant: small-caps;
-}
-
-.row.bottom a:hover {
-  text-decoration: underline;
+  margin: 0;
 }
 
 @media (max-width: 560px) {
-  .row.top {
+  .center .contact {
+    display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 6px;
   }
 
-  .affiliation {
-    text-align: left;
+  .center .contact .sep {
+    display: none;
   }
 }

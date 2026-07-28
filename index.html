@@ -40,6 +40,10 @@
     <h2 class="rail-heading">Reading</h2>
     <div class="rail" id="books-rail">
       <div class="rail-track" id="books-track"></div>
+      <div class="rail-controls" id="books-controls">
+        <button class="rail-btn rail-prev" aria-label="Previous books" disabled>←</button>
+        <button class="rail-btn rail-next" aria-label="Next books">→</button>
+      </div>
     </div>
   </section>
 
@@ -203,10 +207,10 @@
       fillRail(
         "books-section",
         "books-track",
-        null,
+        "books-controls",
         bookData?.items,
         bookTile,
-        0
+        5
       );
     }
 

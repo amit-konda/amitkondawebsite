@@ -1,5 +1,5 @@
 {
-  "updated": "2026-07-28T02:19:56.823Z",
+  "updated": "2026-07-28T02:26:59.581Z",
   "items": [
     {
       "title": "Mistborn: The Final Empire (Mistborn, #1)",
@@ -35,6 +35,41 @@
       "rating": 5,
       "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1619538925l/68429._SY475_.jpg",
       "url": "https://www.goodreads.com/review/show/6547534257?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "The Hero of Ages (Mistborn, #3)",
+      "author": "Brandon Sanderson",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1628563911l/2767793._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/6547531638?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "The Way of Kings (The Stormlight Archive, #1)",
+      "author": "Brandon Sanderson",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1659905828l/7235533._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/6550137953?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Words of Radiance (The Stormlight Archive, #2)",
+      "author": "Brandon Sanderson",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1728768241l/17332218.jpg",
+      "url": "https://www.goodreads.com/review/show/6550138013?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Red Rising (Red Rising Saga, #1)",
+      "author": "Pierce Brown",
+      "rating": 4,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1461354651l/15839976._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/6550179993?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Shadows of Self (Mistborn, #5)",
+      "author": "Brandon Sanderson",
+      "rating": 3,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1659900268l/16065004._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/6550129307?utm_medium=api&utm_source=rss"
     }
   ]
 }

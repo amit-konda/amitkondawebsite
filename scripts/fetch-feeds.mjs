@@ -116,10 +116,10 @@ async function fetchGoodreads() {
     });
   }
 
-  // Take 5 most recent rated books
-  const top5 = books.slice(0, 5);
-  console.log(`  → ${top5.length} rated books (${books.length} total rated in feed)`);
-  return top5;
+  // Take 10 most recent rated books
+  const top10 = books.slice(0, 10);
+  console.log(`  → ${top10.length} rated books (${books.length} total rated in feed)`);
+  return top10;
 }
 
 // ── Main ────────────────────────────────────────────────────────────

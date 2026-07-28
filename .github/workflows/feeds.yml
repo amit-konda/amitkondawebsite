@@ -1,0 +1,34 @@
+name: Refresh Feeds
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # every 6 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch feeds
+        run: node scripts/fetch-feeds.mjs
+
+      - name: Commit if changed
+        run: |
+          if git diff --exit-code -- data/; then
+            echo "No changes; skipping commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/films.json data/books.json
+            git commit -m "chore: refresh feeds"
+            git push
+          fi

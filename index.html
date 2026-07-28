@@ -24,5 +24,194 @@
       <p class="previously">Previously: Fintech Fellow, Visa <span class="sep">|</span> Product Management Intern, Amazon <span class="sep">|</span> Data Science, Lewis &amp; Ellis <span class="sep">|</span> Software Engineering Intern, Boeing</p>
     </div>
   </main>
+
+  <section class="rail-section" id="films-section">
+    <h2 class="rail-heading">Watching</h2>
+    <div class="rail" id="films-rail">
+      <div class="rail-track" id="films-track"></div>
+      <div class="rail-controls" id="films-controls">
+        <button class="rail-btn rail-prev" aria-label="Previous films" disabled>←</button>
+        <button class="rail-btn rail-next" aria-label="Next films">→</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="rail-section" id="books-section">
+    <h2 class="rail-heading">Reading</h2>
+    <div class="rail" id="books-rail">
+      <div class="rail-track" id="books-track"></div>
+    </div>
+  </section>
+
+  <script>
+  (function () {
+    /* ── stars ─────────────────────────────────────────────────── */
+    function starHTML(rating, wholeOnly) {
+      let h = "";
+      const full = Math.floor(rating);
+      const half = !wholeOnly && rating % 1 >= 0.3;
+      const empty = 5 - full - (half ? 1 : 0);
+      for (let i = 0; i < full; i++)
+        h += '<span class="star star-full">★</span>';
+      if (half)
+        h += '<span class="star star-half"><span class="star-half-fill">★</span>☆</span>';
+      for (let i = 0; i < empty; i++)
+        h += '<span class="star star-empty">☆</span>';
+      return h;
+    }
+
+    /* ── tile builder ──────────────────────────────────────────── */
+    function filmTile(f) {
+      const stars = starHTML(f.rating, false);
+      const src = f.poster
+        ? ` src="${escapeHTML(f.poster)}"`
+        : "";
+      const img = f.poster
+        ? `<img${src} alt="${escapeHTML(f.title)}" loading="lazy" width="200" height="300">`
+        : `<div class="tile-poster-fallback">${escapeHTML(f.title)}</div>`;
+      return `<a class="tile" href="${escapeHTML(f.url)}" target="_blank" rel="noopener noreferrer">
+        <div class="tile-poster">${img}</div>
+        <div class="tile-info">
+          <span class="tile-title">${escapeHTML(f.title)}</span>
+          <span class="tile-meta">${f.year || ""}</span>
+          <span class="tile-stars" aria-label="${f.rating} out of 5 stars">${stars}</span>
+        </div>
+      </a>`;
+    }
+
+    function bookTile(b) {
+      const stars = starHTML(b.rating, true);
+      const src = b.cover
+        ? ` src="${escapeHTML(b.cover)}"`
+        : "";
+      const img = b.cover
+        ? `<img${src} alt="${escapeHTML(b.title)}" loading="lazy" width="200" height="300">`
+        : `<div class="tile-poster-fallback">${escapeHTML(b.title)}</div>`;
+      return `<a class="tile" href="${escapeHTML(b.url)}" target="_blank" rel="noopener noreferrer">
+        <div class="tile-poster">${img}</div>
+        <div class="tile-info">
+          <span class="tile-title">${escapeHTML(b.title)}</span>
+          <span class="tile-meta">${escapeHTML(b.author)}</span>
+          <span class="tile-stars" aria-label="${b.rating} out of 5 stars">${stars}</span>
+        </div>
+      </a>`;
+    }
+
+    function escapeHTML(s) {
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    /* ── rail filler ───────────────────────────────────────────── */
+    function fillRail(sectionId, trackId, controlsId, items, tileFn, perPage) {
+      const section = document.getElementById(sectionId);
+      const track = document.getElementById(trackId);
+      const controls = controlsId
+        ? document.getElementById(controlsId)
+        : null;
+
+      if (!items || items.length === 0) {
+        section.style.display = "none";
+        return;
+      }
+
+      track.innerHTML = items.map(tileFn).join("");
+
+      if (!controls || !perPage || items.length <= perPage) {
+        if (controls) controls.style.display = "none";
+        return;
+      }
+
+      const pages = Math.ceil(items.length / perPage);
+      let page = 0;
+
+      function updateButtons() {
+        controls.querySelector(".rail-prev").disabled = page === 0;
+        controls.querySelector(".rail-next").disabled = page >= pages - 1;
+      }
+
+      function go(dir) {
+        const newPage = page + dir;
+        if (newPage < 0 || newPage >= pages) return;
+        page = newPage;
+        const tile = track.querySelector(".tile");
+        if (!tile) return;
+        const tileW = tile.offsetWidth;
+        const gap =
+          parseFloat(getComputedStyle(track).gap) ||
+          parseFloat(getComputedStyle(track).columnGap) ||
+          0;
+        track.scrollTo({
+          left: page * (tileW + gap) * perPage,
+          behavior: "smooth",
+        });
+        updateButtons();
+      }
+
+      controls.querySelector(".rail-prev").addEventListener("click", () =>
+        go(-1)
+      );
+      controls.querySelector(".rail-next").addEventListener("click", () =>
+        go(1)
+      );
+      updateButtons();
+
+      // Reset page if user swipes past the button-sense
+      track.addEventListener("scroll", () => {
+        const tile = track.querySelector(".tile");
+        if (!tile) return;
+        const tileW = tile.offsetWidth;
+        const gap =
+          parseFloat(getComputedStyle(track).gap) ||
+          parseFloat(getComputedStyle(track).columnGap) ||
+          0;
+        const pageW = (tileW + gap) * perPage;
+        const newPage = Math.round(track.scrollLeft / pageW);
+        if (newPage !== page) {
+          page = Math.min(Math.max(newPage, 0), pages - 1);
+          updateButtons();
+        }
+      }, { passive: true });
+    }
+
+    /* ── load ──────────────────────────────────────────────────── */
+    async function load() {
+      const [films, books] = await Promise.allSettled([
+        fetch("data/films.json")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch("data/books.json")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+
+      const filmData = films.status === "fulfilled" ? films.value : null;
+      const bookData = books.status === "fulfilled" ? books.value : null;
+
+      fillRail(
+        "films-section",
+        "films-track",
+        "films-controls",
+        filmData?.items,
+        filmTile,
+        5
+      );
+
+      fillRail(
+        "books-section",
+        "books-track",
+        null,
+        bookData?.items,
+        bookTile,
+        0
+      );
+    }
+
+    load();
+  })();
+  </script>
 </body>
 </html>

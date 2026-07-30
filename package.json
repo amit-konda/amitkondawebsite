@@ -1,0 +1,15 @@
+{
+  "name": "amitkondawebsite",
+  "version": "1.0.0",
+  "description": "Amit Konda's personal website",
+  "type": "module",
+  "scripts": {
+    "fetch-feeds": "node scripts/fetch-feeds.mjs"
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^1.0.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

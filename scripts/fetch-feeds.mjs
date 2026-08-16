@@ -18,7 +18,11 @@ const GOODREADS_USER_ID = "178710019-amit-konda";
 const GOODREADS_KEY = "lgruY0muJs9TEYO4GoHnWLwUj1ekPPLi77a0IfITIdAkXm6r";
 
 const LETTERBOXD_RSS = `https://letterboxd.com/${LETTERBOXD_USER}/rss/`;
-const GOODREADS_RSS = `https://www.goodreads.com/review/list_rss/${GOODREADS_USER_ID}?key=${GOODREADS_KEY}&shelf=read&sort=date_read&order=d`;
+// Note: sort=date_read is unreliable — user_read_at is only populated for reviews
+// that have an explicit read date (here: 4 of 30), so undated books fall through
+// in arbitrary order. sort=date_added covers every review (30/30) and comes back
+// in monotonic descending review-ID order, i.e. truly newest-first.
+const GOODREADS_RSS = `https://www.goodreads.com/review/list_rss/${GOODREADS_USER_ID}?key=${GOODREADS_KEY}&shelf=read&sort=date_added&order=d`;
 
 // ── Helpers ─────────────────────────────────────────────────────────
 function text(root, tag) {
@@ -102,6 +106,12 @@ async function fetchGoodreads() {
     const cover = text(block, "book_large_image_url");
     const link = text(block, "link");
 
+    // Goodreads review IDs are monotonically increasing with when the review was
+    // added to the shelf, so they're a reliable recency key (read dates are
+    // missing on most items and can't be trusted for ordering).
+    const reviewIdMatch = link.match(/review\/show\/(\d+)/);
+    const sortKey = reviewIdMatch ? parseInt(reviewIdMatch[1], 10) : 0;
+
     const rating = parseInt(ratingStr, 10);
 
     // Skip unrated (0) and entries without title
@@ -113,11 +123,15 @@ async function fetchGoodreads() {
       rating,
       cover,
       url: link,
+      sortKey,
     });
   }
 
-  // Take 10 most recent rated books
-  const top10 = books.slice(0, 10);
+  // Take 10 most recent rated books (newest review first)
+  const top10 = books
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .map(({ sortKey, ...rest }) => rest)
+    .slice(0, 10);
   console.log(`  → ${top10.length} rated books (${books.length} total rated in feed)`);
   return top10;
 }

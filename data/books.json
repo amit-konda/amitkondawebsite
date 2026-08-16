@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-16T00:27:38.560Z",
+  "updated": "2026-08-16T00:41:01.862Z",
   "items": [
     {
       "title": "The Shadow of the Gods (The Bloodsworn Trilogy, 1)",
@@ -9,67 +9,67 @@
       "url": "https://www.goodreads.com/review/show/8862882781?utm_medium=api&utm_source=rss"
     },
     {
-      "title": "Mistborn: The Final Empire (Mistborn, #1)",
+      "title": "Wind and Truth (The Stormlight Archive, #5)",
       "author": "Brandon Sanderson",
       "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1617768316l/68428._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6547534292?utm_medium=api&utm_source=rss"
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1724944713l/203578847._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591735944?utm_medium=api&utm_source=rss"
     },
     {
-      "title": "Elantris (Elantris, #1)",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1475740953l/68427._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6547464568?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "A Fragile Enchantment",
-      "author": "Allison Saft",
-      "rating": 3,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1683815235l/127305900.jpg",
-      "url": "https://www.goodreads.com/review/show/6547500280?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "Warbreaker",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1240256182l/1268479.jpg",
-      "url": "https://www.goodreads.com/review/show/6550180847?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "The Well of Ascension (Mistborn, #2)",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1619538925l/68429._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6547534257?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "The Hero of Ages (Mistborn, #3)",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1628563911l/2767793._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6547531638?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "The Way of Kings (The Stormlight Archive, #1)",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1659905828l/7235533._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6550137953?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "Words of Radiance (The Stormlight Archive, #2)",
-      "author": "Brandon Sanderson",
-      "rating": 5,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1728768241l/17332218.jpg",
-      "url": "https://www.goodreads.com/review/show/6550138013?utm_medium=api&utm_source=rss"
-    },
-    {
-      "title": "Red Rising (Red Rising Saga, #1)",
-      "author": "Pierce Brown",
+      "title": "Ashes of Man (The Sun Eater, #5)",
+      "author": "Christopher Ruocchio",
       "rating": 4,
-      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1461354651l/15839976._SY475_.jpg",
-      "url": "https://www.goodreads.com/review/show/6550179993?utm_medium=api&utm_source=rss"
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1644986472l/60427253.jpg",
+      "url": "https://www.goodreads.com/review/show/8591734479?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Kingdoms of Death (The Sun Eater, #4)",
+      "author": "Christopher Ruocchio",
+      "rating": 3,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1616007067l/57443696._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591733754?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Demon in White (The Sun Eater, #3)",
+      "author": "Christopher Ruocchio",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1576102130l/50156751._SX318_SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591733305?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Howling Dark (The Sun Eater, #2)",
+      "author": "Christopher Ruocchio",
+      "rating": 4,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1554659319l/41564599._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591732977?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Empire of Silence (The Sun Eater, #1)",
+      "author": "Christopher Ruocchio",
+      "rating": 4,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1523897945l/36454667._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591732304?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Light Bringer (Red Rising Saga, #6)",
+      "author": "Pierce Brown",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1667655583l/29227774._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591728557?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "Dark Age (Red Rising Saga, #5)",
+      "author": "Pierce Brown",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1525464420l/29226553._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591724835?utm_medium=api&utm_source=rss"
+    },
+    {
+      "title": "The Strength of the Few (Hierarchy, #2)",
+      "author": "James Islington",
+      "rating": 5,
+      "cover": "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1742965949l/169485073._SY475_.jpg",
+      "url": "https://www.goodreads.com/review/show/8591724166?utm_medium=api&utm_source=rss"
     }
   ]
 }

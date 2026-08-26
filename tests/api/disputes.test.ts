@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import {
   ADMIN_COOKIE,
   GROUP_COOKIE,
@@ -63,9 +63,23 @@ vi.mock("../../server/email/notify.js", async (importOriginal) => {
   return { ...actual, notifyEntity: vi.fn(async () => {}) };
 });
 
+/**
+ * writeAudit passes through by default but can be forced to fail so the
+ * open-dispute transaction's rollback is testable.
+ */
+vi.mock("../../server/domain/audit.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../server/domain/audit.js")
+  >();
+  return { ...actual, writeAudit: vi.fn(actual.writeAudit) };
+});
+
 const { generateToken } = await import("../../server/domain/tokens.js");
 /** Mock view of generateToken (vi.mock swaps it at runtime). */
 const generateTokenMock = generateToken as unknown as Mock<() => string>;
+
+const { writeAudit } = await import("../../server/domain/audit.js");
+const writeAuditMock = vi.mocked(writeAudit);
 
 // Receipt tokens seeded by tests (only hashes are stored).
 const TOKEN_A = "known-token-under-test"; // 24 chars — valid
@@ -184,7 +198,7 @@ async function seedOpenDispute(reason = "Everything is wrong"): Promise<string> 
 }
 
 async function openDisputeViaApi(reason = "Everything is wrong"): Promise<string> {
-  const res = await api("POST", "/api/poker/disputes", { token: TOKEN_A, reason });
+  const res = await api("POST", "/api/poker/disputes", { token: TOKEN_A, reason }, groupCookies());
   expect(res.status).toBe(201);
   return res.body.dispute.id as string;
 }
@@ -255,7 +269,7 @@ afterAll(async () => {
   await t!.end();
 });
 
-describe("POST /api/poker/disputes/verify-token (public)", () => {
+describe("POST /api/poker/disputes/verify-token (group-gated)", () => {
   beforeEach(async () => {
     await seedDefault();
     await addToken(fixture.members.alice!, fixture.sessionId, EXPIRED_TOKEN, {
@@ -269,10 +283,13 @@ describe("POST /api/poker/disputes/verify-token (public)", () => {
     });
   });
 
-  it("returns session data for a valid token without any cookie", async () => {
-    const res = await api("POST", "/api/poker/disputes/verify-token", {
-      token: TOKEN_A
-    });
+  it("returns session data for a valid token with a group cookie", async () => {
+    const res = await api(
+      "POST",
+      "/api/poker/disputes/verify-token",
+      { token: TOKEN_A },
+      groupCookies()
+    );
     expect(res.status).toBe(200);
     expect(res.body.token.sessionId).toBe(fixture.sessionId);
     expect(res.body.token.memberId).toBe(fixture.members.alice);
@@ -300,9 +317,12 @@ describe("POST /api/poker/disputes/verify-token (public)", () => {
   it("rejects unknown, expired, used, and revoked tokens with identical error bodies", async () => {
     const bodies: any[] = [];
     for (const raw of [GARBAGE_TOKEN, EXPIRED_TOKEN, USED_TOKEN, REVOKED_TOKEN]) {
-      const res = await api("POST", "/api/poker/disputes/verify-token", {
-        token: raw
-      });
+      const res = await api(
+        "POST",
+        "/api/poker/disputes/verify-token",
+        { token: raw },
+        groupCookies()
+      );
       expect(res.status).toBe(404);
       bodies.push(res.body);
     }
@@ -310,14 +330,58 @@ describe("POST /api/poker/disputes/verify-token (public)", () => {
   });
 });
 
+describe("dispute endpoints require the group password before any token work (§1)", () => {
+  beforeEach(seedDefault);
+
+  it("verify-token without a group cookie → 401 with no token-validity leak", async () => {
+    // A VALID token and a garbage token must produce IDENTICAL 401 bodies.
+    const valid = await api("POST", "/api/poker/disputes/verify-token", {
+      token: TOKEN_A
+    });
+    const garbage = await api("POST", "/api/poker/disputes/verify-token", {
+      token: GARBAGE_TOKEN
+    });
+    expect(valid.status).toBe(401);
+    expect(garbage.status).toBe(401);
+    expect(valid.body).toEqual(garbage.body);
+    expect(valid.body.error.code).toBe("unauthorized");
+  });
+
+  it("open-dispute without a group cookie → 401 (valid token still unusable)", async () => {
+    const res = await api("POST", "/api/poker/disputes", {
+      token: TOKEN_A,
+      reason: "Cannot even try without the password"
+    });
+    expect(res.status).toBe(401);
+    // Token untouched.
+    const tok = (
+      await t.db
+        .select()
+        .from(disputeTokens)
+        .where(eq(disputeTokens.tokenHash, hashToken(TOKEN_A)))
+    )[0]!;
+    expect(tok.usedAt).toBeNull();
+  });
+
+  it("failed group auth is generic — never hints at tokens or members", async () => {
+    const res = await api("POST", "/api/poker/disputes/verify-token", {
+      token: TOKEN_A
+    });
+    expect(res.body.error.message).not.toMatch(/token/i);
+    expect(res.body.error.message).not.toMatch(/Alice|session/i);
+  });
+});
+
 describe("POST /api/poker/disputes", () => {
   beforeEach(seedDefault);
 
   it("consumes a valid token once, opens the dispute, and flags the session", async () => {
-    const res = await api("POST", "/api/poker/disputes", {
-      token: TOKEN_A,
-      reason: "  Numbers look wrong  "
-    });
+    const res = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_A, reason: "  Numbers look wrong  " },
+      groupCookies()
+    );
     expect(res.status).toBe(201);
     expect(res.body.dispute).toMatchObject({
       sessionId: fixture.sessionId,
@@ -353,10 +417,12 @@ describe("POST /api/poker/disputes", () => {
 
   it("rejects a second use of the same token (consumed)", async () => {
     await openDisputeViaApi();
-    const res = await api("POST", "/api/poker/disputes", {
-      token: TOKEN_A,
-      reason: "Second attempt"
-    });
+    const res = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_A, reason: "Second attempt" },
+      groupCookies()
+    );
     expect(res.status).toBe(409);
     expect(res.body).toEqual(INVALID_BODY);
   });
@@ -364,10 +430,12 @@ describe("POST /api/poker/disputes", () => {
   it("conflicts when the same member already has an open dispute for the session", async () => {
     await addToken(fixture.members.alice!, fixture.sessionId, TOKEN_B);
     await openDisputeViaApi();
-    const res = await api("POST", "/api/poker/disputes", {
-      token: TOKEN_B,
-      reason: "One more try"
-    });
+    const res = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_B, reason: "One more try" },
+      groupCookies()
+    );
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe("conflict");
     expect(res.body.error.message).toBe(
@@ -379,16 +447,21 @@ describe("POST /api/poker/disputes", () => {
     await addToken(fixture.members.bob!, fixture.sessionId, TOKEN_C);
     await openDisputeViaApi();
 
-    const verify = await api("POST", "/api/poker/disputes/verify-token", {
-      token: TOKEN_C
-    });
+    const verify = await api(
+      "POST",
+      "/api/poker/disputes/verify-token",
+      { token: TOKEN_C },
+      groupCookies()
+    );
     expect(verify.status).toBe(200);
     expect(verify.body.token.memberName).toBe("Bob");
 
-    const res = await api("POST", "/api/poker/disputes", {
-      token: TOKEN_C,
-      reason: "Bob disagrees too"
-    });
+    const res = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_C, reason: "Bob disagrees too" },
+      groupCookies()
+    );
     expect(res.status).toBe(201);
     expect(res.body.dispute.memberId).toBe(fixture.members.bob);
 
@@ -536,9 +609,12 @@ describe("POST /api/poker/admin/disputes/:id/resolve — dismissed", () => {
     expect(audits.some((a) => a.action === "session.correction")).toBe(false);
 
     // verify-token on the revoked token now fails with the generic error
-    const verify = await api("POST", "/api/poker/disputes/verify-token", {
-      token: TOKEN_B
-    });
+    const verify = await api(
+      "POST",
+      "/api/poker/disputes/verify-token",
+      { token: TOKEN_B },
+      groupCookies()
+    );
     expect(verify.status).toBe(404);
     expect(verify.body).toEqual(INVALID_BODY);
   });
@@ -726,9 +802,12 @@ describe("POST /api/poker/admin/disputes/:id/resolve — resolved with correctio
     });
 
     // A freshly issued token verifies against the corrected session.
-    const verify = await api("POST", "/api/poker/disputes/verify-token", {
-      token: issuedRaw[0]!
-    });
+    const verify = await api(
+      "POST",
+      "/api/poker/disputes/verify-token",
+      { token: issuedRaw[0]! },
+      groupCookies()
+    );
     expect(verify.status).toBe(200);
     expect(verify.body.token.memberName).toBe("Alice");
     expect(verify.body.token.session).toMatchObject({
@@ -770,5 +849,172 @@ describe("POST /api/poker/admin/disputes/:id/resolve — resolved with correctio
     );
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe("admin_required");
+  });
+});
+
+describe("open-dispute is transactional (§3)", () => {
+  beforeEach(seedDefault);
+
+  it("rolls back token consumption when an in-transaction step fails", async () => {
+    writeAuditMock.mockRejectedValueOnce(new Error("forced audit failure"));
+    const failed = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_A, reason: "This will fail" },
+      groupCookies()
+    );
+    expect(failed.status).toBe(500);
+
+    // Nothing partial: no dispute, session unflagged, audit absent.
+    const dCount = await t.db.select({ n: count() }).from(disputes);
+    expect(dCount[0]?.n ?? 0).toBe(0);
+    const s = (
+      await t.db
+        .select()
+        .from(pokerSessions)
+        .where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s.status).toBe("active");
+    const tok = (
+      await t.db
+        .select()
+        .from(disputeTokens)
+        .where(eq(disputeTokens.tokenHash, hashToken(TOKEN_A)))
+    )[0]!;
+    expect(tok.usedAt).toBeNull();
+
+    // Retry with the SAME token succeeds — the failure did not burn it.
+    const retry = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: TOKEN_A, reason: "Works on retry" },
+      groupCookies()
+    );
+    expect(retry.status).toBe(201);
+  });
+
+  it("two concurrent submissions with the same token → exactly one dispute", async () => {
+    const [a, b] = await Promise.all([
+      api("POST", "/api/poker/disputes", { token: TOKEN_A, reason: "Race A" }, groupCookies()),
+      api("POST", "/api/poker/disputes", { token: TOKEN_A, reason: "Race B" }, groupCookies())
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const rows = await t.db.select().from(disputes);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.reason).toMatch(/^Race [AB]$/);
+  });
+
+  it("two concurrent submissions, same member/session, different tokens → one open dispute; loser's token stays unused", async () => {
+    await addToken(fixture.members.alice!, fixture.sessionId, TOKEN_B);
+    const [a, b] = await Promise.all([
+      api("POST", "/api/poker/disputes", { token: TOKEN_A, reason: "First" }, groupCookies()),
+      api("POST", "/api/poker/disputes", { token: TOKEN_B, reason: "Second" }, groupCookies())
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const open = await t.db
+      .select()
+      .from(disputes)
+      .where(eq(disputes.status, "open"));
+    expect(open).toHaveLength(1);
+    // The losing transaction rolled back — its token was NOT consumed.
+    const loser = TOKEN_A === (a.status === 201 ? TOKEN_A : TOKEN_B) ? TOKEN_B : TOKEN_A;
+    const tok = (
+      await t.db
+        .select()
+        .from(disputeTokens)
+        .where(eq(disputeTokens.tokenHash, hashToken(loser)))
+    )[0]!;
+    expect(tok.usedAt).toBeNull();
+  });
+});
+
+describe("session status derives from ALL disputes (§4)", () => {
+  beforeEach(seedDefault);
+
+  async function openSecondDispute(memberKey: "bob" | "cara", raw: string): Promise<string> {
+    await addToken(fixture.members[memberKey]!, fixture.sessionId, raw);
+    const res = await api(
+      "POST",
+      "/api/poker/disputes",
+      { token: raw, reason: `${memberKey}'s dispute` },
+      groupCookies()
+    );
+    expect(res.status).toBe(201);
+    return res.body.dispute.id as string;
+  }
+
+  async function resolveViaAdmin(disputeId: string, outcome: "resolved" | "dismissed"): Promise<number> {
+    const res = await api(
+      "POST",
+      `/api/poker/admin/disputes/${disputeId}/resolve`,
+      { outcome },
+      adminCookies()
+    );
+    expect(res.status).toBe(200);
+    return res.status;
+  }
+
+  it("two open disputes: resolving one keeps the session disputed", async () => {
+    const d1 = await openDisputeViaApi();
+    const d2 = await openSecondDispute("bob", TOKEN_B);
+    await resolveViaAdmin(d1, "resolved");
+    const s = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s.status).toBe("disputed");
+    // Dismissing the LAST open dispute → resolved (one was resolved).
+    await resolveViaAdmin(d2, "dismissed");
+    const s2 = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s2.status).toBe("resolved");
+  });
+
+  it("two open disputes: dismissing one keeps the session disputed; resolving the last → resolved", async () => {
+    const d1 = await openDisputeViaApi();
+    const d2 = await openSecondDispute("cara", TOKEN_B);
+    await resolveViaAdmin(d1, "dismissed");
+    const s = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s.status).toBe("disputed");
+    await resolveViaAdmin(d2, "resolved");
+    const s2 = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s2.status).toBe("resolved");
+  });
+
+  it("single dismiss → active (no dispute was ever resolved)", async () => {
+    const d1 = await openDisputeViaApi();
+    await resolveViaAdmin(d1, "dismissed");
+    const s = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s.status).toBe("active");
+  });
+
+  it("a voided session never returns to active/disputed", async () => {
+    const d1 = await openDisputeViaApi();
+    // Void the session as admin.
+    const v = await api(
+      "POST",
+      `/api/poker/admin/sessions/${fixture.sessionId}/void`,
+      {},
+      adminCookies()
+    );
+    expect(v.status).toBe(200);
+    // Resolve the open dispute on the voided session.
+    const r = await api(
+      "POST",
+      `/api/poker/admin/disputes/${d1}/resolve`,
+      { outcome: "dismissed" },
+      adminCookies()
+    );
+    expect(r.status).toBe(200);
+    const s = (
+      await t.db.select().from(pokerSessions).where(eq(pokerSessions.id, fixture.sessionId))
+    )[0]!;
+    expect(s.status).toBe("voided");
   });
 });

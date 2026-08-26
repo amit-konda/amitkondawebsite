@@ -14,7 +14,18 @@ import * as schema from "../db/schema.js";
 export type Db = PostgresJsDatabase<typeof schema>;
 
 export interface EnqueueInput {
-  eventType: "session_receipt" | "member_approved" | "member_welcome" | "dispute_resolution";
+  eventType:
+    | "session_receipt"
+    | "member_approved"
+    | "member_welcome"
+    | "dispute_resolution"
+    | "dispute_opened"
+    | "dispute_opened_ack"
+    | "dispute_resolved"
+    | "dispute_dismissed"
+    | "session_updated"
+    | "session_voided"
+    | "results_corrected";
   entityType: "session" | "member" | "dispute";
   entityId: string;
   version: number;

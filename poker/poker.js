@@ -1285,6 +1285,14 @@ async function verifyDisputeToken(body) {
       renderDisputeExpired(body);
       return;
     }
+    // The group session expired (or was never established): send the visitor
+    // back through the password gate. The token stays in the URL/state —
+    // it is never persisted to localStorage.
+    if (errObj.status === 401 || errObj.code === "unauthorized" || errObj.code === "viewer_required") {
+      await refreshStatus();
+      route();
+      return;
+    }
     body.innerHTML = "";
     showBanner({
       kind: "error",
@@ -1356,7 +1364,15 @@ function renderDisputeReceipt(body, token) {
       clearTokenFromUrl();
       renderDisputeSuccess(body);
     } catch (e) {
-      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't submit the dispute.") });
+      const errObj = /** @type {ApiError} */ (e);
+      // Session expired mid-flow → back through the password gate (token kept).
+      if (errObj.status === 401 || errObj.code === "unauthorized" || errObj.code === "viewer_required") {
+        await refreshStatus();
+        route();
+        submitEl.disabled = false;
+        return;
+      }
+      showBanner({ kind: "error", message: friendlyMessage(errObj, "Couldn't submit the dispute.") });
       submitEl.disabled = false;
       submitEl.textContent = "Submit dispute";
     }

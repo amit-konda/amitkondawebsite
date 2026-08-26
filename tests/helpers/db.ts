@@ -7,8 +7,10 @@
  */
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Sql } from "postgres";
+import * as schema from "../../server/db/schema.js";
 import { env } from "../../server/env.js";
 
 /** Drop everything and re-apply migrations. Call in beforeAll. */
@@ -28,7 +30,7 @@ export async function resetDb(): Promise<void> {
 }
 
 export interface TestDb {
-  db: ReturnType<typeof drizzle>;
+  db: PostgresJsDatabase<typeof schema>;
   sql: Sql;
   end: () => Promise<void>;
 }
@@ -36,5 +38,5 @@ export interface TestDb {
 /** Open a fresh connection for a test. Always end() it in afterAll. */
 export function openDb(): TestDb {
   const sql = postgres(env().DATABASE_URL, { max: 2, prepare: false });
-  return { db: drizzle(sql), sql, end: () => sql.end() };
+  return { db: drizzle(sql, { schema }), sql, end: () => sql.end() };
 }

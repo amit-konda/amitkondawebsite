@@ -31,7 +31,7 @@ import { db } from "../db/client.js";
 import { members } from "../db/schema.js";
 import { env } from "../env.js";
 import { ApiError, badRequest, rateLimited } from "../errors.js";
-import { checkRateLimit, clientKey, RATE } from "../rate-limit.js";
+import { checkRateLimit, clientKey, hashKey, RATE } from "../rate-limit.js";
 import type { Handler, Router } from "../router.js";
 
 const LoginSchema = z.object({ password: z.string() });
@@ -57,21 +57,13 @@ function route(
 
 export function registerAuthRoutes(router: Router): void {
   // POST /auth/login — shared group password. Rate-limited per IP + globally.
-  route(router, "post", "/auth/login", (ctx) => {
+  route(router, "post", "/auth/login", async (ctx) => {
     const { password } = LoginSchema.parse(ctx.body);
 
-    const perIp = checkRateLimit(
-      clientKey(ctx.req),
-      RATE.LOGIN_PER_IP.limit,
-      RATE.LOGIN_PER_IP.windowMs
-    );
+    const perIp = await checkRateLimit(db, RATE.LOGIN_PER_IP, clientKey(ctx.req));
     if (!perIp.ok) throw rateLimited(perIp.retryAfterSec);
 
-    const global = checkRateLimit(
-      "login-global",
-      RATE.LOGIN_GLOBAL.limit,
-      RATE.LOGIN_GLOBAL.windowMs
-    );
+    const global = await checkRateLimit(db, RATE.LOGIN_GLOBAL, hashKey("global"));
     if (!global.ok) throw rateLimited(global.retryAfterSec);
 
     if (!verifyGroupPassword(password)) {
@@ -151,18 +143,11 @@ export function registerAuthRoutes(router: Router): void {
   });
 
   // POST /admin/unlock — requires a valid group cookie + admin password.
-  route(router, "post", "/admin/unlock", (ctx) => {
+  route(router, "post", "/admin/unlock", async (ctx) => {
     requireGroup(ctx);
     const { password } = AdminUnlockSchema.parse(ctx.body);
 
-    const perIp = checkRateLimit(
-      // Route-scoped per-IP bucket: clientKey() alone would share one bucket
-      // with login (same key derivation), letting login attempts exhaust the
-      // admin-unlock budget and vice versa.
-      `admin-unlock:${clientKey(ctx.req)}`,
-      RATE.ADMIN_UNLOCK_PER_IP.limit,
-      RATE.ADMIN_UNLOCK_PER_IP.windowMs
-    );
+    const perIp = await checkRateLimit(db, RATE.ADMIN_UNLOCK_PER_IP, clientKey(ctx.req));
     if (!perIp.ok) throw rateLimited(perIp.retryAfterSec);
 
     if (!verifyAdminPassword(password)) {

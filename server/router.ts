@@ -86,7 +86,10 @@ export class Router {
         method === "GET" ? "Not found." : "Method not allowed."
       );
     } catch (err) {
-      const { status, body } = toErrorResponse(err);
+      const { status, body, retryAfterSec } = toErrorResponse(err);
+      if (retryAfterSec !== undefined) {
+        res.setHeader("Retry-After", String(retryAfterSec));
+      }
       respondJson(res, status, body);
     }
   }
@@ -133,14 +136,20 @@ function enforceOrigin(req: IncomingMessage, method: string): void {
   }
 }
 
+/**
+ * Read the request body ONCE as exact bytes.
+ *
+ * Webhook signature verification requires the ORIGINAL bytes, so the raw
+ * string is always captured from the stream (never a JSON.stringify
+ * reconstruction of a pre-parsed body — those differ in whitespace/order).
+ * Auto JSON-parsing is best-effort: a body that does not parse is exposed as
+ * `rawBody` with `parsed = undefined` and let the route/zod decide (this is
+ * what lets the webhook verifier run before any parsing).
+ */
 async function readBody(
   req: IncomingMessage
 ): Promise<{ raw: string; parsed: unknown }> {
   const pre = (req as unknown as { body?: unknown }).body;
-  if (pre !== undefined) {
-    // Vercel pre-parses JSON bodies; reconstruct raw for webhook verification.
-    return { raw: JSON.stringify(pre), parsed: pre };
-  }
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -151,11 +160,18 @@ async function readBody(
     }
     chunks.push(buf);
   }
-  const raw = Buffer.concat(chunks).toString("utf8");
+  let raw = Buffer.concat(chunks).toString("utf8");
+  // Vercel's Node runtime pre-parses JSON and may leave the stream empty;
+  // only then fall back to the parsed body (never used for webhooks, whose
+  // streams are intact).
+  if (raw.length === 0 && pre !== undefined) {
+    raw = typeof pre === "string" ? pre : JSON.stringify(pre);
+  }
   if (raw.length === 0) return { raw: "", parsed: undefined };
   try {
     return { raw, parsed: JSON.parse(raw) };
   } catch {
-    throw new ApiError(400, "invalid_json", "Request body must be valid JSON.");
+    // Malformed JSON: keep the raw bytes for signature checks; no parse here.
+    return { raw, parsed: undefined };
   }
 }

@@ -91,8 +91,8 @@ function requestIpHash(req: Parameters<typeof clientKey>[0]): string {
   return createHash("sha256").update(requestIp(req)).digest("hex").slice(0, 32);
 }
 
-function enforceJoinRateLimit(req: Parameters<typeof clientKey>[0]): void {
-  const r = checkRateLimit(clientKey(req), RATE.JOIN_PER_IP.limit, RATE.JOIN_PER_IP.windowMs);
+async function enforceJoinRateLimit(req: Parameters<typeof clientKey>[0]): Promise<void> {
+  const r = await checkRateLimit(db, RATE.JOIN_PER_IP, clientKey(req));
   if (!r.ok) throw rateLimited(r.retryAfterSec);
 }
 
@@ -152,7 +152,7 @@ function route(
 export function registerMembersRoutes(router: Router): void {
   // POST /join-requests — public, rate-limited, anti-enumeration.
   route(router, "post", "/join-requests", async (ctx) => {
-    enforceJoinRateLimit(ctx.req);
+    await enforceJoinRateLimit(ctx.req);
     const body = joinRequestBodySchema.parse(ctx.body);
     const emailNormalized = normalizeEmail(body.email);
 

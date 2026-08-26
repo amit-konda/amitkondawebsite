@@ -16,6 +16,9 @@ export async function resetDb(): Promise<void> {
   const url = env().DATABASE_URL;
   const client = postgres(url, { max: 1, prepare: false });
   try {
+    // The drizzle migrator keeps its bookkeeping table in a separate "drizzle"
+    // schema — it must go too, or migrated state is skipped after a reset.
+    await client`drop schema if exists drizzle cascade`;
     await client`drop schema public cascade`;
     await client`create schema public`;
     await migrate(drizzle(client), { migrationsFolder: "./migrations" });

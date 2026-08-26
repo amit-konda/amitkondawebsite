@@ -1,37 +1,26 @@
 /**
- * Provider webhooks + admin email retry.
+ * Provider webhook.
  *
  * POST /api/poker/webhooks/resend — PUBLIC, authenticated by the Svix/Resend
- * ed25519 signature. The secret is a base64-encoded SPKI DER ed25519 PUBLIC
- * key, read DIRECTLY from process.env.RESEND_WEBHOOK_SECRET (deliberately not
- * via env(), so tests can inject a real keypair). Verification follows the
- * Svix scheme: message = `${svixId}.${svixTimestamp}.${rawBody}`, signature in
- * the "ed25519=" segment of x-svix-signature, with a 5-minute replay guard.
- * Any verification failure yields 401 invalid_signature. Event application is
- * idempotent: unknown provider ids and unknown event types still ack 200.
+ * signature (see the verifier below; replaced with the official Svix SDK
+ * verification in the hardening pass). Event application is idempotent:
+ * unknown provider ids and unknown event types still ack 200.
  *
- * POST /api/poker/admin/email-deliveries/:id/retry — admin-only re-send of a
- * queued/failed delivery (409 when already sent/delivered).
- *
- * NOTE: the catch-all router matches the FULL request path, so these routes
- * are registered with the /api/poker prefix (same convention as the plan's
- * route table).
+ * NOTE: the catch-all router matches the FULL request path, so routes are
+ * registered with the /api/poker prefix.
  */
 import { createPublicKey, verify } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { requireAdmin } from "../auth.js";
 import { db } from "../db/client.js";
 import { emailDeliveries } from "../db/schema.js";
 import { findDeliveryByProviderId, updateDeliveryStatus } from "../email/outbox.js";
-import { sendOneDelivery } from "../email/send.js";
-import { ApiError, conflict, notFound } from "../errors.js";
+import { ApiError } from "../errors.js";
 import type { Router, Ctx } from "../router.js";
 
 const REPLAY_WINDOW_SECONDS = 5 * 60;
 
 export function registerWebhookRoutes(router: Router): void {
   router.post("/api/poker/webhooks/resend", handleResendWebhook);
-  router.post("/api/poker/admin/email-deliveries/:id/retry", handleRetryDelivery);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,51 +96,6 @@ async function handleResendWebhook(ctx: Ctx): Promise<{ ok: boolean }> {
     }
   }
   return { ok: true };
-}
-
-// ---------------------------------------------------------------------------
-// POST /admin/email-deliveries/:id/retry
-// ---------------------------------------------------------------------------
-
-async function handleRetryDelivery(
-  ctx: Ctx
-): Promise<{ delivery: { id: string; status: string; attempts: number; errorCode: string | null; updatedAt: Date } }> {
-  requireAdmin(ctx);
-  const id = ctx.params.id!;
-  const row =
-    (
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.id, id))
-        .limit(1)
-    )[0] ?? null;
-  if (!row) throw notFound();
-  if (row.status === "sent" || row.status === "delivered") {
-    throw conflict("Email already delivered.");
-  }
-
-  await sendOneDelivery(id); // never throws
-
-  const after =
-    (
-      await db
-        .select()
-        .from(emailDeliveries)
-        .where(eq(emailDeliveries.id, id))
-        .limit(1)
-    )[0] ?? null;
-  return {
-    delivery: {
-      id: after?.id ?? id,
-      status: after?.status ?? row.status,
-      attempts: after?.attempts ?? row.attempts,
-      // Nullish coalescing must NOT fall through to the pre-send row, since
-      // a successful send clears errorCode to null.
-      errorCode: after ? after.errorCode : (row.errorCode ?? null),
-      updatedAt: after?.updatedAt ?? row.updatedAt
-    }
-  };
 }
 
 // ---------------------------------------------------------------------------

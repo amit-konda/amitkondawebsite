@@ -9,7 +9,9 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
-    readonly fieldErrors?: Record<string, string[]>
+    readonly fieldErrors?: Record<string, string[]>,
+    /** Seconds the client should wait before retrying (sets Retry-After on 429). */
+    readonly retryAfterSec?: number
   ) {
     super(message);
     this.name = "ApiError";
@@ -33,9 +35,17 @@ export const badRequest = (code: string, m = "Invalid request.") =>
   new ApiError(400, code, m);
 
 export const rateLimited = (retryAfterSec = 60) =>
-  new ApiError(429, "rate_limited", `Too many attempts. Try again in ${retryAfterSec}s.`);
+  new ApiError(
+    429,
+    "rate_limited",
+    `Too many attempts. Try again in ${retryAfterSec}s.`,
+    undefined,
+    retryAfterSec
+  );
 
-export function toErrorResponse(err: unknown): { status: number; body: unknown } {
+export function toErrorResponse(
+  err: unknown
+): { status: number; body: unknown; retryAfterSec?: number } {
   if (err instanceof ApiError) {
     return {
       status: err.status,
@@ -45,7 +55,8 @@ export function toErrorResponse(err: unknown): { status: number; body: unknown }
           message: err.message,
           ...(err.fieldErrors ? { fieldErrors: err.fieldErrors } : {})
         }
-      }
+      },
+      ...(err.retryAfterSec !== undefined ? { retryAfterSec: err.retryAfterSec } : {})
     };
   }
   if (err instanceof ZodError) {

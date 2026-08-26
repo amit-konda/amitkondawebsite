@@ -22,7 +22,7 @@ import { generateToken, hashToken, TOKEN_TTL_DAYS } from "../domain/tokens.js";
 import { enqueueEmail } from "../email/outbox.js";
 import { notifyEntity } from "../email/notify.js";
 import { ApiError, conflict, notFound, rateLimited } from "../errors.js";
-import { checkRateLimit, clientKey, RATE } from "../rate-limit.js";
+import { checkRateLimit, clientKey, RATE, type RatePreset } from "../rate-limit.js";
 import type { Ctx, Router } from "../router.js";
 
 const TOKEN_INVALID_MSG = "This link is invalid or expired.";
@@ -56,17 +56,14 @@ const resolveSchema = z.object({
     .optional()
 });
 
-function enforceRateLimit(
-  ctx: Ctx,
-  cfg: { limit: number; windowMs: number }
-): void {
-  const r = checkRateLimit(clientKey(ctx.req), cfg.limit, cfg.windowMs);
+async function enforceRateLimit(ctx: Ctx, preset: RatePreset): Promise<void> {
+  const r = await checkRateLimit(db, preset, clientKey(ctx.req));
   if (!r.ok) throw rateLimited(r.retryAfterSec);
 }
 
 /** POST /disputes/verify-token — public; the token itself is the credential. */
 async function verifyToken(ctx: Ctx): Promise<unknown> {
-  enforceRateLimit(ctx, RATE.TOKEN_PER_IP);
+  await enforceRateLimit(ctx, RATE.TOKEN_PER_IP);
   const { token } = verifySchema.parse(ctx.body);
 
   const row = (
@@ -123,7 +120,7 @@ async function verifyToken(ctx: Ctx): Promise<unknown> {
 
 /** POST /disputes — consume a receipt token and open a dispute. */
 async function openDispute(ctx: Ctx): Promise<unknown> {
-  enforceRateLimit(ctx, RATE.DISPUTE_PER_IP);
+  await enforceRateLimit(ctx, RATE.DISPUTE_PER_IP);
   const { token, reason } = openSchema.parse(ctx.body);
   const hash = hashToken(token);
 

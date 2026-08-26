@@ -25,6 +25,9 @@ const EnvSchema = z.object({
   RESEND_WEBHOOK_SECRET: z.string().min(1).optional(),
   POKER_EMAIL_FROM: z.string().min(3).default("Poker Ledger <poker@amitkonda.com>"),
 
+  // Optional: address that receives dispute-opened notifications (the admin).
+  POKER_ADMIN_NOTIFY_EMAIL: z.string().email().optional(),
+
   PUBLIC_APP_ORIGIN: z.string().url().default("https://amitkonda.com")
 });
 

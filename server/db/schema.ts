@@ -12,6 +12,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -22,7 +23,16 @@ export const memberStatus = pgEnum("member_status", ["active", "inactive"]);
 export const joinRequestStatus = pgEnum("join_request_status", ["pending", "approved", "rejected"]);
 export const sessionStatus = pgEnum("session_status", ["active", "disputed", "resolved", "voided"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
-export const emailStatus = pgEnum("email_status", ["queued", "sent", "delivered", "bounced", "failed"]);
+export const emailStatus = pgEnum("email_status", [
+  "queued",
+  "sent",
+  "delivered",
+  "bounced",
+  "failed",
+  "processing",
+  "delayed",
+  "dead_letter"
+]);
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -184,7 +194,8 @@ export const disputes = pgTable(
     uniqueIndex("disputes_open_session_member_uidx")
       .on(t.sessionId, t.memberId)
       .where(sql`${t.status} = 'open'`),
-    index("disputes_status_idx").on(t.status)
+    index("disputes_status_idx").on(t.status),
+    index("disputes_session_idx").on(t.sessionId)
   ]
 );
 
@@ -207,6 +218,11 @@ export const emailDeliveries = pgTable(
     attempts: integer("attempts").notNull().default(0),
     errorCode: text("error_code"),
     lastAttemptAt: ts("last_attempt_at"),
+    // Claim/lease fields for concurrency-safe delivery (see server/email/send.ts).
+    claimedAt: ts("claimed_at"),
+    claimId: text("claim_id"),
+    nextAttemptAt: ts("next_attempt_at"),
+    sentAt: ts("sent_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())
   },
@@ -218,7 +234,44 @@ export const emailDeliveries = pgTable(
       t.version,
       t.recipientEmail
     ),
-    index("email_deliveries_status_idx").on(t.status)
+    index("email_deliveries_status_idx").on(t.status),
+    index("email_deliveries_pending_idx").on(t.status, t.nextAttemptAt),
+    index("email_deliveries_provider_idx").on(t.providerId)
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// webhook_events — idempotent provider webhook processing (dedup by event id)
+// ---------------------------------------------------------------------------
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Resend/Svix message event id — unique so replays cannot re-apply.
+    eventId: text("event_id").notNull().unique(),
+    eventType: text("event_type").notNull(),
+    providerMessageId: text("provider_message_id"),
+    deliveryId: uuid("delivery_id").references(() => emailDeliveries.id),
+    processedAt: ts("processed_at").notNull().defaultNow()
+  },
+  (t) => [index("webhook_events_provider_msg_idx").on(t.providerMessageId)]
+);
+
+// ---------------------------------------------------------------------------
+// rate_limit_buckets — durable per-scope sliding windows (Postgres-backed)
+// ---------------------------------------------------------------------------
+export const rateLimitBuckets = pgTable(
+  "rate_limit_buckets",
+  {
+    scope: text("scope").notNull(),
+    keyHash: text("key_hash").notNull(),
+    windowStartedAt: ts("window_started_at").notNull(),
+    requestCount: integer("request_count").notNull().default(0),
+    expiresAt: ts("expires_at").notNull()
+  },
+  (t) => [
+    primaryKey({ columns: [t.scope, t.keyHash, t.windowStartedAt] }),
+    index("rate_limit_buckets_expires_idx").on(t.expiresAt)
   ]
 );
 
@@ -257,3 +310,5 @@ export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;
 export type EmailDeliveryRow = typeof emailDeliveries.$inferSelect;
 export type AuditEventRow = typeof auditEvents.$inferSelect;
+export type WebhookEventRow = typeof webhookEvents.$inferSelect;
+export type RateLimitBucketRow = typeof rateLimitBuckets.$inferSelect;

@@ -21,6 +21,7 @@
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
     "resend": "^6.22.1",
+    "svix": "^2.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -30,5 +31,10 @@
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.0"
+    }
   }
 }

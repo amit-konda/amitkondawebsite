@@ -64,9 +64,17 @@ async function handleResendWebhook(ctx: Ctx): Promise<{ ok: boolean }> {
   const secret = process.env.RESEND_WEBHOOK_SECRET;
   if (!secret) throw invalidSignature();
 
-  const svixId = header(ctx, "x-svix-id");
-  const svixTimestamp = header(ctx, "x-svix-timestamp");
-  const svixSignature = header(ctx, "x-svix-signature");
+  // Resend documents the plain svix-* header names; accept the x-svix-*
+  // aliases for backward compatibility (both are lowercased by Node).
+  const svixId =
+    header(ctx, "svix-id") ??
+    header(ctx, "x-svix-id");
+  const svixTimestamp =
+    header(ctx, "svix-timestamp") ??
+    header(ctx, "x-svix-timestamp");
+  const svixSignature =
+    header(ctx, "svix-signature") ??
+    header(ctx, "x-svix-signature");
   if (!svixId || !svixTimestamp || !svixSignature) throw invalidSignature();
 
   // The exact raw body bytes are the signed message — never a reconstruction.
@@ -81,8 +89,6 @@ async function handleResendWebhook(ctx: Ctx): Promise<{ ok: boolean }> {
     throw invalidSignature();
   }
 
-  // Verify with the official Svix SDK. Resend sends x-svix-* headers but the
-  // SDK expects svix-* keys, so buildVerificationHeaders aliases them.
   let webhook: Webhook;
   try {
     webhook = new Webhook(secret);
@@ -110,60 +116,72 @@ async function handleResendWebhook(ctx: Ctx): Promise<{ ok: boolean }> {
   ) as { type?: unknown; data?: { id?: unknown } | null };
   const eventType = typeof body.type === "string" ? body.type : "unknown";
   const providerId = typeof body.data?.id === "string" ? body.data.id : null;
-
-  // Event-id dedup: a replayed Svix event is an idempotent no-op ack.
-  const existing = await db
-    .select({ id: webhookEvents.id })
-    .from(webhookEvents)
-    .where(eq(webhookEvents.eventId, svixId))
-    .limit(1);
-  if (existing[0]) return { ok: true };
-
-  // Link the provider message to a known outbox delivery when possible.
-  const delivery = providerId ? await findDeliveryByProviderId(db, providerId) : null;
-
-  // Record the event BEFORE applying it, so racing replays trip the unique
-  // event_id index and stop here without re-applying anything.
-  try {
-    await db.insert(webhookEvents).values({
-      eventId: svixId,
-      eventType,
-      providerMessageId: providerId,
-      deliveryId: delivery?.id ?? null
-    });
-  } catch (err) {
-    if (isUniqueViolation(err)) return { ok: true };
-    throw err;
-  }
-
-  // Apply the status change only for known events, and never downgrade.
   const incoming = EVENT_STATUS[eventType];
-  if (delivery && incoming) {
-    const currentRank = STATUS_RANK[delivery.status] ?? 0;
-    if (incoming.rank >= currentRank) {
-      const providerRef = delivery.providerId ?? providerId;
-      if (incoming.status === "delayed") {
-        // updateDeliveryStatus cannot express "delayed" — set it directly.
-        await db
-          .update(emailDeliveries)
-          .set({
-            status: "delayed",
-            providerId: providerRef ?? undefined,
-            errorCode: null,
-            updatedAt: new Date()
-          })
-          .where(eq(emailDeliveries.id, delivery.id));
-      } else {
-        await updateDeliveryStatus(
-          db,
-          delivery.id,
-          incoming.status,
-          providerRef,
-          incoming.errorCode
-        );
+
+  // ATOMIC processing: event dedup + delivery status update commit together.
+  // If anything fails, the whole transaction rolls back INCLUDING the event
+  // record, so a Resend retry can still apply the update. Two concurrent
+  // events for the same delivery race through the FOR UPDATE lock and the
+  // precedence rule re-evaluates against the locked (current) status, so an
+  // out-of-order terminal event can never be downgraded.
+  await db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(webhookEvents)
+      .values({
+        eventId: svixId,
+        eventType,
+        providerMessageId: providerId
+      })
+      .onConflictDoNothing()
+      .returning({ id: webhookEvents.id });
+    if (inserted.length === 0) return; // already processed → idempotent ack
+
+    // Link the provider message to a known outbox delivery when possible.
+    const delivery = providerId
+      ? await findDeliveryByProviderId(tx, providerId)
+      : null;
+    if (delivery) {
+      await tx
+        .update(webhookEvents)
+        .set({ deliveryId: delivery.id })
+        .where(eq(webhookEvents.id, inserted[0]!.id));
+    }
+
+    // Apply the status change only for known events, locked and never
+    // downgraded (bounced/complained/failed are terminal).
+    if (delivery && incoming) {
+      const [locked] = await tx
+        .select({ status: emailDeliveries.status })
+        .from(emailDeliveries)
+        .where(eq(emailDeliveries.id, delivery.id))
+        .for("update")
+        .limit(1);
+      const currentRank = STATUS_RANK[locked?.status ?? ""] ?? 0;
+      if (incoming.rank >= currentRank) {
+        const providerRef = delivery.providerId ?? providerId;
+        if (incoming.status === "delayed") {
+          await tx
+            .update(emailDeliveries)
+            .set({
+              status: "delayed",
+              providerId: providerRef ?? undefined,
+              errorCode: null,
+              updatedAt: new Date()
+            })
+            .where(eq(emailDeliveries.id, delivery.id));
+        } else {
+          await updateDeliveryStatus(
+            tx,
+            delivery.id,
+            incoming.status,
+            providerRef,
+            incoming.errorCode
+          );
+        }
       }
     }
-  }
+  });
+
   return { ok: true };
 }
 
@@ -184,8 +202,10 @@ function header(ctx: Ctx, name: string): string | undefined {
 /**
  * Plain { name: value } snapshot of the raw request headers for the SDK.
  * Values keep their original form (duplicate headers are joined); Node
- * already lowercases keys. The svix SDK looks up svix-* keys, so the
- * x-svix-* names Resend actually sends are aliased onto them.
+ * already lowercases keys. The svix SDK verifies against the svix-*
+ * names — plain headers pass through verbatim, and the x-svix-* aliases
+ * (older integrations/tests) are copied onto them when the plain names
+ * are absent.
  */
 function buildVerificationHeaders(ctx: Ctx): Record<string, string> {
   const out: Record<string, string> = {};
@@ -204,11 +224,4 @@ function buildVerificationHeaders(ctx: Ctx): Record<string, string> {
     }
   }
   return out;
-}
-
-/** 23505 unique_violation, unwrapping drizzle's DrizzleQueryError wrapper. */
-function isUniqueViolation(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as { code?: string; cause?: { code?: string } };
-  return e.code === "23505" || e.cause?.code === "23505";
 }

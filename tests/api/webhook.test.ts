@@ -9,7 +9,7 @@
  * EXACT body bytes that are sent — never a re-stringified object.
  */
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   emailDeliveries,
@@ -21,6 +21,20 @@ import type { EmailDeliveryRow, WebhookEventRow } from "../../server/db/schema.j
 import { openDb, resetDb } from "../helpers/db.js";
 import type { TestDb } from "../helpers/db.js";
 import { startTestServer } from "../helpers/server.js";
+
+/**
+ * updateDeliveryStatus passes through by default but can be forced to fail so
+ * the atomic webhook transaction's rollback is testable.
+ */
+vi.mock("../../server/email/outbox.js", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../server/email/outbox.js")
+  >();
+  return { ...actual, updateDeliveryStatus: vi.fn(actual.updateDeliveryStatus) };
+});
+
+const { updateDeliveryStatus } = await import("../../server/email/outbox.js");
+const updateDeliveryStatusMock = vi.mocked(updateDeliveryStatus);
 
 let server: Awaited<ReturnType<typeof startTestServer>> | null = null;
 let testDb: TestDb | null = null;
@@ -45,6 +59,8 @@ async function postWebhook(
     timestamp?: string;
     signature?: string;
     secretKey?: string;
+    /** Send the legacy x-svix-* header names instead of the documented svix-*. */
+    aliased?: boolean;
     headers?: Record<string, string>;
   } = {}
 ): Promise<Response> {
@@ -52,13 +68,14 @@ async function postWebhook(
   const timestamp = opts.timestamp ?? String(Math.floor(Date.now() / 1000));
   const signature =
     opts.signature ?? sign(opts.secretKey ?? secret, svixId, timestamp, body);
+  const name = opts.aliased ? "x-svix-" : "svix-";
   return fetch(`${server!.url}/api/poker/webhooks/resend`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-svix-id": svixId,
-      "x-svix-timestamp": timestamp,
-      "x-svix-signature": signature,
+      [`${name}id`]: svixId,
+      [`${name}timestamp`]: timestamp,
+      [`${name}signature`]: signature,
       ...opts.headers
     },
     body
@@ -92,6 +109,7 @@ async function eventsByEventId(eventId: string): Promise<WebhookEventRow[]> {
 describe("resend webhook (svix verification + dedup + precedence)", () => {
   let deliveryId1 = "";
   let deliveryId3 = "";
+  let deliveryId5 = "";
 
   beforeAll(async () => {
     const key = randomBytes(32);
@@ -150,11 +168,32 @@ describe("resend webhook (svix verification + dedup + precedence)", () => {
           recipientMemberId: member!.id,
           providerId: "msg_3",
           status: "sent"
+        },
+        {
+          eventType: "session_receipt",
+          entityType: "session",
+          entityId: session!.id,
+          version: 1,
+          recipientEmail: `wh-${randomUUID()}@example.com`,
+          recipientMemberId: member!.id,
+          providerId: "msg_4",
+          status: "sent"
+        },
+        {
+          eventType: "session_receipt",
+          entityType: "session",
+          entityId: session!.id,
+          version: 1,
+          recipientEmail: `wh-${randomUUID()}@example.com`,
+          recipientMemberId: member!.id,
+          providerId: "msg_5",
+          status: "sent"
         }
       ])
       .returning();
     deliveryId1 = seeded[0]!.id;
     deliveryId3 = seeded[2]!.id;
+    deliveryId5 = seeded[4]!.id;
   });
 
   afterAll(async () => {
@@ -344,5 +383,78 @@ describe("resend webhook (svix verification + dedup + precedence)", () => {
     const delivery = await deliveryByProviderId("msg_1");
     expect(delivery!.status).toBe("bounced");
     expect(delivery!.errorCode).toBe("bounced");
+  });
+
+  it("(l) accepts the legacy x-svix-* header aliases", async () => {
+    const body = JSON.stringify({ type: "email.delivered", data: { id: "msg_4" } });
+    const eventId = `evt_${randomUUID()}`;
+
+    const res = await postWebhook(body, { svixId: eventId, aliased: true });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const delivery = await deliveryByProviderId("msg_4");
+    expect(delivery!.status).toBe("delivered");
+    expect(await eventsByEventId(eventId)).toHaveLength(1);
+  });
+
+  it("(m) delivery-update failure rolls back the event; a retry then applies", async () => {
+    // msg_2 is still "sent" (only (b) touched it, and that left it alone).
+    const body = JSON.stringify({ type: "email.delivered", data: { id: "msg_2" } });
+    const eventId = `evt_${randomUUID()}`;
+
+    updateDeliveryStatusMock.mockRejectedValueOnce(new Error("forced provider failure"));
+    const failed = await postWebhook(body, { svixId: eventId });
+    expect(failed.status).toBe(500);
+    // The whole transaction rolled back — the event id is NOT recorded, so a
+    // Resend retry can still be applied.
+    expect(await eventsByEventId(eventId)).toHaveLength(0);
+    const unchanged = await deliveryByProviderId("msg_2");
+    expect(unchanged!.status).toBe("sent");
+    expect(unchanged!.errorCode).toBeNull();
+
+    const retry = await postWebhook(body, { svixId: eventId });
+    expect(retry.status).toBe(200);
+    const delivery = await deliveryByProviderId("msg_2");
+    expect(delivery!.status).toBe("delivered");
+    expect(delivery!.errorCode).toBeNull();
+    expect(await eventsByEventId(eventId)).toHaveLength(1);
+  });
+
+  it("(n) concurrent delivered + bounced for the same message settle on bounced", async () => {
+    const delivered = JSON.stringify({ type: "email.delivered", data: { id: "msg_5" } });
+    const bounced = JSON.stringify({ type: "email.bounced", data: { id: "msg_5" } });
+
+    const [a, b] = await Promise.all([
+      postWebhook(delivered, { svixId: `evt_${randomUUID()}` }),
+      postWebhook(bounced, { svixId: `evt_${randomUUID()}` })
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    // Precedence is re-evaluated under the row lock in either commit order —
+    // the terminal state must always win.
+    const delivery = await deliveryByProviderId("msg_5");
+    expect(delivery!.status).toBe("bounced");
+    expect(delivery!.errorCode).toBe("bounced");
+    expect(delivery!.id).toBe(deliveryId5);
+  });
+
+  it("(o) concurrent duplicates of the same event id are processed exactly once", async () => {
+    const body = JSON.stringify({ type: "email.delivered", data: { id: "msg_1" } });
+    const eventId = `evt_${randomUUID()}`;
+
+    const [a, b] = await Promise.all([
+      postWebhook(body, { svixId: eventId }),
+      postWebhook(body, { svixId: eventId })
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    expect(await eventsByEventId(eventId)).toHaveLength(1);
+    // msg_1 was already bounced by (g)/(k) — a delivered replay cannot
+    // downgrade it, which also proves the duplicate was not re-applied.
+    const delivery = await deliveryByProviderId("msg_1");
+    expect(delivery!.status).toBe("bounced");
   });
 });

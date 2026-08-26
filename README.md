@@ -48,7 +48,7 @@ npx tsx scripts/seed-preview.mjs   # against whatever DATABASE_URL is in .env
 | `POKER_ADMIN_PASSWORD_HASH` | scrypt hash of the admin PIN | separate from group password |
 | `POKER_ADMIN_SESSION_SECRET` | HMAC key for admin cookies | ≥32 random bytes |
 | `RESEND_API_KEY` | Resend sender key | optional: unset degrades to retryable failures |
-| `RESEND_WEBHOOK_SECRET` | base64 ed25519 public key for webhook verification | from Resend dashboard |
+| `RESEND_WEBHOOK_SECRET` | Resend/Svix signing secret (`whsec_…`) for webhook verification | from the Resend webhook page |
 | `POKER_EMAIL_FROM` | sender address, e.g. `Poker Ledger <poker@amitkonda.com>` | must be verified in Resend |
 | `PUBLIC_APP_ORIGIN` | canonical origin used for receipt links | `https://amitkonda.com` in prod |
 
@@ -93,7 +93,7 @@ is attempted — email failure never rolls back a session. The outbox
 retries never duplicate. If receipts are pending, the UI says so; an admin can
 retry from Admin → (email failures) or via
 `POST /api/poker/admin/email-deliveries/:id/retry`. Resend webhooks
-(`POST /api/poker/webhooks/resend`, svix/ed25519-verified) update delivery
+(`POST /api/poker/webhooks/resend`, Svix-verified) update delivery
 status; invalid signatures are rejected (401).
 
 ## Migrations

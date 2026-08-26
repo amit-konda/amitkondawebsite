@@ -302,8 +302,10 @@ async function openDispute(ctx: Ctx): Promise<unknown> {
     throw err;
   }
 
-  // After commit: best-effort email pump; queued rows persist for retries.
-  void notifyEntity("dispute", created.disputeId, 1);
+  // After commit: outbox pump. AWAITED so the serverless invocation stays
+  // alive to attempt the sends — notifyEntity never throws (it only ever
+  // transitions outbox rows between queued/failed and is safe to await).
+  await notifyEntity("dispute", created.disputeId, 1);
 
   ctx.res.statusCode = 201;
   return {
@@ -449,10 +451,11 @@ async function resolveDispute(ctx: Ctx): Promise<unknown> {
     };
   });
 
-  // After commit: best-effort pumps (outbox rows persist for retries).
-  void notifyEntity("dispute", id, 1);
+  // After commit: outbox pumps — awaited so the serverless invocation stays
+  // alive to attempt the sends (notifyEntity never throws).
+  await notifyEntity("dispute", id, 1);
   if (result.newVersion !== null) {
-    void notifyEntity("session", result.sessionId, result.newVersion);
+    await notifyEntity("session", result.sessionId, result.newVersion);
   }
 
   const [disputeAfter] = await db

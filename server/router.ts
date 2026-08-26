@@ -149,7 +149,6 @@ function enforceOrigin(req: IncomingMessage, method: string): void {
 async function readBody(
   req: IncomingMessage
 ): Promise<{ raw: string; parsed: unknown }> {
-  const pre = (req as unknown as { body?: unknown }).body;
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -161,12 +160,10 @@ async function readBody(
     chunks.push(buf);
   }
   let raw = Buffer.concat(chunks).toString("utf8");
-  // Vercel's Node runtime pre-parses JSON and may leave the stream empty;
-  // only then fall back to the parsed body (never used for webhooks, whose
-  // streams are intact).
-  if (raw.length === 0 && pre !== undefined) {
-    raw = typeof pre === "string" ? pre : JSON.stringify(pre);
-  }
+  // NOTE: no parsed-body fallback. The Vercel function declares
+  // api.bodyParser: false, so req.body is never pre-parsed and the stream is
+  // always the ORIGINAL bytes — rebuilding JSON from req.body would corrupt
+  // webhook signature verification.
   if (raw.length === 0) return { raw: "", parsed: undefined };
   try {
     return { raw, parsed: JSON.parse(raw) };

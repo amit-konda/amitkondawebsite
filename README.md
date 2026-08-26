@@ -137,9 +137,15 @@ npm run e2e       # Playwright critical flows (homepage untouched, anonymous pri
                   # direct add, void)
 ```
 
-The e2e suite boots the real dev server with the test environment; make sure
-port 8788 is free (`lsof -ti :8788 | xargs kill`) so the config-managed server
-starts with the right env.
+The e2e suite is isolated and deterministic:
+
+- it boots its own dev server on port **8790** (override with
+  `POKER_E2E_PORT`), independent of `npm run dev` (which stays on :8788);
+- it **never reuses a running server** (`reuseExistingServer: false`) — a
+  stale process on 8790 fails the run fast (`lsof -ti :8790 | xargs kill`);
+- global-setup **refuses non-local databases** (DATABASE_URL must contain
+  localhost / 127.0.0.1 / ::1) and refuses the production
+  `amitkonda.com` origin before its destructive DB reset.
 
 ## Security notes
 

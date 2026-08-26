@@ -2,6 +2,23 @@
  * e2e helpers — UI contract + test-data seeding for the Poker Ledger.
  *
  * ─────────────────────────────────────────────────────────────────────────
+ * HARNESS ISOLATION (how the suite stays deterministic)
+ * ─────────────────────────────────────────────────────────────────────────
+ * - The suite runs on its OWN port (playwright.config.ts: E2E_PORT, override
+ *   with POKER_E2E_PORT, default 8790) — never the :8788 dev-server port, so
+ *   `npm run dev` and the suite coexist.
+ * - The tests NEVER reuse a running dev server (webServer
+ *   reuseExistingServer: false in playwright.config.ts). A stale process on
+ *   the suite's port makes Playwright fail fast (port-in-use / probe
+ *   timeout) instead of silently running against a server with the wrong
+ *   env/DB/state — kill it (`lsof -ti :8790 | xargs kill`) and re-run.
+ * - The suite refuses non-local databases: global-setup.ts throws before its
+ *   destructive reset unless DATABASE_URL points at localhost/127.0.0.1/::1,
+ *   and refuses the production amitkonda.com origin.
+ * - All URLs in this suite are RELATIVE on purpose and resolve against the
+ *   config baseURL — nothing here hardcodes a port.
+ *
+ * ─────────────────────────────────────────────────────────────────────────
  * UI CONTRACT (what the /poker shell must provide for the suite to pass)
  * ─────────────────────────────────────────────────────────────────────────
  * The tests drive the REAL UI. They prefer accessible roles/labels and only

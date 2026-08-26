@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>Poker Ledger</title>
+<meta name="description" content="Private poker group ledger">
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/poker/poker.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="topbar-home" href="/" aria-label="Back to amitkonda.com">&larr;&nbsp;amitkonda.com</a>
+  <span class="topbar-title">Poker Ledger</span>
+  <span class="topbar-controls" id="topbar-controls" hidden>
+    <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)"></select>
+    <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
+  </span>
+</header>
+
+<main id="main">
+  <div id="banner-root" class="banner-root" role="region" aria-live="polite" aria-label="Messages"></div>
+
+  <!-- ── GATE ─────────────────────────────────────────────── -->
+  <section id="view-gate" class="view" hidden>
+    <div class="card gate-card">
+      <h1 class="gate-heading">Poker Ledger</h1>
+      <p class="gate-sub" id="gate-sub">A private ledger for our poker group. Enter the group password to continue.</p>
+
+      <form id="gate-form" class="stack" novalidate>
+        <label class="field" for="gate-password">Group password</label>
+        <div class="field-row">
+          <input id="gate-password" name="password" type="password" autocomplete="current-password" class="input" required autofocus>
+          <button id="gate-unlock" class="btn btn-primary" type="submit">Unlock</button>
+        </div>
+        <p id="gate-error" class="form-error" role="alert" hidden></p>
+      </form>
+
+      <hr class="gate-sep">
+
+      <button id="gate-request-toggle" class="linkish" type="button" aria-expanded="false" aria-controls="gate-request-form">Request access</button>
+      <form id="gate-request-form" class="stack" novalidate hidden>
+        <label class="field" for="gate-req-name">Your name</label>
+        <input id="gate-req-name" type="text" class="input" autocomplete="name" maxlength="80" required>
+        <label class="field" for="gate-req-email">Email</label>
+        <input id="gate-req-email" type="email" class="input" autocomplete="email" maxlength="254" required>
+        <label class="field" for="gate-req-note">Note (optional)</label>
+        <textarea id="gate-req-note" class="input" rows="3" maxlength="500" placeholder="Who invited you, or anything else?"></textarea>
+        <button id="gate-req-submit" class="btn btn-primary" type="submit">Send request</button>
+        <p id="gate-request-note" class="form-note" role="status" hidden></p>
+      </form>
+
+      <button id="gate-admin-toggle" class="linkish linkish-small" type="button" aria-expanded="false" aria-controls="gate-admin-form">Admin sign-in</button>
+      <form id="gate-admin-form" class="stack" novalidate hidden>
+        <p class="form-hint">Enter the group password first, then your admin PIN.</p>
+        <label class="field" for="gate-admin-pin">Admin PIN</label>
+        <div class="field-row">
+          <input id="gate-admin-pin" name="adminpin" type="password" autocomplete="current-password" class="input" required>
+          <button id="gate-admin-unlock" class="btn btn-primary" type="submit">Unlock admin</button>
+        </div>
+        <p id="gate-admin-error" class="form-error" role="alert" hidden></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ── DASHBOARD ────────────────────────────────────────── -->
+  <section id="view-dashboard" class="view" hidden>
+    <div class="dash">
+      <div class="dash-actions">
+        <button id="add-session-btn" class="btn btn-primary" type="button">+ Add session</button>
+        <button id="dash-admin-toggle" class="linkish linkish-small" type="button" aria-expanded="false" aria-controls="dash-admin-form" hidden>Admin sign-in</button>
+      </div>
+
+      <div id="admin-badges" class="admin-badges" hidden>
+        <button id="badge-requests" class="badge" type="button" aria-haspopup="dialog">
+          Requests <span id="badge-requests-count" class="badge-count">0</span>
+        </button>
+        <button id="badge-disputes" class="badge" type="button" aria-haspopup="dialog">
+          Disputes <span id="badge-disputes-count" class="badge-count">0</span>
+        </button>
+        <button id="badge-members" class="badge" type="button" aria-haspopup="dialog">Members</button>
+        <button id="admin-lock-btn" class="btn btn-ghost btn-small" type="button">Lock admin</button>
+      </div>
+
+      <div class="card dash-admin-card" id="dash-admin-form" hidden>
+        <form class="stack" id="dash-admin-form-inner" novalidate>
+          <p class="form-hint">Enter your admin PIN to unlock admin tools.</p>
+          <label class="field" for="dash-admin-pin">Admin PIN</label>
+          <div class="field-row">
+            <input id="dash-admin-pin" name="adminpin" type="password" autocomplete="current-password" class="input" required>
+            <button id="dash-admin-unlock" class="btn btn-primary" type="submit">Unlock admin</button>
+          </div>
+          <p id="dash-admin-error" class="form-error" role="alert" hidden></p>
+        </form>
+      </div>
+
+      <div class="dash-grid">
+        <div class="card">
+          <h2 class="card-heading">Ledger</h2>
+          <div id="ledger-body"></div>
+        </div>
+        <div class="card">
+          <h2 class="card-heading">Recent sessions</h2>
+          <div id="sessions-body"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── SESSION DETAIL ───────────────────────────────────── -->
+  <section id="view-detail" class="view" hidden>
+    <div id="detail-body"></div>
+  </section>
+
+  <!-- ── DISPUTE (receipt via token) ──────────────────────── -->
+  <section id="view-dispute" class="view" hidden>
+    <div id="dispute-body"></div>
+  </section>
+</main>
+
+<div id="modal-root" class="modal-root" hidden></div>
+
+<noscript><p class="noscript">This ledger needs JavaScript enabled to run.</p></noscript>
+
+<script type="module" src="/poker/poker.js"></script>
+</body>
+</html>

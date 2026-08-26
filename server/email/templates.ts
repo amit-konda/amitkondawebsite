@@ -44,14 +44,31 @@ export interface RenderedEmail {
   text: string;
 }
 
+/**
+ * Receipt payload without the raw token — the shape for notice renderers
+ * (session updates, voids) that must NEVER embed a dispute link: their
+ * outbox rows are not paired with a freshly minted token, so any previously
+ * emailed token may be stale.
+ */
+export type WithoutTokenReceiptData = Omit<ReceiptEmailData, "token">;
+
 function formatPlayedAt(playedAt: Date | string): string {
   const d = typeof playedAt === "string" ? new Date(playedAt) : playedAt;
   if (Number.isNaN(d.getTime())) return "Unknown date";
   return d.toLocaleString("en-US", { dateStyle: "long", timeStyle: "short" });
 }
 
-function sessionLabel(data: ReceiptEmailData): string {
-  return data.session.title ?? formatPlayedAt(data.session.playedAt);
+/** Session label for subjects/bodies: title when present, else the date. */
+function sessionLabel(session: {
+  title: string | null;
+  playedAt: Date | string;
+}): string {
+  return session.title ?? formatPlayedAt(session.playedAt);
+}
+
+/** "voided" → "Voided" — human-readable session status line. */
+function statusLabel(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function receiptLink(data: ReceiptEmailData): string {
@@ -77,8 +94,24 @@ function emailShell(title: string, bodyHtml: string): string {
 </html>`;
 }
 
-function receiptHtml(data: ReceiptEmailData, headline: string, intro: string): string {
-  const link = receiptLink(data);
+interface NoticeOptions {
+  /** Render the token dispute button/link (receipt renderers only). */
+  includeLink?: boolean;
+  /** Status/version line under the table, e.g. "Status: Voided · Version 2". */
+  statusLine?: string;
+  /** Extra note paragraph under the table. */
+  note?: string;
+}
+
+function receiptHtml(
+  data: WithoutTokenReceiptData,
+  headline: string,
+  intro: string,
+  opts: NoticeOptions = {}
+): string {
+  // The token-bearing dispute link is reserved for receipt renderers; notice
+  // emails (updates/voids) carry no fresh token, so they pass no link.
+  const link = opts.includeLink ? receiptLink(data as ReceiptEmailData) : null;
   const rows = data.results
     .map((r) => {
       const highlight = r.isRecipient;
@@ -95,9 +128,9 @@ function receiptHtml(data: ReceiptEmailData, headline: string, intro: string): s
     })
     .join("");
   return emailShell(
-    `Poker receipt — ${sessionLabel(data)}`,
+    `Poker receipt — ${sessionLabel(data.session)}`,
     `<h1 style="font-size:22px;margin:0 0 4px;">${esc(headline)}</h1>
-    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(sessionLabel(data))}</p>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(sessionLabel(data.session))}</p>
     <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi ${esc(data.memberName)},</p>
     <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">${intro}</p>
     <table role="table" style="width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #DDD8CE;border-radius:10px;overflow:hidden;font-family:${FONT_SANS};font-size:15px;">
@@ -120,23 +153,41 @@ function receiptHtml(data: ReceiptEmailData, headline: string, intro: string): s
         ? `<p style="font-family:${FONT_SANS};font-size:13px;color:#5A655E;margin:12px 0 0;">Recorded by ${esc(data.recordedBy.name)}.</p>`
         : ""
     }
-    <p style="margin:24px 0 0;">
+    ${
+      opts.statusLine
+        ? `<p style="font-family:${FONT_SANS};font-size:13px;color:#5A655E;margin:12px 0 0;">${esc(opts.statusLine)}</p>`
+        : ""
+    }
+    ${
+      opts.note
+        ? `<p style="font-family:${FONT_SANS};font-size:13px;color:#5A655E;margin:8px 0 0;line-height:1.6;">${esc(opts.note)}</p>`
+        : ""
+    }
+    ${
+      link
+        ? `<p style="margin:24px 0 0;">
       <a href="${esc(link)}" style="display:inline-block;background:#1F6B4F;color:#FFFFFF;padding:12px 22px;border-radius:8px;text-decoration:none;font-family:${FONT_SANS};font-size:15px;font-weight:600;">View or dispute</a>
     </p>
     <p style="margin:18px 0 0;font-family:${FONT_SANS};font-size:13px;color:#5A655E;">
       <a href="${esc(link)}" style="color:#1F6B4F;">${esc(link)}</a>
     </p>
     <p style="margin:22px 0 0;font-family:${FONT_SANS};font-size:12px;color:#8A918B;line-height:1.6;">Poker Ledger is a friendly home game ledger. If something looks off, open the link above to dispute it before the group settles up.</p>`
+        : ""
+    }`
   );
 }
 
-function receiptText(data: ReceiptEmailData, intro: string): string {
+function receiptText(
+  data: WithoutTokenReceiptData,
+  intro: string,
+  opts: NoticeOptions = {}
+): string {
   const lines = [
     `Hi ${data.memberName},`,
     "",
     intro,
     "",
-    `Session: ${sessionLabel(data)}`,
+    `Session: ${sessionLabel(data.session)}`,
     "",
     "Results:",
     ...data.results.map(
@@ -148,7 +199,11 @@ function receiptText(data: ReceiptEmailData, intro: string): string {
   if (data.recordedBy) {
     lines.push(`Recorded by ${data.recordedBy.name}.`, "");
   }
-  lines.push("View or dispute: " + receiptLink(data));
+  if (opts.statusLine) lines.push(opts.statusLine, "");
+  if (opts.note) lines.push(opts.note, "");
+  if (opts.includeLink) {
+    lines.push("View or dispute: " + receiptLink(data as ReceiptEmailData));
+  }
   return lines.join("\n");
 }
 
@@ -158,9 +213,9 @@ export function renderReceiptEmail(data: ReceiptEmailData): RenderedEmail {
     data.session.title ? ` “${esc(data.session.title)}”` : ""
   }.`;
   return {
-    subject: `Poker receipt — ${sessionLabel(data)}`,
-    html: receiptHtml(data, "Your poker receipt", intro),
-    text: receiptText(data, intro)
+    subject: `Poker receipt — ${sessionLabel(data.session)}`,
+    html: receiptHtml(data, "Your poker receipt", intro, { includeLink: true }),
+    text: receiptText(data, intro, { includeLink: true })
   };
 }
 
@@ -169,11 +224,11 @@ export function renderResolutionEmail(data: ReceiptEmailData): RenderedEmail {
   const intro = `The session was updated${
     data.session.title ? ` (“${esc(data.session.title)}”)` : ""
   } — here is the current receipt.`;
-  const label = sessionLabel(data);
+  const label = sessionLabel(data.session);
   return {
     subject: `Poker receipt — ${label} (updated)`,
-    html: receiptHtml(data, "Updated poker receipt", intro),
-    text: receiptText(data, intro)
+    html: receiptHtml(data, "Updated poker receipt", intro, { includeLink: true }),
+    text: receiptText(data, intro, { includeLink: true })
   };
 }
 
@@ -222,4 +277,251 @@ You have been added to the Poker Ledger group. Amit will share the group passwor
 See you at the tables,
 Poker Ledger`
   };
+}
+
+// ---------------------------------------------------------------------------
+// Session notices — metadata updates, voids, and result corrections.
+// These NEVER embed a dispute token/link: notice outbox rows are not paired
+// with a freshly minted token, so any previously emailed token may be stale.
+// ---------------------------------------------------------------------------
+
+/** Session metadata update notice — informational, no dispute link. */
+export function renderSessionUpdatedEmail(
+  data: WithoutTokenReceiptData
+): RenderedEmail {
+  const intro = `This is a receipt update, not a new request — no action is needed on your part. The group admin updated the session${
+    data.session.title ? ` “${esc(data.session.title)}”` : ""
+  }, and the results below are current as of that update.`;
+  const statusLine = `Status: ${statusLabel(data.session.status)} · Version ${data.session.version}`;
+  const note =
+    "No dispute link is included in this notice. If the results are corrected, a fresh receipt link will be sent with the correction.";
+  return {
+    subject: `Poker session updated — ${sessionLabel(data.session)}`,
+    html: receiptHtml(data, "Session updated", intro, { statusLine, note }),
+    text: receiptText(data, intro, { statusLine, note })
+  };
+}
+
+/** Session voided notice — the session no longer counts toward the ledger. */
+export function renderSessionVoidedEmail(
+  data: WithoutTokenReceiptData
+): RenderedEmail {
+  const intro =
+    "This session was voided by the group admin and no longer counts toward the ledger. The results below are what was recorded — kept here for your reference.";
+  const statusLine = `Status: Voided · Version ${data.session.version}`;
+  return {
+    subject: "Poker session voided",
+    html: receiptHtml(data, "Session voided", intro, { statusLine }),
+    text: receiptText(data, intro, { statusLine })
+  };
+}
+
+export interface ResultsCorrectedEmailData {
+  origin: string;
+  memberName: string;
+  session: {
+    id: string;
+    playedAt: Date | string;
+    title: string | null;
+    version: number;
+    status: string;
+  };
+  beforeAmountCents: number;
+  afterAmountCents: number;
+  changeCents: number;
+  totalCents: number;
+}
+
+/** Results-corrected notice — this member's before/after/change only. */
+export function renderResultsCorrectedEmail(
+  data: ResultsCorrectedEmailData
+): RenderedEmail {
+  const label = sessionLabel(data.session);
+  const intro = `The group admin corrected the results for “${esc(
+    label
+  )}” — your amount changed as follows.`;
+  const statusLine = `Status: ${statusLabel(data.session.status)} · Version ${data.session.version}`;
+  const link = `${data.origin}/poker`;
+  const amountRows = [
+    { name: "Previous amount", value: formatCents(data.beforeAmountCents) },
+    { name: "New amount", value: formatCents(data.afterAmountCents) },
+    { name: "Change", value: formatCents(data.changeCents) }
+  ]
+    .map(
+      (r, i) =>
+        `<tr>
+          <th scope="row" style="padding:9px 14px;${i > 0 ? "border-top:1px solid #F0ECE2;" : ""}font-weight:600;text-align:left;">${esc(r.name)}</th>
+          <td style="padding:9px 14px;${i > 0 ? "border-top:1px solid #F0ECE2;" : ""}text-align:right;font-weight:600;">${esc(r.value)}</td>
+        </tr>`
+    )
+    .join("");
+  const html = emailShell(
+    "Poker results corrected",
+    `<h1 style="font-size:22px;margin:0 0 4px;">Results corrected</h1>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(label)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi ${esc(data.memberName)},</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">${intro}</p>
+    <table role="table" style="width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #DDD8CE;border-radius:10px;overflow:hidden;font-family:${FONT_SANS};font-size:15px;">
+      <tbody>
+        ${amountRows}
+      </tbody>
+    </table>
+    <p style="font-family:${FONT_SANS};font-size:13px;color:#5A655E;margin:12px 0 0;">${esc(statusLine)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:16px 0 0;">The group admin corrected the session — the ledger now reflects the corrected results.</p>
+    <p style="margin:20px 0 0;">
+      <a href="${esc(link)}" style="display:inline-block;background:#1F6B4F;color:#FFFFFF;padding:12px 22px;border-radius:8px;text-decoration:none;font-family:${FONT_SANS};font-size:15px;font-weight:600;">Open the poker ledger</a>
+    </p>
+    <p style="margin:16px 0 0;font-family:${FONT_SANS};font-size:13px;color:#5A655E;">
+      <a href="${esc(link)}" style="color:#1F6B4F;">${esc(link)}</a>
+    </p>`
+  );
+  const text = `Hi ${data.memberName},
+
+${intro}
+
+Previous amount: ${formatCents(data.beforeAmountCents)}
+New amount: ${formatCents(data.afterAmountCents)}
+Change: ${formatCents(data.changeCents)}
+
+${statusLine}
+
+The group admin corrected the session — the ledger now reflects the corrected results.
+Open the poker ledger: ${link}`;
+  return { subject: "Poker results corrected", html, text };
+}
+
+// ---------------------------------------------------------------------------
+// Dispute notices — admin alert + participant acknowledgements.
+// Links go to /poker only: the portal requires the group password (shared
+// separately, never emailed) and raw tokens are never embedded here.
+// ---------------------------------------------------------------------------
+
+export interface DisputeNoticeEmailData {
+  origin: string;
+  memberName: string;
+  reason: string;
+  sessionTitle: string | null;
+  playedAt: Date | string;
+  sessionId: string;
+}
+
+function disputeSessionLabel(
+  data: Pick<DisputeNoticeEmailData, "sessionTitle" | "playedAt">
+): string {
+  return data.sessionTitle ?? formatPlayedAt(data.playedAt);
+}
+
+function ledgerLinkHtml(origin: string): string {
+  const link = `${origin}/poker`;
+  return `<p style="margin:24px 0 0;">
+    <a href="${esc(link)}" style="display:inline-block;background:#1F6B4F;color:#FFFFFF;padding:12px 22px;border-radius:8px;text-decoration:none;font-family:${FONT_SANS};font-size:15px;font-weight:600;">Open the poker ledger</a>
+  </p>
+  <p style="margin:18px 0 0;font-family:${FONT_SANS};font-size:13px;color:#5A655E;">
+    <a href="${esc(link)}" style="color:#1F6B4F;">${esc(link)}</a>
+  </p>`;
+}
+
+/** Admin alert when a participant opens a dispute. */
+export function renderDisputeOpenedEmail(
+  data: DisputeNoticeEmailData
+): RenderedEmail {
+  const label = disputeSessionLabel(data);
+  const html = emailShell(
+    `Dispute opened — ${label}`,
+    `<h1 style="font-size:22px;margin:0 0 4px;">Dispute opened</h1>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(label)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi,</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;"><strong>${esc(data.memberName)}</strong> disputes the session “${esc(label)}” (${esc(formatPlayedAt(data.playedAt))}). Their reason:</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;padding:14px 16px;background:#FFFFFF;border:1px solid #DDD8CE;border-radius:10px;">${esc(data.reason)}</p>
+    ${ledgerLinkHtml(data.origin)}
+    <p style="margin:22px 0 0;font-family:${FONT_SANS};font-size:12px;color:#8A918B;line-height:1.6;">Resolve it from the admin portal once you have signed in — the portal requires the group password, which is shared separately and never included in email.</p>`
+  );
+  const text = `Hi,
+
+${data.memberName} disputes the session "${label}" (${formatPlayedAt(data.playedAt)}).
+
+Reason:
+${data.reason}
+
+Resolve it from the admin portal (requires the group password — shared separately, never emailed):
+${data.origin}/poker`;
+  return { subject: `Dispute opened — ${label}`, html, text };
+}
+
+/** Acknowledgment to the participant who opened the dispute. */
+export function renderDisputeAckEmail(
+  data: Omit<DisputeNoticeEmailData, "memberName">
+): RenderedEmail {
+  const label = disputeSessionLabel(data);
+  const html = emailShell(
+    "Dispute received",
+    `<h1 style="font-size:22px;margin:0 0 4px;">Dispute received</h1>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(label)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi there,</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">Your dispute about the session “${esc(label)}” (${esc(formatPlayedAt(data.playedAt))}) was received. The group admin will review it.</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">Reason: ${esc(data.reason)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">The ledger is unchanged until the dispute is resolved.</p>
+    ${ledgerLinkHtml(data.origin)}
+    <p style="margin:22px 0 0;font-family:${FONT_SANS};font-size:12px;color:#8A918B;line-height:1.6;">Signing in may require the group password — the group admin shares it separately, and it is never included in email.</p>`
+  );
+  const text = `Hi there,
+
+Your dispute about the session "${label}" (${formatPlayedAt(data.playedAt)}) was received. The group admin will review it.
+
+Reason:
+${data.reason}
+
+The ledger is unchanged until the dispute is resolved.
+Open the poker ledger: ${data.origin}/poker
+
+(Signing in may require the group password — the group admin shares it separately, and it is never included in email.)`;
+  return { subject: "Dispute received", html, text };
+}
+
+/** Resolution notice to the disputing participant (neutral phrasing). */
+export function renderDisputeResolvedEmail(
+  data: DisputeNoticeEmailData
+): RenderedEmail {
+  const label = disputeSessionLabel(data);
+  const html = emailShell(
+    `Dispute resolved — ${label}`,
+    `<h1 style="font-size:22px;margin:0 0 4px;">Dispute resolved</h1>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(label)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi ${esc(data.memberName)},</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">The group admin resolved the dispute about the session “${esc(label)}” (${esc(formatPlayedAt(data.playedAt))}). Check the ledger for the current totals — the session may have been corrected as part of the resolution.</p>
+    ${ledgerLinkHtml(data.origin)}
+    <p style="margin:22px 0 0;font-family:${FONT_SANS};font-size:12px;color:#8A918B;line-height:1.6;">Signing in may require the group password — the group admin shares it separately, and it is never included in email.</p>`
+  );
+  const text = `Hi ${data.memberName},
+
+The group admin resolved the dispute about the session "${label}" (${formatPlayedAt(data.playedAt)}). Check the ledger for the current totals — the session may have been corrected as part of the resolution.
+
+Open the poker ledger: ${data.origin}/poker
+
+(Signing in may require the group password — the group admin shares it separately, and it is never included in email.)`;
+  return { subject: `Dispute resolved — ${label}`, html, text };
+}
+
+/** Dismissal notice to the disputing participant — the session stands. */
+export function renderDisputeDismissedEmail(
+  data: DisputeNoticeEmailData
+): RenderedEmail {
+  const label = disputeSessionLabel(data);
+  const html = emailShell(
+    `Dispute dismissed — ${label}`,
+    `<h1 style="font-size:22px;margin:0 0 4px;">Dispute dismissed</h1>
+    <p style="margin:0 0 22px;color:#5A655E;font-family:${FONT_SANS};font-size:13px;">${esc(label)}</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 6px;">Hi ${esc(data.memberName)},</p>
+    <p style="font-family:${FONT_SANS};font-size:15px;line-height:1.5;margin:0 0 20px;">The group admin dismissed the dispute about the session “${esc(label)}” (${esc(formatPlayedAt(data.playedAt))}). The session stands as recorded.</p>
+    ${ledgerLinkHtml(data.origin)}
+    <p style="margin:22px 0 0;font-family:${FONT_SANS};font-size:12px;color:#8A918B;line-height:1.6;">Signing in may require the group password — the group admin shares it separately, and it is never included in email.</p>`
+  );
+  const text = `Hi ${data.memberName},
+
+The group admin dismissed the dispute about the session "${label}" (${formatPlayedAt(data.playedAt)}). The session stands as recorded.
+
+Open the poker ledger: ${data.origin}/poker
+
+(Signing in may require the group password — the group admin shares it separately, and it is never included in email.)`;
+  return { subject: `Dispute dismissed — ${label}`, html, text };
 }

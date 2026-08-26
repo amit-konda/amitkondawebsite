@@ -188,6 +188,21 @@ async function loadResults(dbx: Db, sessionId: string): Promise<ResultInput[]> {
   return rows;
 }
 
+/** Current participants with their normalized emails — for notice enqueues. */
+async function loadParticipantEmails(
+  dbx: Db,
+  sessionId: string
+): Promise<Array<{ memberId: string; emailNormalized: string }>> {
+  return dbx
+    .select({
+      memberId: sessionResults.memberId,
+      emailNormalized: members.emailNormalized
+    })
+    .from(sessionResults)
+    .innerJoin(members, eq(members.id, sessionResults.memberId))
+    .where(eq(sessionResults.sessionId, sessionId));
+}
+
 /** Validate a result set against the domain rules; throws 400 with fieldErrors. */
 async function validateResultsInput(dbx: Db, input: ResultInput[]): Promise<ResultInput[]> {
   const validation = validateSessionResults(input);
@@ -541,6 +556,31 @@ export function registerSessionsRoutes(router: Router): void {
           await issueDisputeToken(tx, sessionId, r.memberId);
           const m = memberById.get(r.memberId)!;
           await enqueueReceipt(tx, sessionId, newVersion, m);
+          // Correction notice alongside the fresh receipt so the send layer
+          // can show each participant their before/after/change.
+          await enqueueEmail(tx, {
+            eventType: "results_corrected",
+            entityType: "session",
+            entityId: sessionId,
+            version: newVersion,
+            recipientEmail: m.emailNormalized,
+            recipientMemberId: m.id
+          });
+        }
+      } else {
+        // Metadata-only edit (no results): notify EVERY current participant
+        // at the new version. No receipts/tokens are touched, so no dispute
+        // link is emailed — previously emailed tokens may be stale.
+        const participants = await loadParticipantEmails(tx, sessionId);
+        for (const p of participants) {
+          await enqueueEmail(tx, {
+            eventType: "session_updated",
+            entityType: "session",
+            entityId: sessionId,
+            version: newVersion,
+            recipientEmail: p.emailNormalized,
+            recipientMemberId: p.memberId
+          });
         }
       }
 
@@ -599,6 +639,20 @@ export function registerSessionsRoutes(router: Router): void {
         .update(disputeTokens)
         .set({ revokedAt: new Date() })
         .where(and(eq(disputeTokens.sessionId, sessionId), isNull(disputeTokens.revokedAt)));
+      // Void notice for every current participant at the bumped version —
+      // only reached when a void actually happened (the idempotent path
+      // above returns early, so re-voids never duplicate these rows).
+      const participants = await loadParticipantEmails(tx, sessionId);
+      for (const p of participants) {
+        await enqueueEmail(tx, {
+          eventType: "session_voided",
+          entityType: "session",
+          entityId: sessionId,
+          version: newVersion,
+          recipientEmail: p.emailNormalized,
+          recipientMemberId: p.memberId
+        });
+      }
       await writeAudit(tx, {
         actorLabel: "admin",
         action: "session.void",

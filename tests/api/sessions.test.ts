@@ -706,15 +706,23 @@ describe("session lifecycle", () => {
     expect(newTokens.map((t) => t.memberId).sort()).toEqual([alice.id, dave.id].sort());
     expect(newTokens.every((t) => /^[0-9a-f]{64}$/.test(t.tokenHash))).toBe(true);
 
-    // Receipts re-enqueued at the new version (v1 ×3 + v2 ×2).
+    // Receipts re-enqueued at the new version (v1 ×3 + v2 ×2), plus one
+    // results_corrected notice per participant at v2.
     const deliveries = await tdb.db
       .select()
       .from(emailDeliveries)
       .where(eq(emailDeliveries.entityId, s1.id));
-    expect(deliveries).toHaveLength(5);
+    expect(deliveries).toHaveLength(7);
     const v2 = deliveries.filter((d) => d.version === 2);
-    expect(v2).toHaveLength(2);
-    expect(new Set(v2.map((d) => d.recipientEmail))).toEqual(
+    expect(v2).toHaveLength(4);
+    const v2Receipts = v2.filter((d) => d.eventType === "session_receipt");
+    expect(v2Receipts).toHaveLength(2);
+    expect(new Set(v2Receipts.map((d) => d.recipientEmail))).toEqual(
+      new Set(["alice@example.com", "dave@example.com"])
+    );
+    const v2Corrected = v2.filter((d) => d.eventType === "results_corrected");
+    expect(v2Corrected).toHaveLength(2);
+    expect(new Set(v2Corrected.map((d) => d.recipientEmail))).toEqual(
       new Set(["alice@example.com", "dave@example.com"])
     );
 
@@ -755,7 +763,17 @@ describe("session lifecycle", () => {
       .select()
       .from(emailDeliveries)
       .where(eq(emailDeliveries.entityId, s1.id));
-    expect(deliveries).toHaveLength(5);
+    // v1 ×3 receipts + v2 ×2 receipts + v2 ×2 corrections + v3 ×2 update
+    // notices (s1 participants are Alice + Dave after the results edit).
+    expect(deliveries).toHaveLength(9);
+    // The metadata-only edit sent NO fresh receipts — only update notices.
+    const v3 = deliveries.filter((d) => d.version === 3);
+    expect(v3).toHaveLength(2);
+    expect(v3.every((d) => d.eventType === "session_updated")).toBe(true);
+    expect(new Set(v3.map((d) => d.recipientEmail))).toEqual(
+      new Set(["alice@example.com", "dave@example.com"])
+    );
+    expect(deliveries.filter((d) => d.eventType === "session_receipt")).toHaveLength(5);
     const tokens = await tdb.db
       .select()
       .from(disputeTokens)

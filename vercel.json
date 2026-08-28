@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "routes": [
+    {
+      "src": "/api/poker(?:/(.*))?",
+      "dest": "/api/poker/[...route].ts"
+    }
+  ],
   "headers": [
     {
       "source": "/poker/(.*)",

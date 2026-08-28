@@ -110,12 +110,14 @@ export async function checkRateLimit(
     return { ok: true };
   } catch (err) {
     const temporaryLoginFallback =
-      preset.scope === "login_ip" || preset.scope === "login_global";
+      preset.scope === "login_ip" ||
+      preset.scope === "login_global" ||
+      preset.scope === "admin_unlock_ip";
     if (preset.failClosed && !temporaryLoginFallback) {
       console.error("rate limiter unavailable (fail closed):", err);
       throw new ApiError(503, "rate_limiter_unavailable", "Try again shortly.");
     }
-    console.error("rate limiter unavailable; allowing login flow:", err);
+    console.error("rate limiter unavailable; allowing auth flow:", err);
     return { ok: true };
   }
 }

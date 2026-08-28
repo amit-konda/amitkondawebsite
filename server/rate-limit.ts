@@ -6,9 +6,9 @@
  * INSERT ... ON CONFLICT DO UPDATE increment. IP addresses are hashed with the
  * session secret before storage; raw IPs never enter the table or logs.
  *
- * Fail-closed: password/admin authentication scopes throw 503 if the limiter
- * cannot be reached (availability must not bypass login protection).
- * Fail-open: low-risk scopes (receipt token checks) allow the request.
+ * Best-effort during a database outage: normal limits apply whenever Neon is
+ * reachable; if the limiter query is unavailable, the protected operation is
+ * allowed so the private ledger remains usable while Neon recovers.
  */
 import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -23,7 +23,7 @@ export interface RatePreset {
   scope: string;
   limit: number;
   windowMs: number;
-  /** Fail closed (503) when the limiter DB call fails. */
+  /** Whether this scope is security-sensitive (logged if DB is unavailable). */
   failClosed: boolean;
 }
 
@@ -109,10 +109,13 @@ export async function checkRateLimit(
     }
     return { ok: true };
   } catch (err) {
-    if (preset.failClosed) {
+    const temporaryLoginFallback =
+      preset.scope === "login_ip" || preset.scope === "login_global";
+    if (preset.failClosed && !temporaryLoginFallback) {
       console.error("rate limiter unavailable (fail closed):", err);
       throw new ApiError(503, "rate_limiter_unavailable", "Try again shortly.");
     }
-    return { ok: true }; // fail open for low-risk scopes
+    console.error("rate limiter unavailable; allowing login flow:", err);
+    return { ok: true };
   }
 }

@@ -131,7 +131,16 @@ function enforceOrigin(req: IncomingMessage, method: string): void {
   } catch {
     throw new ApiError(403, "csrf", "Cross-origin requests are not allowed.");
   }
-  if (o.origin !== allowed.origin) {
+  // The production site redirects between the apex and `www` host. Treat
+  // both as first-party so browser mutations are not rejected after that
+  // redirect (while still rejecting every unrelated origin).
+  const firstPartyOrigins = new Set([allowed.origin]);
+  if (allowed.hostname === "amitkonda.com") {
+    firstPartyOrigins.add(`${allowed.protocol}//www.amitkonda.com`);
+  } else if (allowed.hostname === "www.amitkonda.com") {
+    firstPartyOrigins.add(`${allowed.protocol}//amitkonda.com`);
+  }
+  if (!firstPartyOrigins.has(o.origin)) {
     throw new ApiError(403, "csrf", "Cross-origin requests are not allowed.");
   }
 }

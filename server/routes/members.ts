@@ -54,6 +54,7 @@ const createMemberSchema = z.object({
 
 const patchMemberSchema = z.object({
   displayName: displayNameSchema.optional(),
+  email: emailSchema.optional().or(z.literal("")),
   status: z.enum(["active", "inactive"]).optional()
 });
 
@@ -189,6 +190,12 @@ export function registerMembersRoutes(router: Router): void {
       .from(members)
       .where(eq(members.status, "active"))
       .orderBy(asc(members.displayName), asc(members.id));
+    return { members: rows };
+  });
+
+  route(router, "get", "/admin/members", async (ctx) => {
+    requireAdmin(ctx);
+    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, status: members.status }).from(members).orderBy(asc(members.displayName));
     return { members: rows };
   });
 
@@ -394,7 +401,7 @@ export function registerMembersRoutes(router: Router): void {
     const current = rows[0] ?? null;
     if (!current) throw notFound("Member not found.");
 
-    if (body.displayName === undefined && body.status === undefined) {
+    if (body.displayName === undefined && body.email === undefined && body.status === undefined) {
       // Nothing to change — idempotent no-op.
       return {
         member: {
@@ -406,8 +413,9 @@ export function registerMembersRoutes(router: Router): void {
       };
     }
 
-    const set: { displayName?: string; status?: "active" | "inactive" } = {};
+    const set: { displayName?: string; emailNormalized?: string; status?: "active" | "inactive" } = {};
     if (body.displayName !== undefined) set.displayName = body.displayName;
+    if (body.email !== undefined) set.emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
     if (body.status !== undefined) set.status = body.status;
 
     const updated = await db.transaction(async (tx) => {

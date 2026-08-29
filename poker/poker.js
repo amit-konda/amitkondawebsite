@@ -1581,8 +1581,9 @@ function openMembersPanel() {
   });
 
   async function refreshList() {
-    const ok = await loadMembers();
-    if (!ok) {
+    let adminMembers;
+    try { adminMembers = (await api("/admin/members")).members ?? []; state.members = adminMembers; fillViewerSelect(); }
+    catch {
       renderErrorBox(listWrap, "Couldn't load members.", refreshList);
       return;
     }
@@ -1618,6 +1619,15 @@ function buildMemberRow(m, refresh) {
   name.className = "part-name";
   name.textContent = m.name;
   row.appendChild(name);
+  const edit = document.createElement("button");
+  edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
+  edit.addEventListener("click", () => {
+    const body = document.createElement("form"); body.className = "stack";
+    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
+    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
+    openModal({ title: "Edit member", body });
+  });
+  row.appendChild(edit);
   const deact = document.createElement("button");
   deact.type = "button";
   deact.className = "btn btn-small btn-danger";

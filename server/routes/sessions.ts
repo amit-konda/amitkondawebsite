@@ -293,24 +293,24 @@ export function registerSessionsRoutes(router: Router): void {
       .from(members)
       .leftJoin(sessionResults, eq(sessionResults.memberId, members.id))
       .leftJoin(pokerSessions, eq(pokerSessions.id, sessionResults.sessionId))
-      // Only active members appear in the current ledger. Historical results
-      // remain stored, but deactivated players are intentionally hidden.
-      .where(eq(members.status, "active"))
       .groupBy(members.id, members.displayName);
-    rows.sort(
+    const allRows = rows.map((r) => ({ ...r, netCents: Number(r.netCents) }));
+    const activeIds = new Set((await db.select({ id: members.id }).from(members).where(eq(members.status, "active"))).map((m) => m.id));
+    const filtered = allRows.filter((r) => activeIds.has(r.id));
+    filtered.sort(
       (a, b) =>
         Number(b.netCents) - Number(a.netCents) ||
         (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
     );
-    const out = rows.map((r) => ({
+    const out = filtered.map((r) => ({
       memberId: r.id,
       name: r.name,
-      netCents: Number(r.netCents),
+      netCents: r.netCents,
       sessionsPlayed: Number(r.sessionsPlayed),
       lastPlayedAt: r.lastPlayedAt ?? null,
       isViewer: r.id === claims.mid
     }));
-    const totalCents = out.reduce((acc, r) => acc + r.netCents, 0);
+    const totalCents = allRows.reduce((acc, r) => acc + r.netCents, 0);
     return { totalCents, rows: out };
   });
 

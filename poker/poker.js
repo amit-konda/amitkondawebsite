@@ -115,6 +115,9 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
  *   createdSessionId: string|null,
  *   pendingDeliveryShortfall: number|null,
  *   live: any|null,
+ *   blackjackLedger: LedgerData|null,
+ *   blackjackSessions: any[],
+ *   gameTab: string,
  * }}
  */
 const state = {
@@ -129,6 +132,9 @@ const state = {
   createdSessionId: null,
   pendingDeliveryShortfall: null,
   live: null,
+  blackjackLedger: null,
+  blackjackSessions: [],
+  gameTab: "poker",
 };
 
 /* ── DOM helpers ───────────────────────────────────────────── */
@@ -513,10 +519,10 @@ function closeModal() {
 
 /* ── Views ─────────────────────────────────────────────────── */
 
-const VIEW_IDS = ["view-gate", "view-dashboard", "view-detail", "view-dispute"];
+const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-detail", "view-dispute"];
 
 /**
- * @param {"gate"|"dashboard"|"detail"|"dispute"} name
+ * @param {"gate"|"dashboard"|"blackjack"|"detail"|"dispute"} name
  */
 function showView(name) {
   for (const id of VIEW_IDS) el(id).hidden = id !== "view-" + name;
@@ -576,14 +582,18 @@ function route() {
   state.token = token && token.length > 0 ? token : null;
   if (!state.status || !state.status.group) {
     el("topbar-controls").hidden = true;
+    el("game-tabs").hidden = true;
     renderGate();
     return;
   }
   el("topbar-controls").hidden = false;
+  el("game-tabs").hidden = false;
+  updateGameTabs();
   if (state.token) {
     renderDisputeView();
   } else {
-    renderDashboard();
+    if (state.gameTab === "blackjack") renderBlackjackDashboard();
+    else renderDashboard();
   }
 }
 
@@ -787,6 +797,56 @@ async function renderDashboard() {
       message: "Pick your name in the top bar so the sessions you record are marked as yours.",
     });
   }
+}
+
+async function renderBlackjackDashboard() {
+  showView("blackjack");
+  fillViewerSelect();
+  const ledgerBody = el("blackjack-ledger-body");
+  const sessionsBody = el("blackjack-sessions-body");
+  ledgerBody.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
+  sessionsBody.innerHTML = `<div class="skel skel-block"></div>`;
+  const membersOk = await loadMembers();
+  if (!membersOk) showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderBlackjackDashboard });
+  await Promise.allSettled([loadBlackjackLedger(), loadBlackjackSessions()]);
+}
+
+async function loadBlackjackLedger() {
+  try { const data = await api("/blackjack/ledger"); state.blackjackLedger = { totalCents: data.totalCents ?? 0, rows: data.rows ?? [] }; renderBlackjackLedger(); }
+  catch (e) { renderErrorBox(el("blackjack-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack ledger."), loadBlackjackLedger); }
+}
+
+function renderBlackjackLedger() {
+  const body = el("blackjack-ledger-body"); const ledger = state.blackjackLedger;
+  if (!ledger || ledger.rows.length === 0) { body.innerHTML = `<p class="empty-state">No blackjack sessions yet.</p>`; return; }
+  body.innerHTML = ledger.rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.isViewer ? ` <span class="you-tag">YOU</span>` : ""}<div class="ledger-sub">${r.sessionsPlayed} session${r.sessionsPlayed === 1 ? "" : "s"}</div></div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(ledger.totalCents))}</strong></div>`;
+}
+
+async function loadBlackjackSessions() {
+  try { const data = await api("/blackjack/sessions"); state.blackjackSessions = data.sessions ?? []; renderBlackjackSessions(); }
+  catch (e) { renderErrorBox(el("blackjack-sessions-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load blackjack sessions."), loadBlackjackSessions); }
+}
+
+function renderBlackjackSessions() {
+  const body = el("blackjack-sessions-body");
+  if (!state.blackjackSessions.length) { body.innerHTML = `<p class="empty-state">No blackjack sessions yet.</p>`; return; }
+  body.innerHTML = state.blackjackSessions.map((s) => { const date = new Date(s.playedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }); const players = s.participants.filter((p) => p.memberId !== s.recordedBy).length; return `<button class="session-card" type="button" data-blackjack-id="${esc(s.id)}"><span class="sess-date">${esc(date)}</span><span class="sess-summary">${players} player${players === 1 ? "" : "s"}</span><span class="sess-title">${esc(s.title || "Blackjack")}</span><span class="sess-chev">›</span></button>`; }).join("");
+  body.querySelectorAll("[data-blackjack-id]").forEach((node) => node.addEventListener("click", () => openBlackjackDetail(node.getAttribute("data-blackjack-id"))));
+}
+
+function openBlackjackModal() {
+  if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first — the selected profile must be the dealer." }); return; }
+  const players = state.members.filter((m) => m.id !== state.status?.viewer?.id);
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<div class="form-grid"><div><label class="field" for="bj-title">Session name (optional)</label><input id="bj-title" class="input" maxlength="120" placeholder="Friday blackjack"></div><div><label class="field" for="bj-date">Date</label><input id="bj-date" class="input" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div><fieldset class="part-fieldset"><legend class="field">Players and results</legend><p class="form-hint">Enter each player’s net result. Positive means the player won; negative means they lost. The dealer result is calculated automatically.</p><div id="bj-players"></div></fieldset><label class="check-row"><input id="bj-verify" type="checkbox"> I verify these results as the dealer.</label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="bj-cancel">Cancel</button><button type="button" class="btn btn-primary" id="bj-submit">Save blackjack session</button></div>`;
+  openModal({ title: "Add blackjack session", body, wide: true });
+  const rows = players.map((m) => { const row = document.createElement("div"); row.className = "part-row"; row.innerHTML = `<span class="part-name">${esc(m.name)}</span><input class="input part-amount money" type="text" inputmode="decimal" placeholder="+$0.00 / -$0.00">`; q(body, "#bj-players").appendChild(row); return { memberId: m.id, amount: /** @type {HTMLInputElement} */ (q(row, ".part-amount")) }; });
+  q(body, "#bj-cancel").addEventListener("click", closeModal);
+  q(body, "#bj-submit").addEventListener("click", async () => { const verify = /** @type {HTMLInputElement} */ (q(body, "#bj-verify")); const results = rows.map((r) => ({ memberId: r.memberId, amountCents: parseDollarsToCents(r.amount.value) })).filter((r) => r.amountCents !== null); if (!verify.checked) return showBanner({ kind: "error", message: "Confirm that you verified the results as the dealer." }); if (results.length === 0) return showBanner({ kind: "error", message: "Enter at least one player result." }); const submit = /** @type {HTMLButtonElement} */ (q(body, "#bj-submit")); submit.disabled = true; try { await api("/blackjack/sessions", { method: "POST", body: { requestKey: crypto.randomUUID(), playedAt: new Date(`${field("bj-date").value}T12:00:00`).toISOString(), title: field("bj-title").value.trim() || undefined, verifiedDealer: true, players: results } }); closeModal(); await Promise.all([loadBlackjackLedger(), loadBlackjackSessions()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the blackjack session.") }); submit.disabled = false; } });
+}
+
+async function openBlackjackDetail(id) {
+  if (!id) return; try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><p class="detail-meta">Dealer: ${esc(s.participants.find((p) => p.memberId === s.dealerMemberId)?.name || "Unknown")}</p><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => route()); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
 }
 
 /**
@@ -2100,10 +2160,22 @@ function wireStatic() {
   /** @type {HTMLButtonElement} */ (el("add-session-btn")).addEventListener("click", onAddSession);
   el("start-live-btn").addEventListener("click", openStartLiveModal);
   el("live-banner").addEventListener("click", openLiveModal);
+  el("add-blackjack-btn").addEventListener("click", openBlackjackModal);
+  el("tab-poker").addEventListener("click", () => { state.gameTab = "poker"; updateGameTabs(); route(); });
+  el("tab-blackjack").addEventListener("click", () => { state.gameTab = "blackjack"; updateGameTabs(); route(); });
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
   /** @type {HTMLButtonElement} */ (el("admin-lock-btn")).addEventListener("click", onAdminLock);
+}
+
+function updateGameTabs() {
+  for (const tab of ["poker", "blackjack"]) {
+    const active = state.gameTab === tab;
+    const node = el(`tab-${tab}`);
+    node.classList.toggle("is-active", active);
+    node.setAttribute("aria-selected", String(active));
+  }
 }
 
 async function init() {

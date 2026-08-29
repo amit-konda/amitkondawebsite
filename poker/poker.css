@@ -105,6 +105,14 @@ a:visited { color: var(--felt-dark); }
   letter-spacing: 0.06em;
 }
 
+.game-tabs { display: inline-flex; align-items: center; gap: 4px; padding: 3px; border: 1px solid rgba(30, 55, 43, 0.10); border-radius: 12px; background: rgba(255,255,255,.42); }
+.game-tab { border: 0; border-radius: 9px; padding: 7px 12px; color: var(--muted); background: transparent; font: inherit; font-size: .88rem; font-weight: 650; cursor: pointer; }
+.game-tab.is-active { color: var(--ink); background: rgba(255,255,255,.9); box-shadow: 0 3px 10px rgba(33,58,44,.10); }
+.game-tab:focus-visible { outline: 2px solid var(--felt); outline-offset: 1px; }
+.blackjack-dealer-note { align-self: center; }
+.detail-results { margin-top: 18px; border-top: 1px solid var(--row-line); }
+.detail-result { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
+
 .topbar-controls {
   display: flex;
   align-items: center;
@@ -756,6 +764,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   .topbar { padding: 14px 16px 4px; gap: 10px; }
   .topbar-controls { width: 100%; margin-left: 0; }
   .viewer-select { min-width: 0; flex: 1; max-width: none; }
+  .game-tabs { order: 3; width: 100%; }
+  .game-tab { flex: 1; }
 
   main { padding: 12px 14px 48px; }
 
@@ -766,6 +776,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 
   .field-row { flex-direction: column; }
   .field-row .btn { width: 100%; }
+  .blackjack-dealer-note { width: 100%; }
 
   .sess-date { min-width: 0; }
   .session-card { flex-wrap: wrap; row-gap: 2px; padding: 12px 6px; }

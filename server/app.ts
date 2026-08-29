@@ -12,6 +12,7 @@ import { registerDisputesRoutes } from "./routes/disputes.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerLiveRoutes } from "./routes/live.js";
+import { registerBlackjackRoutes } from "./routes/blackjack.js";
 
 export function createAppRouter(): Router {
   const r = new Router();
@@ -23,6 +24,7 @@ export function createAppRouter(): Router {
   registerWebhookRoutes(r);
   registerFeedbackRoutes(r);
   registerLiveRoutes(r);
+  registerBlackjackRoutes(r);
   return r;
 }
 

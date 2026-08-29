@@ -22,6 +22,7 @@ import {
 export const memberStatus = pgEnum("member_status", ["active", "inactive"]);
 export const joinRequestStatus = pgEnum("join_request_status", ["pending", "approved", "rejected"]);
 export const sessionStatus = pgEnum("session_status", ["active", "live", "disputed", "resolved", "voided"]);
+export const gameType = pgEnum("game_type", ["poker", "blackjack"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
@@ -94,6 +95,7 @@ export const pokerSessions = pgTable(
     playedAt: ts("played_at").notNull(),
     title: text("title"),
     notes: text("notes"),
+    gameType: gameType("game_type").notNull().default("poker"),
     recordedByMemberId: uuid("recorded_by_member_id").references(() => members.id),
     status: sessionStatus("status").notNull().default("active"),
     version: integer("version").notNull().default(1),

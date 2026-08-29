@@ -16,6 +16,10 @@
 <header class="topbar">
   <a class="topbar-home" href="/" aria-label="Back to amitkonda.com">&larr;&nbsp;amitkonda.com</a>
   <span class="topbar-title">Poker Ledger</span>
+  <nav class="game-tabs" id="game-tabs" aria-label="Game ledger">
+    <button class="game-tab is-active" id="tab-poker" type="button" aria-selected="true">Poker</button>
+    <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
+  </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
     <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)"></select>
     <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
@@ -115,6 +119,19 @@
           <h2 class="card-heading">Recent sessions</h2>
           <div id="sessions-body"></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-blackjack" class="view" hidden>
+    <div class="dash">
+      <div class="dash-actions">
+        <button id="add-blackjack-btn" class="btn btn-primary" type="button">+ Add blackjack session</button>
+        <span class="form-hint blackjack-dealer-note">The selected profile is the dealer.</span>
+      </div>
+      <div class="dash-grid">
+        <div class="card"><h2 class="card-heading">Blackjack ledger</h2><div id="blackjack-ledger-body"></div></div>
+        <div class="card"><h2 class="card-heading">Recent blackjack</h2><div id="blackjack-sessions-body"></div></div>
       </div>
     </div>
   </section>

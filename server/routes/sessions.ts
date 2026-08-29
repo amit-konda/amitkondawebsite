@@ -346,9 +346,12 @@ export function registerSessionsRoutes(router: Router): void {
         // NOTE: pass the cursor timestamp as an ISO string + explicit cast —
         // raw Date params crash the postgres.js driver when drizzle's
         // transparent serializer is installed (drizzle-orm/postgres-js).
-        after
-          ? sql`(${pokerSessions.playedAt}, ${pokerSessions.id}) < (${after.playedAt.toISOString()}::timestamptz, ${after.id})`
-          : sql`true`
+        and(
+          ne(pokerSessions.status, "live"),
+          after
+            ? sql`(${pokerSessions.playedAt}, ${pokerSessions.id}) < (${after.playedAt.toISOString()}::timestamptz, ${after.id})`
+            : sql`true`
+        )
       )
       .orderBy(desc(pokerSessions.playedAt), desc(pokerSessions.id))
       .limit(limit + 1);

@@ -21,7 +21,7 @@ import {
 
 export const memberStatus = pgEnum("member_status", ["active", "inactive"]);
 export const joinRequestStatus = pgEnum("join_request_status", ["pending", "approved", "rejected"]);
-export const sessionStatus = pgEnum("session_status", ["active", "disputed", "resolved", "voided"]);
+export const sessionStatus = pgEnum("session_status", ["active", "live", "disputed", "resolved", "voided"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
@@ -117,7 +117,8 @@ export const pokerSessions = pgTable(
       sql`char_length(${t.requestKey}) between 8 and 64`
     ),
     check("poker_sessions_version_gt0", sql`${t.version} >= 1`),
-    index("poker_sessions_status_played_idx").on(t.status, t.playedAt)
+    index("poker_sessions_status_played_idx").on(t.status, t.playedAt),
+    uniqueIndex("poker_sessions_one_live_uidx").on(t.status).where(sql`${t.status} = 'live'`)
   ]
 );
 
@@ -137,10 +138,47 @@ export const sessionResults = pgTable(
     amountCents: bigint("amount_cents", { mode: "number" }).notNull()
   },
   (t) => [
-    check("session_results_amount_nonzero", sql`${t.amountCents} <> 0`),
     check("session_results_amount_limit", sql`abs(${t.amountCents}) <= 100000000`),
     uniqueIndex("session_results_session_member_uidx").on(t.sessionId, t.memberId),
     index("session_results_member_idx").on(t.memberId)
+  ]
+);
+
+// Individual buy-ins are append-only so the live total remains auditable.
+export const liveBuyIns = pgTable(
+  "live_buy_ins",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => pokerSessions.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id").notNull().references(() => members.id),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    recordedByMemberId: uuid("recorded_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [
+    check("live_buy_ins_amount_positive", sql`${t.amountCents} > 0`),
+    check("live_buy_ins_amount_limit", sql`${t.amountCents} <= 100000000`),
+    index("live_buy_ins_session_idx").on(t.sessionId),
+    index("live_buy_ins_member_idx").on(t.memberId)
+  ]
+);
+
+export const liveCashOuts = pgTable(
+  "live_cash_outs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => pokerSessions.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id").notNull().references(() => members.id),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    recordedByMemberId: uuid("recorded_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())
+  },
+  (t) => [
+    check("live_cash_outs_amount_nonnegative", sql`${t.amountCents} >= 0`),
+    check("live_cash_outs_amount_limit", sql`${t.amountCents} <= 100000000`),
+    uniqueIndex("live_cash_outs_session_member_uidx").on(t.sessionId, t.memberId),
+    index("live_cash_outs_session_idx").on(t.sessionId)
   ]
 );
 

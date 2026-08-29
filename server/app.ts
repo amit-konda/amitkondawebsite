@@ -11,6 +11,7 @@ import { registerSessionsRoutes } from "./routes/sessions.js";
 import { registerDisputesRoutes } from "./routes/disputes.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
 import { registerFeedbackRoutes } from "./routes/feedback.js";
+import { registerLiveRoutes } from "./routes/live.js";
 
 export function createAppRouter(): Router {
   const r = new Router();
@@ -21,6 +22,7 @@ export function createAppRouter(): Router {
   registerDisputesRoutes(r);
   registerWebhookRoutes(r);
   registerFeedbackRoutes(r);
+  registerLiveRoutes(r);
   return r;
 }
 

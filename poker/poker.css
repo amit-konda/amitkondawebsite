@@ -194,6 +194,9 @@ main {
 }
 .btn-primary:hover:not(:disabled) { background: var(--felt-dark); border-color: var(--felt-dark); }
 
+.btn-live { border-color: rgba(31, 107, 79, 0.25); color: var(--felt-dark); background: rgba(226, 241, 231, 0.66); }
+.btn-live:hover:not(:disabled) { background: rgba(212, 236, 220, 0.92); }
+
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover:not(:disabled) { background: #ECE9E0; }
 
@@ -793,6 +796,35 @@ textarea.input { resize: vertical; min-height: 88px; }
 .admin-badges { padding-top: 2px; }
 .badge { box-shadow: 0 8px 22px rgba(33, 58, 44, 0.07); }
 
+.live-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 18px;
+  padding: 13px 16px;
+  border: 1px solid rgba(31, 107, 79, 0.22);
+  border-radius: 18px;
+  background: rgba(222, 241, 228, 0.74);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(31, 107, 79, 0.09);
+}
+.live-banner:hover { background: rgba(211, 237, 219, 0.95); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: #D45148; box-shadow: 0 0 0 5px rgba(212, 81, 72, 0.12); flex: none; }
+.live-banner-copy { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.live-banner-copy strong { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--felt-dark); }
+.live-banner-copy span { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-panel { gap: 16px; }
+.live-player-list { display: flex; flex-direction: column; gap: 8px; }
+.live-player-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
+.live-player-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.live-player-main .form-hint { margin: 0; }
+.live-player-actions { display: flex; align-items: center; gap: 8px; }
+.live-player-actions .live-cashout { width: 120px; }
+
 .ledger-row { padding-top: 13px; padding-bottom: 13px; border-bottom-color: var(--row-line); }
 .ledger-row:hover { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
 .ledger-total { border-top-color: rgba(30, 55, 43, 0.16); }
@@ -814,6 +846,9 @@ textarea.input { resize: vertical; min-height: 88px; }
   .card { border-radius: 20px; padding: 18px; }
   .modal-root { padding: 0; align-items: flex-end; }
   .modal { max-width: none; margin: 0; border-radius: 24px 24px 0 0; padding: 22px 18px 26px; }
+  .live-player-row { align-items: flex-start; flex-direction: column; }
+  .live-player-actions { width: 100%; }
+  .live-player-actions .live-cashout { flex: 1; width: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -114,6 +114,7 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
  *   adminDisputes: DisputeInfo[]|null,
  *   createdSessionId: string|null,
  *   pendingDeliveryShortfall: number|null,
+ *   live: any|null,
  * }}
  */
 const state = {
@@ -127,6 +128,7 @@ const state = {
   adminDisputes: null,
   createdSessionId: null,
   pendingDeliveryShortfall: null,
+  live: null,
 };
 
 /* ── DOM helpers ───────────────────────────────────────────── */
@@ -284,6 +286,7 @@ function formatDateTime(iso) {
  */
 function statusLabel(status) {
   switch (status) {
+    case "live": return "Live";
     case "disputed": return "Included pending review";
     case "resolved": return "Resolved";
     case "voided": return "Voided";
@@ -774,7 +777,7 @@ async function renderDashboard() {
       onRetry: renderDashboard,
     });
   }
-  await Promise.allSettled([loadLedger(), loadSessions(true)]);
+  await Promise.allSettled([loadLedger(), loadSessions(true), loadLive()]);
   if (state.status && !state.status.viewer) {
     showBanner({
       kind: "info",
@@ -878,6 +881,64 @@ async function loadSessions(reset) {
       loadSessions(true);
     });
   }
+}
+
+async function loadLive() {
+  const banner = el("live-banner");
+  try {
+    const data = await api("/live");
+    state.live = data?.session ? data : null;
+    banner.hidden = !state.live;
+    if (state.live) el("live-banner-title").textContent = state.live.session.title || "Join Live Session";
+  } catch {
+    state.live = null;
+    banner.hidden = true;
+  }
+}
+
+function moneyInputValue(cents) { return cents == null ? "" : toDollarsInput(cents); }
+
+function openStartLiveModal() {
+  const body = document.createElement("div");
+  body.className = "stack";
+  body.innerHTML = `<div class="form-grid"><div><label class="field" for="live-title">Session name (optional)</label><input id="live-title" class="input" maxlength="120" placeholder="Friday night game"></div><div><label class="field" for="live-notes">Notes (optional)</label><input id="live-notes" class="input" maxlength="2000"></div></div><fieldset class="part-fieldset"><legend class="field">Players and starting buy-in</legend><div id="live-start-members"></div></fieldset><p class="form-hint">You can add rebuys and update cash-outs while the session is live.</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-start-cancel">Cancel</button><button type="button" class="btn btn-primary" id="live-start-submit">Start live session</button></div>`;
+  openModal({ title: "Start live session", body });
+  const membersEl = q(body, "#live-start-members");
+  const rows = [];
+  for (const m of state.members) {
+    const row = document.createElement("div"); row.className = "part-row";
+    row.innerHTML = `<input type="checkbox" class="part-check"><span class="part-name">${esc(m.name)}</span><input type="text" class="input part-amount money" inputmode="decimal" placeholder="$0.00" hidden>`;
+    const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
+    const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
+    check.addEventListener("change", () => { amount.hidden = !check.checked; if (check.checked) amount.focus(); });
+    rows.push({ memberId: m.id, check, amount }); membersEl.appendChild(row);
+  }
+  q(body, "#live-start-cancel").addEventListener("click", closeModal);
+  q(body, "#live-start-submit").addEventListener("click", async () => {
+    const players = rows.filter((r) => r.check.checked).map((r) => ({ memberId: r.memberId, amountCents: parseDollarsToCents(r.amount.value) })).filter((r) => r.amountCents !== null);
+    if (players.length < 2) return showBanner({ kind: "error", message: "Select at least two players and enter each starting buy-in." });
+    const submit = /** @type {HTMLButtonElement} */ (q(body, "#live-start-submit")); submit.disabled = true;
+    try { await api("/live", { method: "POST", body: { requestKey: crypto.randomUUID(), title: field("live-title").value.trim() || undefined, notes: field("live-notes").value.trim() || undefined, players } }); closeModal(); await refreshStatus(); route(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't start the live session.") }); submit.disabled = false; }
+  });
+}
+
+function openLiveModal() {
+  if (!state.live) return;
+  const body = document.createElement("div"); body.className = "stack live-panel";
+  const live = state.live;
+  body.innerHTML = `<p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-player-list"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
+  const list = q(body, ".live-player-list");
+  for (const p of live.participants) {
+    const row = document.createElement("div"); row.className = "live-player-row";
+    row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><button type="button" class="btn btn-small live-save-cashout">Save</button></div>`;
+    const cash = /** @type {HTMLInputElement} */ (q(row, ".live-cashout"));
+    q(row, ".live-rebuy").addEventListener("click", async () => { const raw = prompt(`Additional buy-in for ${p.name}`, ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents == null || cents <= 0) return; try { await api(`/live/${encodeURIComponent(live.session.id)}/buyins`, { method: "POST", body: { memberId: p.memberId, amountCents: cents } }); closeModal(); await refreshStatus(); route(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); } });
+    q(row, ".live-save-cashout").addEventListener("click", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; try { await api(`/live/${encodeURIComponent(live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); closeModal(); await refreshStatus(); route(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
+    list.appendChild(row);
+  }
+  q(body, "#live-close").addEventListener("click", closeModal);
+  q(body, "#live-end").addEventListener("click", async () => { try { await api(`/live/${encodeURIComponent(live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); } });
+  openModal({ title: live.session.title || "Live session", body, wide: true });
 }
 
 function renderSessions() {
@@ -1934,6 +1995,7 @@ async function onLogout() {
   state.members = [];
   state.ledger = null;
   state.sessions = [];
+  state.live = null;
   state.nextCursor = null;
   route();
 }
@@ -1989,7 +2051,7 @@ function onAddSession() {
   if (!state.status?.viewer) {
     showBanner({
       kind: "info",
-      message: "Select your name in the top bar first — new sessions are recorded for the selected name.",
+      message: "Select your name in the top bar first — sessions are recorded for the selected name.",
     });
     return;
   }
@@ -2029,6 +2091,8 @@ function wireStatic() {
   /** @type {HTMLSelectElement} */ (el("viewer-select")).addEventListener("change", onViewerChange);
   el("feedback-btn").addEventListener("click", openFeedbackModal);
   /** @type {HTMLButtonElement} */ (el("add-session-btn")).addEventListener("click", onAddSession);
+  el("start-live-btn").addEventListener("click", openStartLiveModal);
+  el("live-banner").addEventListener("click", openLiveModal);
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);

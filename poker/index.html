@@ -71,10 +71,17 @@
   <section id="view-dashboard" class="view" hidden>
     <div class="dash">
       <div class="dash-actions">
-        <button id="add-session-btn" class="btn btn-primary" type="button">+ Add session</button>
+        <button id="add-session-btn" class="btn btn-primary" type="button">+ Add past session</button>
+        <button id="start-live-btn" class="btn btn-live" type="button">Start live session</button>
         <button id="feedback-btn" class="btn btn-ghost" type="button">Feedback</button>
         <button id="dash-admin-toggle" class="linkish linkish-small" type="button" aria-expanded="false" aria-controls="dash-admin-form" hidden>Admin sign-in</button>
       </div>
+
+      <button id="live-banner" class="live-banner" type="button" hidden>
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="live-banner-copy"><strong>Live session</strong><span id="live-banner-title">Join Live Session</span></span>
+        <span class="sess-chev" aria-hidden="true">›</span>
+      </button>
 
       <div id="admin-badges" class="admin-badges" hidden>
         <button id="badge-requests" class="badge" type="button" aria-haspopup="dialog">

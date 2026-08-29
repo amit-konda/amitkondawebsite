@@ -23,6 +23,7 @@ export const memberStatus = pgEnum("member_status", ["active", "inactive"]);
 export const joinRequestStatus = pgEnum("join_request_status", ["pending", "approved", "rejected"]);
 export const sessionStatus = pgEnum("session_status", ["active", "live", "disputed", "resolved", "voided"]);
 export const gameType = pgEnum("game_type", ["poker", "blackjack"]);
+export const handshakeBetStatus = pgEnum("handshake_bet_status", ["open", "settled", "voided"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
@@ -120,6 +121,29 @@ export const pokerSessions = pgTable(
     ),
     check("poker_sessions_version_gt0", sql`${t.version} >= 1`),
     index("poker_sessions_status_played_idx").on(t.status, t.playedAt),
+  ]
+);
+
+export const handshakeBets = pgTable(
+  "handshake_bets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    description: text("description").notNull(),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    firstMemberId: uuid("first_member_id").notNull().references(() => members.id),
+    secondMemberId: uuid("second_member_id").notNull().references(() => members.id),
+    winnerMemberId: uuid("winner_member_id").references(() => members.id),
+    status: handshakeBetStatus("status").notNull().default("open"),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    settledAt: ts("settled_at")
+  },
+  (t) => [
+    check("handshake_bets_amount_positive", sql`${t.amountCents} > 0`),
+    check("handshake_bets_amount_limit", sql`${t.amountCents} <= 100000000`),
+    check("handshake_bets_distinct_members", sql`${t.firstMemberId} <> ${t.secondMemberId}`),
+    index("handshake_bets_status_idx").on(t.status),
+    index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId)
   ]
 );
 

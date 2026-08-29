@@ -118,6 +118,8 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
  *   blackjackLedger: LedgerData|null,
  *   blackjackSessions: any[],
  *   gameTab: string,
+ *   handshakeLedger: LedgerData|null,
+ *   handshakeBets: any[],
  * }}
  */
 const state = {
@@ -135,6 +137,8 @@ const state = {
   blackjackLedger: null,
   blackjackSessions: [],
   gameTab: "poker",
+  handshakeLedger: null,
+  handshakeBets: [],
 };
 
 /* ── DOM helpers ───────────────────────────────────────────── */
@@ -519,10 +523,10 @@ function closeModal() {
 
 /* ── Views ─────────────────────────────────────────────────── */
 
-const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-overall", "view-detail", "view-dispute"];
+const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-overall", "view-handshake", "view-detail", "view-dispute"];
 
 /**
- * @param {"gate"|"dashboard"|"blackjack"|"overall"|"detail"|"dispute"} name
+ * @param {"gate"|"dashboard"|"blackjack"|"overall"|"handshake"|"detail"|"dispute"} name
  */
 function showView(name) {
   for (const id of VIEW_IDS) el(id).hidden = id !== "view-" + name;
@@ -594,6 +598,7 @@ function route() {
   } else {
     if (state.gameTab === "blackjack") renderBlackjackDashboard();
     else if (state.gameTab === "overall") renderOverallDashboard();
+    else if (state.gameTab === "handshake") renderHandshakeDashboard();
     else renderDashboard();
   }
 }
@@ -841,6 +846,16 @@ function renderOverallLedger() {
   body.innerHTML = rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.isViewer ? ` <span class="you-tag">YOU</span>` : ""}<div class="ledger-sub">${r.sessionsPlayed} combined session${r.sessionsPlayed === 1 ? "" : "s"}</div></div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(total))}</strong></div>`;
   renderOverallGraph(rows);
 }
+
+async function renderHandshakeDashboard() {
+  showView("handshake"); fillViewerSelect();
+  el("handshake-ledger-body").innerHTML = `<div class="skel skel-row"></div>`; el("handshake-bets-body").innerHTML = `<div class="skel skel-block"></div>`;
+  await Promise.allSettled([loadHandshakeLedger(), loadHandshakeBets()]);
+}
+async function loadHandshakeLedger() { try { const d = await api("/handshake/ledger"); state.handshakeLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] }; const b = el("handshake-ledger-body"); b.innerHTML = state.handshakeLedger.rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.memberId === state.status?.viewer?.id ? ` <span class="you-tag">YOU</span>` : ""}</div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(state.handshakeLedger.totalCents))}</strong></div>`; } catch (e) { renderErrorBox(el("handshake-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake balances."), loadHandshakeLedger); } }
+async function loadHandshakeBets() { try { const d = await api("/handshake/bets"); state.handshakeBets = d.bets ?? []; renderHandshakeBets(); } catch (e) { renderErrorBox(el("handshake-bets-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake bets."), loadHandshakeBets); } }
+function renderHandshakeBets() { const body = el("handshake-bets-body"); if (!state.handshakeBets.length) { body.innerHTML = `<p class="empty-state">No handshake bets yet.</p>`; return; } body.innerHTML = state.handshakeBets.map((b) => `<div class="request-item handshake-bet"><strong>${esc(b.description)}</strong><div class="request-meta">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)} · ${esc(formatCents(b.amountCents))}</div><div class="request-meta">${b.status === "open" ? "Open" : `Won by ${esc(b.winnerMember?.name ?? "Unknown")}`}</div>${b.status === "open" ? `<button class="btn btn-small btn-primary handshake-settle" data-id="${esc(b.id)}">Settle bet</button>` : ""}</div>`).join(""); body.querySelectorAll(".handshake-settle").forEach((node) => node.addEventListener("click", async () => { const bet = state.handshakeBets.find((b) => b.id === node.getAttribute("data-id")); if (!bet) return; const winner = prompt(`Winner (${bet.firstMember.name} or ${bet.secondMember.name})`, bet.firstMember.name); const winnerId = winner?.trim().toLowerCase() === bet.secondMember.name.toLowerCase() ? bet.secondMember.id : winner?.trim().toLowerCase() === bet.firstMember.name.toLowerCase() ? bet.firstMember.id : null; if (!winnerId) return; try { await api(`/handshake/bets/${encodeURIComponent(bet.id)}/settle`, { method: "POST", body: { winnerMemberId: winnerId } }); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't settle the bet.") }); } })); }
+function openHandshakeModal() { if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first." }); return; } const others = state.members.filter((m) => m.id !== state.status?.viewer?.id); const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`; openModal({ title: "Add handshake bet", body }); q(body, "#hb-cancel").addEventListener("click", closeModal); q(body, "#hb-submit").addEventListener("click", async () => { const amount = parseDollarsToCents(field("hb-amount").value); if (!field("hb-description").value.trim() || amount == null || amount <= 0) return showBanner({ kind: "error", message: "Enter a description and positive amount." }); try { await api("/handshake/bets", { method: "POST", body: { requestKey: crypto.randomUUID(), description: field("hb-description").value.trim(), amountCents: amount, firstMemberId: state.status.viewer.id, secondMemberId: field("hb-opponent").value } }); closeModal(); await loadHandshakeBets(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the bet.") }); } }); }
 
 function renderOverallGraph(rows) {
   const graph = /** @type {SVGElement} */ (el("overall-graph"));
@@ -2198,6 +2213,8 @@ function wireStatic() {
   el("tab-poker").addEventListener("click", () => { state.gameTab = "poker"; updateGameTabs(); route(); });
   el("tab-blackjack").addEventListener("click", () => { state.gameTab = "blackjack"; updateGameTabs(); route(); });
   el("tab-overall").addEventListener("click", () => { state.gameTab = "overall"; updateGameTabs(); route(); });
+  el("add-handshake-btn").addEventListener("click", openHandshakeModal);
+  el("tab-handshake").addEventListener("click", () => { state.gameTab = "handshake"; updateGameTabs(); route(); });
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
@@ -2205,7 +2222,7 @@ function wireStatic() {
 }
 
 function updateGameTabs() {
-  for (const tab of ["poker", "blackjack", "overall"]) {
+  for (const tab of ["poker", "blackjack", "overall", "handshake"]) {
     const active = state.gameTab === tab;
     const node = el(`tab-${tab}`);
     node.classList.toggle("is-active", active);

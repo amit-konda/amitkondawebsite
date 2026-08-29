@@ -20,6 +20,7 @@
     <button class="game-tab is-active" id="tab-poker" type="button" aria-selected="true">Poker</button>
     <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
     <button class="game-tab" id="tab-overall" type="button" aria-selected="false">Overall debts</button>
+    <button class="game-tab" id="tab-handshake" type="button" aria-selected="false">Handshake bets</button>
   </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
     <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)"></select>
@@ -142,6 +143,10 @@
       <div class="dash-actions"><span class="form-hint overall-note">Poker + Blackjack combined</span></div>
       <div class="card overall-card"><h2 class="card-heading">Overall debts</h2><p class="form-hint">Your combined running balance across every game.</p><details class="balance-graph"><summary>Show balance graph</summary><div class="graph-scroll"><svg id="overall-graph" class="balance-graph-svg" role="img" aria-label="Combined balance graph" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"></svg></div></details><div id="overall-ledger-body"></div></div>
     </div>
+  </section>
+
+  <section id="view-handshake" class="view" hidden>
+    <div class="dash"><div class="dash-actions"><button id="add-handshake-btn" class="btn btn-primary" type="button">+ Add handshake bet</button></div><div class="dash-grid"><div class="card"><h2 class="card-heading">Handshake balances</h2><p class="form-hint">Settled bets only. Open bets don’t affect balances yet.</p><div id="handshake-ledger-body"></div></div><div class="card"><h2 class="card-heading">Bets</h2><div id="handshake-bets-body"></div></div></div></div>
   </section>
 
   <!-- ── SESSION DETAIL ───────────────────────────────────── -->

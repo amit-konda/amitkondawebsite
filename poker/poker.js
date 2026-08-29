@@ -519,10 +519,10 @@ function closeModal() {
 
 /* ── Views ─────────────────────────────────────────────────── */
 
-const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-detail", "view-dispute"];
+const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-overall", "view-detail", "view-dispute"];
 
 /**
- * @param {"gate"|"dashboard"|"blackjack"|"detail"|"dispute"} name
+ * @param {"gate"|"dashboard"|"blackjack"|"overall"|"detail"|"dispute"} name
  */
 function showView(name) {
   for (const id of VIEW_IDS) el(id).hidden = id !== "view-" + name;
@@ -593,6 +593,7 @@ function route() {
     renderDisputeView();
   } else {
     if (state.gameTab === "blackjack") renderBlackjackDashboard();
+    else if (state.gameTab === "overall") renderOverallDashboard();
     else renderDashboard();
   }
 }
@@ -814,6 +815,30 @@ async function renderBlackjackDashboard() {
 async function loadBlackjackLedger() {
   try { const data = await api("/blackjack/ledger"); state.blackjackLedger = { totalCents: data.totalCents ?? 0, rows: data.rows ?? [] }; renderBlackjackLedger(); }
   catch (e) { renderErrorBox(el("blackjack-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack ledger."), loadBlackjackLedger); }
+}
+
+async function renderOverallDashboard() {
+  showView("overall");
+  fillViewerSelect();
+  const body = el("overall-ledger-body");
+  body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
+  const membersOk = await loadMembers();
+  if (!membersOk) { showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
+  await Promise.allSettled([loadLedger(), loadBlackjackLedger()]);
+  renderOverallLedger();
+}
+
+function renderOverallLedger() {
+  const body = el("overall-ledger-body");
+  const byId = new Map();
+  for (const row of [...(state.ledger?.rows ?? []), ...(state.blackjackLedger?.rows ?? [])]) {
+    const current = byId.get(row.memberId) ?? { ...row, netCents: 0, sessionsPlayed: 0, isViewer: false };
+    current.netCents += row.netCents; current.sessionsPlayed += row.sessionsPlayed; current.isViewer ||= row.isViewer; byId.set(row.memberId, current);
+  }
+  const rows = [...byId.values()].sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
+  if (!rows.length) { body.innerHTML = `<p class="empty-state">No members yet.</p>`; return; }
+  const total = rows.reduce((sum, row) => sum + row.netCents, 0);
+  body.innerHTML = rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.isViewer ? ` <span class="you-tag">YOU</span>` : ""}<div class="ledger-sub">${r.sessionsPlayed} combined session${r.sessionsPlayed === 1 ? "" : "s"}</div></div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(total))}</strong></div>`;
 }
 
 function renderBlackjackLedger() {
@@ -2163,6 +2188,7 @@ function wireStatic() {
   el("add-blackjack-btn").addEventListener("click", openBlackjackModal);
   el("tab-poker").addEventListener("click", () => { state.gameTab = "poker"; updateGameTabs(); route(); });
   el("tab-blackjack").addEventListener("click", () => { state.gameTab = "blackjack"; updateGameTabs(); route(); });
+  el("tab-overall").addEventListener("click", () => { state.gameTab = "overall"; updateGameTabs(); route(); });
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
@@ -2170,7 +2196,7 @@ function wireStatic() {
 }
 
 function updateGameTabs() {
-  for (const tab of ["poker", "blackjack"]) {
+  for (const tab of ["poker", "blackjack", "overall"]) {
     const active = state.gameTab === tab;
     const node = el(`tab-${tab}`);
     node.classList.toggle("is-active", active);

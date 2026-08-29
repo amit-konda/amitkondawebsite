@@ -19,6 +19,7 @@
   <nav class="game-tabs" id="game-tabs" aria-label="Game ledger">
     <button class="game-tab is-active" id="tab-poker" type="button" aria-selected="true">Poker</button>
     <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
+    <button class="game-tab" id="tab-overall" type="button" aria-selected="false">Overall debts</button>
   </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
     <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)"></select>
@@ -133,6 +134,13 @@
         <div class="card"><h2 class="card-heading">Blackjack ledger</h2><div id="blackjack-ledger-body"></div></div>
         <div class="card"><h2 class="card-heading">Recent blackjack</h2><div id="blackjack-sessions-body"></div></div>
       </div>
+    </div>
+  </section>
+
+  <section id="view-overall" class="view" hidden>
+    <div class="dash">
+      <div class="dash-actions"><span class="form-hint overall-note">Poker + Blackjack combined</span></div>
+      <div class="card overall-card"><h2 class="card-heading">Overall debts</h2><p class="form-hint">Your combined running balance across every game.</p><div id="overall-ledger-body"></div></div>
     </div>
   </section>
 

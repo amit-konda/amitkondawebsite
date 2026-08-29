@@ -110,6 +110,8 @@ a:visited { color: var(--felt-dark); }
 .game-tab.is-active { color: var(--ink); background: rgba(255,255,255,.9); box-shadow: 0 3px 10px rgba(33,58,44,.10); }
 .game-tab:focus-visible { outline: 2px solid var(--felt); outline-offset: 1px; }
 .blackjack-dealer-note { align-self: center; }
+.overall-note { align-self: center; }
+.overall-card { max-width: 760px; }
 .detail-results { margin-top: 18px; border-top: 1px solid var(--row-line); }
 .detail-result { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
 

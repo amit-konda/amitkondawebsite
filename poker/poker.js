@@ -1907,6 +1907,21 @@ async function onViewerChange() {
   }
 }
 
+async function onFeedbackSubmit(event) {
+  event.preventDefault();
+  const message = el("feedback-message").value.trim();
+  const note = el("feedback-note");
+  if (!message) { note.textContent = "Please enter a message."; note.hidden = false; return; }
+  try {
+    await api("/feedback", { method: "POST", body: { kind: el("feedback-kind").value, message } });
+    el("feedback-message").value = "";
+    note.textContent = "Thanks — feedback sent.";
+  } catch (e) {
+    note.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn’t send feedback yet.");
+  }
+  note.hidden = false;
+}
+
 function onAddSession() {
   if (!state.status?.viewer) {
     showBanner({
@@ -1949,6 +1964,7 @@ function wireStatic() {
   wireCollapsible("dash-admin-toggle", "dash-admin-form");
   /** @type {HTMLButtonElement} */ (el("logout-btn")).addEventListener("click", onLogout);
   /** @type {HTMLSelectElement} */ (el("viewer-select")).addEventListener("change", onViewerChange);
+  el("feedback-form").addEventListener("submit", onFeedbackSubmit);
   /** @type {HTMLButtonElement} */ (el("add-session-btn")).addEventListener("click", onAddSession);
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);

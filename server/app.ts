@@ -10,6 +10,7 @@ import { registerMembersRoutes } from "./routes/members.js";
 import { registerSessionsRoutes } from "./routes/sessions.js";
 import { registerDisputesRoutes } from "./routes/disputes.js";
 import { registerWebhookRoutes } from "./routes/webhooks.js";
+import { registerFeedbackRoutes } from "./routes/feedback.js";
 
 export function createAppRouter(): Router {
   const r = new Router();
@@ -19,6 +20,7 @@ export function createAppRouter(): Router {
   registerSessionsRoutes(r);
   registerDisputesRoutes(r);
   registerWebhookRoutes(r);
+  registerFeedbackRoutes(r);
   return r;
 }
 

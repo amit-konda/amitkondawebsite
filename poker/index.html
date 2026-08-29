@@ -108,6 +108,21 @@
           <div id="sessions-body"></div>
         </div>
       </div>
+      <div class="card feedback-card">
+        <h2 class="card-heading">Suggestions &amp; bugs</h2>
+        <form id="feedback-form" class="stack" novalidate>
+          <div class="field-row">
+            <label class="field" for="feedback-kind">Type
+              <select id="feedback-kind" class="input"><option value="suggestion">Suggestion</option><option value="bug">Bug report</option></select>
+            </label>
+          </div>
+          <label class="field" for="feedback-message">What should we know?
+            <textarea id="feedback-message" class="input" rows="3" maxlength="2000" required></textarea>
+          </label>
+          <button class="btn btn-primary" type="submit">Send feedback</button>
+          <p id="feedback-note" class="form-note" role="status" hidden></p>
+        </form>
+      </div>
     </div>
   </section>
 

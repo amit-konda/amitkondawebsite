@@ -136,7 +136,7 @@ const state = {
   live: null,
   blackjackLedger: null,
   blackjackSessions: [],
-  gameTab: "poker",
+  gameTab: "overall",
   handshakeLedger: null,
   handshakeBets: [],
 };
@@ -829,14 +829,14 @@ async function renderOverallDashboard() {
   body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   const membersOk = await loadMembers();
   if (!membersOk) { showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
-  await Promise.allSettled([loadLedger(), loadBlackjackLedger()]);
+  await Promise.allSettled([loadLedger(), loadBlackjackLedger(), loadHandshakeLedger()]);
   renderOverallLedger();
 }
 
 function renderOverallLedger() {
   const body = el("overall-ledger-body");
   const byId = new Map();
-  for (const row of [...(state.ledger?.rows ?? []), ...(state.blackjackLedger?.rows ?? [])]) {
+  for (const row of [...(state.ledger?.rows ?? []), ...(state.blackjackLedger?.rows ?? []), ...(state.handshakeLedger?.rows ?? [])]) {
     const current = byId.get(row.memberId) ?? { ...row, netCents: 0, sessionsPlayed: 0, isViewer: false };
     current.netCents += row.netCents; current.sessionsPlayed += row.sessionsPlayed; current.isViewer ||= row.isViewer; byId.set(row.memberId, current);
   }
@@ -2222,7 +2222,7 @@ function wireStatic() {
 }
 
 function updateGameTabs() {
-  for (const tab of ["poker", "blackjack", "overall", "handshake"]) {
+  for (const tab of ["overall", "poker", "handshake", "blackjack"]) {
     const active = state.gameTab === tab;
     const node = el(`tab-${tab}`);
     node.classList.toggle("is-active", active);

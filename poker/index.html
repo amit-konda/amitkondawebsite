@@ -17,10 +17,10 @@
   <a class="topbar-home" href="/" aria-label="Back to amitkonda.com">&larr;&nbsp;amitkonda.com</a>
   <span class="topbar-title">Poker Ledger</span>
   <nav class="game-tabs" id="game-tabs" aria-label="Game ledger">
-    <button class="game-tab is-active" id="tab-poker" type="button" aria-selected="true">Poker</button>
-    <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
-    <button class="game-tab" id="tab-overall" type="button" aria-selected="false">Overall debts</button>
+    <button class="game-tab is-active" id="tab-overall" type="button" aria-selected="true">Ledger</button>
+    <button class="game-tab" id="tab-poker" type="button" aria-selected="false">Poker</button>
     <button class="game-tab" id="tab-handshake" type="button" aria-selected="false">Handshake bets</button>
+    <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
   </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
     <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)"></select>
@@ -140,8 +140,8 @@
 
   <section id="view-overall" class="view" hidden>
     <div class="dash">
-      <div class="dash-actions"><span class="form-hint overall-note">Poker + Blackjack combined</span></div>
-      <div class="card overall-card"><h2 class="card-heading">Overall debts</h2><p class="form-hint">Your combined running balance across every game.</p><details class="balance-graph"><summary>Show balance graph</summary><div class="graph-scroll"><svg id="overall-graph" class="balance-graph-svg" role="img" aria-label="Combined balance graph" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"></svg></div></details><div id="overall-ledger-body"></div></div>
+      <div class="dash-actions"><span class="form-hint overall-note">Poker + Blackjack + handshake bets</span></div>
+      <div class="card overall-card"><h2 class="card-heading">Ledger</h2><p class="form-hint">Your combined running balance across every game and bet.</p><details class="balance-graph"><summary>Show balance graph</summary><div class="graph-scroll"><svg id="overall-graph" class="balance-graph-svg" role="img" aria-label="Combined balance graph" viewBox="0 0 720 260" preserveAspectRatio="xMidYMid meet"></svg></div></details><div id="overall-ledger-body"></div></div>
     </div>
   </section>
 

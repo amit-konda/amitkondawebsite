@@ -1898,6 +1898,8 @@ async function onViewerChange() {
       state.status = { ...state.status, viewer: data?.viewer ?? null };
     }
     fillViewerSelect();
+    // Re-fetch the ledger so the YOU marker follows the newly selected profile.
+    await loadLedger();
   } catch (e) {
     showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't switch viewer.") });
   } finally {

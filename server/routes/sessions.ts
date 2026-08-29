@@ -293,9 +293,9 @@ export function registerSessionsRoutes(router: Router): void {
       .from(members)
       .leftJoin(sessionResults, eq(sessionResults.memberId, members.id))
       .leftJoin(pokerSessions, eq(pokerSessions.id, sessionResults.sessionId))
-      // ALL members (active + inactive): the visible total must always sum to
-      // exactly $0.00, which only holds if departed members stay in the ledger.
-      // Deactivation only removes a member from selection/participation.
+      // Only active members appear in the current ledger. Historical results
+      // remain stored, but deactivated players are intentionally hidden.
+      .where(eq(members.status, "active"))
       .groupBy(members.id, members.displayName);
     rows.sort(
       (a, b) =>

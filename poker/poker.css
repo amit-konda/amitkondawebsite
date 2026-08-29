@@ -34,8 +34,8 @@ body {
 [hidden] { display: none !important; }
 
 h1, h2, h3 {
-  font-family: var(--font-serif);
-  font-variant: small-caps;
+  font-family: var(--font-sans);
+  font-variant: normal;
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.2;
@@ -90,8 +90,8 @@ a:visited { color: var(--felt-dark); }
 .topbar-home:hover { text-decoration: underline; }
 
 .topbar-title {
-  font-family: var(--font-serif);
-  font-variant: small-caps;
+  font-family: var(--font-sans);
+  font-variant: normal;
   font-weight: 700;
   font-size: 1.2rem;
   letter-spacing: 0.06em;

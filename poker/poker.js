@@ -390,6 +390,14 @@ function showBanner(opts) {
   root.appendChild(item);
 }
 
+/** Remove an active banner with the exact message, if present. */
+function dismissBanner(message) {
+  for (const item of el("banner-root").querySelectorAll(".banner")) {
+    const msg = item.querySelector(".banner-msg");
+    if (msg?.textContent === message) item.remove();
+  }
+}
+
 /* ── Modal ─────────────────────────────────────────────────── */
 
 /** @type {{close: () => void}|null} */
@@ -1929,6 +1937,9 @@ async function onViewerChange() {
       state.status = { ...state.status, viewer: data?.viewer ?? null };
     }
     fillViewerSelect();
+    // The dashboard asks the user to choose a name until a viewer is set.
+    // Clear that one-time prompt as soon as the selection succeeds.
+    dismissBanner("Pick your name in the top bar so the sessions you record are marked as yours.");
     // Re-fetch the ledger so the YOU marker follows the newly selected profile.
     await loadLedger();
   } catch (e) {

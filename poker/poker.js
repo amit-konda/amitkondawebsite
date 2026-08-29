@@ -1171,6 +1171,27 @@ function renderDetail(session) {
   card.innerHTML = html;
   q(card, '[data-slot="results"]').appendChild(buildResultsTable(session));
 
+  if (!voided && state.status?.viewer) {
+    const disputeBtn = document.createElement("button");
+    disputeBtn.type = "button";
+    disputeBtn.className = "btn btn-danger";
+    disputeBtn.textContent = "Dispute session";
+    disputeBtn.addEventListener("click", () => {
+      const body = document.createElement("form");
+      body.className = "stack";
+      body.innerHTML = `<label class="field" for="direct-dispute-reason">What is incorrect?<textarea id="direct-dispute-reason" class="input" rows="4" maxlength="1000" required></textarea></label><button class="btn btn-primary" type="submit">Submit dispute</button>`;
+      body.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const reason = /** @type {HTMLTextAreaElement} */ (body.querySelector("textarea")).value.trim();
+        if (!reason) return;
+        try { await api("/disputes/direct", { method: "POST", body: { sessionId: session.id, reason } }); closeModal(); showBanner({ kind: "info", message: "Dispute submitted for admin review." }); await loadSessionDetail(session.id); }
+        catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't submit the dispute.") }); }
+      });
+      openModal({ title: "Dispute session", body });
+    });
+    card.appendChild(disputeBtn);
+  }
+
   if (state.status?.admin && !voided) {
     const actions = document.createElement("div");
     actions.className = "detail-admin-actions";

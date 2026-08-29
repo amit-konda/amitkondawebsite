@@ -54,6 +54,7 @@ const openSchema = z.object({
   token: z.string().min(20).max(200),
   reason: z.string().trim().min(1).max(1000)
 });
+const directOpenSchema = z.object({ sessionId: z.uuid(), reason: z.string().trim().min(1).max(1000) });
 
 const resolveSchema = z.object({
   outcome: z.enum(["resolved", "dismissed"]),
@@ -589,6 +590,25 @@ async function applyCorrections(
 export function registerDisputesRoutes(router: Router): void {
   router.post("api/poker/disputes/verify-token", verifyToken);
   router.post("api/poker/disputes", openDispute);
+  router.post("api/poker/disputes/direct", directOpenDispute);
   router.get("api/poker/admin/disputes", listDisputes);
   router.post("api/poker/admin/disputes/:id/resolve", resolveDispute);
+}
+
+async function directOpenDispute(ctx: Ctx): Promise<{ ok: true }> {
+  const claims = requireGroup(ctx);
+  if (!claims.mid) throw new ApiError(401, "viewer_required", "Select your name first.");
+  const memberId = claims.mid;
+  const body = directOpenSchema.parse(ctx.body);
+  await db.transaction(async (tx) => {
+    const [session] = await tx.select({ id: pokerSessions.id, status: pokerSessions.status }).from(pokerSessions).where(eq(pokerSessions.id, body.sessionId)).limit(1);
+    if (!session) throw notFound("Session not found.");
+    if (session.status === "voided") throw conflict("Voided sessions cannot be disputed.");
+    const [existing] = await tx.select({ id: disputes.id }).from(disputes).where(and(eq(disputes.sessionId, body.sessionId), eq(disputes.memberId, memberId), eq(disputes.status, "open"))).limit(1);
+    if (existing) throw conflict(ALREADY_OPEN_MSG);
+    await tx.insert(disputes).values({ sessionId: body.sessionId, memberId, reason: body.reason });
+    await tx.update(pokerSessions).set({ status: "disputed" }).where(eq(pokerSessions.id, body.sessionId));
+    await writeAudit(tx, { action: "dispute.open", entityType: "session", entityId: body.sessionId, actorLabel: `member:${claims.mid}`, afterJson: { reason: body.reason } });
+  });
+  return { ok: true };
 }

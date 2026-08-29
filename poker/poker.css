@@ -112,14 +112,6 @@ a:visited { color: var(--felt-dark); }
 .blackjack-dealer-note { align-self: center; }
 .overall-note { align-self: center; }
 .overall-card { max-width: 760px; }
-.balance-graph { margin: 18px 0 14px; border-top: 1px solid var(--row-line); border-bottom: 1px solid var(--row-line); }
-.balance-graph summary { cursor: pointer; padding: 12px 2px; color: var(--felt-dark); font-weight: 650; }
-.graph-scroll { overflow-x: auto; padding: 4px 0 14px; }
-.balance-graph-svg { display: block; width: 100%; min-width: 560px; height: auto; }
-.graph-axis { stroke: rgba(30,55,43,.18); stroke-width: 1.5; }
-.graph-value { fill: var(--ink); font-size: 11px; font-weight: 650; }
-.graph-label { fill: var(--muted); font-size: 11px; }
-.graph-caption { fill: var(--muted); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 .detail-results { margin-top: 18px; border-top: 1px solid var(--row-line); }
 .detail-result { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
 

@@ -30,5 +30,4 @@ ALTER TABLE "live_cash_outs" ADD CONSTRAINT "live_cash_outs_recorded_by_member_i
 CREATE INDEX "live_buy_ins_session_idx" ON "live_buy_ins" USING btree ("session_id");--> statement-breakpoint
 CREATE INDEX "live_buy_ins_member_idx" ON "live_buy_ins" USING btree ("member_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "live_cash_outs_session_member_uidx" ON "live_cash_outs" USING btree ("session_id", "member_id");--> statement-breakpoint
-CREATE INDEX "live_cash_outs_session_idx" ON "live_cash_outs" USING btree ("session_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "poker_sessions_one_live_uidx" ON "poker_sessions" ("status") WHERE "status" = 'live';
+CREATE INDEX "live_cash_outs_session_idx" ON "live_cash_outs" USING btree ("session_id");

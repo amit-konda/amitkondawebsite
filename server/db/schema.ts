@@ -118,7 +118,6 @@ export const pokerSessions = pgTable(
     ),
     check("poker_sessions_version_gt0", sql`${t.version} >= 1`),
     index("poker_sessions_status_played_idx").on(t.status, t.playedAt),
-    uniqueIndex("poker_sessions_one_live_uidx").on(t.status).where(sql`${t.status} = 'live'`)
   ]
 );
 

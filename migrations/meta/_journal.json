@@ -15,6 +15,13 @@
       "when": 1787756166837,
       "tag": "0001_unique_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787967000000,
+      "tag": "0002_live_sessions",
+      "breakpoints": true
     }
   ]
 }

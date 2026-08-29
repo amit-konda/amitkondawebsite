@@ -1,19 +1,19 @@
 /* Poker Ledger — styles. No inline styles anywhere (CSP: style-src 'self'). */
 
 :root {
-  --bg: #F7F5F0;
-  --card: #FFFFFF;
+  --bg: #F3F6F2;
+  --card: rgba(255, 255, 255, 0.74);
   --ink: #17211B;
-  --muted: #5F5A50;
+  --muted: #66736B;
   --felt: #1F6B4F;
   --felt-dark: #18543E;
   --gold: #C3913F;
   --pos: #18794E;
   --neg: #B5473C;
-  --border: #DDD8CE;
-  --row-line: #EDE9E0;
-  --radius: 12px;
-  --shadow: 0 1px 2px rgba(23, 33, 27, 0.05), 0 4px 14px rgba(23, 33, 27, 0.05);
+  --border: rgba(255, 255, 255, 0.86);
+  --row-line: rgba(30, 55, 43, 0.10);
+  --radius: 16px;
+  --shadow: 0 18px 50px rgba(33, 58, 44, 0.10);
   --font-serif: "Times New Roman", Times, serif;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -24,7 +24,10 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(214, 235, 221, 0.72), transparent 34rem),
+    radial-gradient(circle at 92% 92%, rgba(244, 230, 199, 0.42), transparent 30rem),
+    var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: 16px;
@@ -77,7 +80,12 @@ a:visited { color: var(--felt-dark); }
   flex-wrap: wrap;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 18px 20px 6px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: var(--shadow);
 }
 
 .topbar-home {
@@ -126,11 +134,11 @@ main {
   align-items: flex-start;
   gap: 10px;
   padding: 11px 12px 11px 14px;
-  border-radius: 10px;
+  border-radius: 16px;
   border: 1px solid var(--border);
   background: var(--card);
   font-size: 0.95rem;
-  box-shadow: var(--shadow);
+  box-shadow: 0 10px 28px rgba(33, 58, 44, 0.08);
 }
 
 .banner-error { border-color: #E0AFA9; background: #FBF0EF; color: #7A2A23; }
@@ -162,7 +170,7 @@ main {
   gap: 6px;
   min-height: 44px;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--ink);
@@ -170,17 +178,19 @@ main {
   font-weight: 600;
   font-size: 0.95rem;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  box-shadow: 0 5px 16px rgba(33, 58, 44, 0.06);
+  transition: background 0.16s, border-color 0.16s, box-shadow 0.16s, transform 0.16s;
   text-decoration: none;
   white-space: nowrap;
 }
-.btn:hover:not(:disabled) { background: #F1EEE6; }
+.btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.92); box-shadow: 0 8px 20px rgba(33, 58, 44, 0.10); transform: translateY(-1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-primary {
   background: var(--felt);
   border-color: var(--felt);
   color: #FFFFFF;
+  box-shadow: 0 8px 20px rgba(31, 107, 79, 0.22);
 }
 .btn-primary:hover:not(:disabled) { background: var(--felt-dark); border-color: var(--felt-dark); }
 
@@ -199,8 +209,10 @@ main {
   width: 100%;
   padding: 9px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
+  border-radius: 14px;
+  border-color: rgba(30, 55, 43, 0.13);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 1px 2px rgba(23, 33, 27, 0.03);
   color: var(--ink);
   font: inherit;
   font-size: 1rem;
@@ -244,9 +256,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 24px;
   box-shadow: var(--shadow);
-  padding: 20px;
+  padding: 22px;
 }
 
 .card-heading {
@@ -741,4 +753,66 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 @media (max-width: 380px) {
   .btn { padding: 10px 12px; }
+}
+
+/* ── Glass refresh ─────────────────────────────────────────
+   The translucent treatment is progressive: supported browsers get blur,
+   while the opaque surfaces above remain the readable fallback. */
+@supports (backdrop-filter: blur(16px)) {
+  .topbar, .card, .banner, .modal, .badge {
+    backdrop-filter: blur(18px) saturate(125%);
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+  }
+}
+
+.topbar-title { letter-spacing: 0.03em; }
+.topbar-home { color: var(--muted); }
+.topbar-home:hover { color: var(--ink); }
+
+.gate-card {
+  margin-top: 8vh;
+  border-radius: 28px;
+  padding: 32px 30px;
+}
+.gate-card::before {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 4px;
+  margin-bottom: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--felt), var(--gold));
+}
+
+.dash-actions { gap: 10px; }
+.dash-actions .btn-ghost { box-shadow: none; }
+.admin-badges { padding-top: 2px; }
+.badge { box-shadow: 0 8px 22px rgba(33, 58, 44, 0.07); }
+
+.ledger-row { padding-top: 13px; padding-bottom: 13px; border-bottom-color: var(--row-line); }
+.ledger-row:hover { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
+.ledger-total { border-top-color: rgba(30, 55, 43, 0.16); }
+
+.session-card { border-radius: 12px; transition: background 0.16s, transform 0.16s; }
+.session-card:hover { background: rgba(222, 237, 226, 0.34); transform: translateX(2px); }
+
+.chip { border-color: rgba(30, 55, 43, 0.12); }
+.you-tag { box-shadow: 0 3px 10px rgba(31, 107, 79, 0.18); }
+.detail-notes { background: rgba(232, 239, 233, 0.58); border-color: rgba(30, 55, 43, 0.09); border-radius: 14px; }
+.part-fieldset, .corrections-grid { border-color: rgba(30, 55, 43, 0.11); border-radius: 16px; background: rgba(255, 255, 255, 0.42); }
+.modal-backdrop { background: rgba(21, 35, 28, 0.34); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+.modal { border-radius: 26px; padding: 26px; box-shadow: 0 24px 70px rgba(23, 33, 27, 0.22); }
+.request-item, .dispute-item { background: rgba(255, 255, 255, 0.48); border-color: rgba(30, 55, 43, 0.10); border-radius: 16px; }
+
+@media (max-width: 560px) {
+  .topbar { margin-top: 8px; border-radius: 18px; }
+  .gate-card { margin-top: 5vh; padding: 26px 20px; border-radius: 22px; }
+  .card { border-radius: 20px; padding: 18px; }
+  .modal-root { padding: 0; align-items: flex-end; }
+  .modal { max-width: none; margin: 0; border-radius: 24px 24px 0 0; padding: 22px 18px 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .session-card { transition: none; }
+  .btn:hover:not(:disabled), .session-card:hover { transform: none; }
 }

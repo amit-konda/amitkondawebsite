@@ -440,11 +440,9 @@ describe("session lifecycle", () => {
     expect(ledger.status).toBe(200);
     expect(ledger.json.totalCents).toBe(0);
     // Alice 15000, Eve/Frank/Zoe 0 (name ASC tie), Dave -4000, Bob -5000, Carol -6000.
-    // Inactive Frank still appears (total must always sum to $0.00).
     expect(ledger.json.rows!.map((r) => r.name)).toEqual([
       "Alice",
       "Eve",
-      "Frank",
       "Zoe",
       "Dave",
       "Bob",
@@ -563,7 +561,6 @@ describe("session lifecycle", () => {
     expect(ledger.json.rows!.map((r) => r.name)).toEqual([
       "Alice",
       "Eve",
-      "Frank",
       "Zoe",
       "Carol",
       "Bob",
@@ -795,10 +792,9 @@ describe("session lifecycle", () => {
     expect(detail.json.session!.recordedBy).toEqual({ id: alice.id, name: "Alice" });
     expect(detail.json.session!.participants.map((p) => p.name)).toContain("Alice");
 
-    // Ledger keeps ALL members (deactivation only hides from selection) —
-    // the visible total must always sum to exactly $0.00.
+    // Deactivated members are hidden while the total remains balanced.
     const ledger = await getLedger(group);
-    expect(ledger.json.rows!.some((r) => r.name === "Alice")).toBe(true);
+    expect(ledger.json.rows!.some((r) => r.name === "Alice")).toBe(false);
     expect(ledger.json.totalCents).toBe(0);
   });
 });

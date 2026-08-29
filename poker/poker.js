@@ -413,6 +413,7 @@ function dismissBanner(message) {
 
 /** @type {{close: () => void}|null} */
 let activeModal = null;
+let livePollTimer = null;
 
 /**
  * @param {{title: string, body: HTMLElement, wide?: boolean}} opts
@@ -778,6 +779,8 @@ async function renderDashboard() {
     });
   }
   await Promise.allSettled([loadLedger(), loadSessions(true), loadLive()]);
+  if (livePollTimer) clearInterval(livePollTimer);
+  livePollTimer = window.setInterval(() => { void loadLive(); }, 30000);
   if (state.status && !state.status.viewer) {
     showBanner({
       kind: "info",
@@ -1982,6 +1985,10 @@ function buildDismissForm(d, refresh) {
 /* ── Header handlers ───────────────────────────────────────── */
 
 async function onLogout() {
+  if (livePollTimer) {
+    clearInterval(livePollTimer);
+    livePollTimer = null;
+  }
   try {
     await api("/auth/logout", { method: "POST" });
     state.status = { group: false, admin: false, viewer: null, authVersion: 0 };

@@ -593,6 +593,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   position: relative;
   width: 100%;
   max-width: 560px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -600,7 +602,7 @@ textarea.input { resize: vertical; min-height: 88px; }
   padding: 22px;
   margin: auto 0;
 }
-.modal-wide { max-width: 720px; }
+.modal-wide { max-width: 760px; }
 
 .modal-head { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
 .modal-head h2 { margin: 0; font-size: 1.35rem; flex: 1; }
@@ -618,6 +620,22 @@ textarea.input { resize: vertical; min-height: 88px; }
 .modal-close:hover { background: #F1EEE6; }
 
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+
+/* Keep modal fields and actions inside the dialog at every width. */
+.modal .stack,
+.modal .form-grid,
+.modal .part-fieldset { min-width: 0; }
+.modal .form-grid > div { min-width: 0; }
+.modal .part-fieldset { padding: 12px 16px 8px; }
+.modal .part-fieldset > legend {
+  max-width: calc(100% - 24px);
+  padding: 0 8px;
+  margin-left: 2px;
+  white-space: normal;
+  line-height: 1.25;
+}
+.modal .modal-actions { align-items: center; }
+.modal .modal-actions .btn { max-width: 100%; }
 
 /* ── Admin panels ────────────────────────────────────────── */
 
@@ -825,6 +843,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 .live-player-actions { display: flex; align-items: center; gap: 8px; }
 .live-player-actions .live-cashout { width: 120px; }
 
+#live-start-members .part-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(110px, 140px); align-items: center; }
+#live-start-members .part-amount { width: 100%; }
+
 .ledger-row { padding-top: 13px; padding-bottom: 13px; border-bottom-color: var(--row-line); }
 .ledger-row:hover { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
 .ledger-total { border-top-color: rgba(30, 55, 43, 0.16); }
@@ -845,7 +866,11 @@ textarea.input { resize: vertical; min-height: 88px; }
   .gate-card { margin-top: 5vh; padding: 26px 20px; border-radius: 22px; }
   .card { border-radius: 20px; padding: 18px; }
   .modal-root { padding: 0; align-items: flex-end; }
-  .modal { max-width: none; margin: 0; border-radius: 24px 24px 0 0; padding: 22px 18px 26px; }
+  .modal { max-height: calc(100vh - 12px); max-width: none; margin: 0; border-radius: 24px 24px 0 0; padding: 22px 18px 26px; }
+  .modal .modal-actions { justify-content: stretch; }
+  .modal .modal-actions .btn { flex: 1 1 150px; }
+  #live-start-members .part-row { grid-template-columns: 24px minmax(0, 1fr); }
+  #live-start-members .part-amount { grid-column: 2; width: 100%; }
   .live-player-row { align-items: flex-start; flex-direction: column; }
   .live-player-actions { width: 100%; }
   .live-player-actions .live-cashout { flex: 1; width: auto; }

@@ -839,6 +839,15 @@ function renderOverallLedger() {
   if (!rows.length) { body.innerHTML = `<p class="empty-state">No members yet.</p>`; return; }
   const total = rows.reduce((sum, row) => sum + row.netCents, 0);
   body.innerHTML = rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.isViewer ? ` <span class="you-tag">YOU</span>` : ""}<div class="ledger-sub">${r.sessionsPlayed} combined session${r.sessionsPlayed === 1 ? "" : "s"}</div></div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(total))}</strong></div>`;
+  renderOverallGraph(rows);
+}
+
+function renderOverallGraph(rows) {
+  const graph = /** @type {SVGElement} */ (el("overall-graph"));
+  const max = Math.max(1, ...rows.map((r) => Math.abs(r.netCents)));
+  const barWidth = Math.max(34, Math.min(72, 620 / Math.max(1, rows.length) - 10));
+  const baseline = 145;
+  graph.innerHTML = `<line x1="40" y1="${baseline}" x2="690" y2="${baseline}" class="graph-axis" />` + rows.map((r, i) => { const x = 55 + i * (635 / Math.max(1, rows.length)); const height = Math.max(2, Math.round(Math.abs(r.netCents) / max * 92)); const y = r.netCents >= 0 ? baseline - height : baseline; const color = r.netCents > 0 ? "#18794E" : r.netCents < 0 ? "#B5473C" : "#9AA69E"; return `<rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${height}" rx="8" fill="${color}" /><text x="${x}" y="${r.netCents >= 0 ? y - 8 : y + height + 17}" text-anchor="middle" class="graph-value">${esc(formatCents(r.netCents))}</text><text x="${x}" y="185" text-anchor="middle" class="graph-label">${esc(r.name)}</text>`; }).join("") + `<text x="40" y="${baseline - 105}" class="graph-caption">Positive</text><text x="40" y="${baseline + 115}" class="graph-caption">Negative</text>`;
 }
 
 function renderBlackjackLedger() {

@@ -11,7 +11,7 @@
  * - Admin mutations are transactional: state change + audit + email outbox
  *   row commit atomically; the email pump runs best-effort after commit.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
@@ -48,7 +48,7 @@ const joinRequestBodySchema = z.object({
 
 const createMemberSchema = z.object({
   displayName: displayNameSchema,
-  email: emailSchema,
+  email: emailSchema.optional().or(z.literal("")),
   welcomeEmail: z.boolean().optional()
 });
 
@@ -154,7 +154,7 @@ export function registerMembersRoutes(router: Router): void {
   route(router, "post", "/join-requests", async (ctx) => {
     await enforceJoinRateLimit(ctx.req);
     const body = joinRequestBodySchema.parse(ctx.body);
-    const emailNormalized = normalizeEmail(body.email);
+    const emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
 
     // Anti-enumeration: existing ACTIVE members silently "receive" the
     // request — no row is created and no indication is given either way.
@@ -317,12 +317,12 @@ export function registerMembersRoutes(router: Router): void {
   route(router, "post", "/admin/members", async (ctx) => {
     requireAdmin(ctx);
     const body = createMemberSchema.parse(ctx.body);
-    const emailNormalized = normalizeEmail(body.email);
+    const emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
 
-    if (await findMemberByEmail(db, emailNormalized)) {
+    if (body.email && await findMemberByEmail(db, emailNormalized)) {
       throw conflict("A member with this email already exists.");
     }
-    const pending = await findPendingRequest(db, emailNormalized);
+    const pending = body.email ? await findPendingRequest(db, emailNormalized) : null;
 
     const member = await db.transaction(async (tx) => {
       const inserted = await tx
@@ -361,7 +361,7 @@ export function registerMembersRoutes(router: Router): void {
         afterJson: { id: m.id, displayName: m.displayName, emailNormalized }
       });
 
-      if (body.welcomeEmail) {
+      if (body.welcomeEmail && body.email) {
         await enqueueEmail(tx, {
           eventType: "member_welcome",
           entityType: "member",
@@ -374,7 +374,7 @@ export function registerMembersRoutes(router: Router): void {
       return m;
     });
 
-    if (body.welcomeEmail) {
+    if (body.welcomeEmail && body.email) {
       // Best-effort email pump after commit — never fails the request.
       await notifyEntity("member", member.id, 1);
     }

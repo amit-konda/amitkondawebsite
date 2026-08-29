@@ -1504,7 +1504,7 @@ function openMembersPanel() {
       </div>
       <div>
         <label class="field" for="am-email">Email</label>
-        <input id="am-email" type="email" class="input" maxlength="254" required>
+        <input id="am-email" type="email" class="input" maxlength="254" placeholder="Optional">
       </div>
     </div>
     <label class="check-row">
@@ -1530,8 +1530,8 @@ function openMembersPanel() {
     noteEl.hidden = true;
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
-    if (!name || !EMAIL_RE.test(email)) {
-      noteEl.textContent = "Enter a name and a valid email address.";
+    if (!name || (email && !EMAIL_RE.test(email))) {
+      noteEl.textContent = "Enter a name and, if provided, a valid email address.";
       noteEl.hidden = false;
       return;
     }

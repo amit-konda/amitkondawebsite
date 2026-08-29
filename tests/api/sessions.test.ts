@@ -439,7 +439,9 @@ describe("session lifecycle", () => {
     const ledger = await getLedger(group);
     expect(ledger.status).toBe(200);
     expect(ledger.json.totalCents).toBe(0);
-    // Alice 15000, Eve/Frank/Zoe 0 (name ASC tie), Dave -4000, Bob -5000, Carol -6000.
+    // Active members: Alice 15000, Eve/Zoe 0 (name ASC tie), Dave -4000,
+    // Bob -5000, Carol -6000. Inactive members are omitted from the visible
+    // ledger while their balances remain included in the zero-sum total.
     expect(ledger.json.rows!.map((r) => r.name)).toEqual([
       "Alice",
       "Eve",
@@ -464,8 +466,7 @@ describe("session lifecycle", () => {
     // Zero-session members: 0 / 0 / null.
     expect(row("Eve")).toMatchObject({ netCents: 0, sessionsPlayed: 0, lastPlayedAt: null });
     expect(row("Zoe")).toMatchObject({ netCents: 0, sessionsPlayed: 0, lastPlayedAt: null });
-    // Inactive members appear with their balances (zero-sum invariant).
-    expect(row("Frank")).toMatchObject({ netCents: 0, sessionsPlayed: 0, lastPlayedAt: null });
+    expect(ledger.json.rows!.some((r) => r.name === "Frank")).toBe(false);
   });
 
   it("paginates sessions newest-first with a keyset cursor", async () => {
@@ -555,7 +556,8 @@ describe("session lifecycle", () => {
     expect(voidRes.status).toBe(200);
     expect(voidRes.json.ok).toBe(true);
 
-    // Ledger after void: Alice 7500 (s1+s3), Bob -2500, Carol -2000, Dave -3000, Eve/Frank/Zoe 0.
+    // Ledger after void: Alice 7500 (s1+s3), Bob -2500, Carol -2000,
+    // Dave -3000, Eve/Zoe 0; inactive Frank remains hidden.
     const ledger = await getLedger(group);
     expect(ledger.json.totalCents).toBe(0);
     expect(ledger.json.rows!.map((r) => r.name)).toEqual([

@@ -265,12 +265,6 @@ function formatRecentDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Total amount represented by a session's winning-side results. */
-function sessionPlayedCents(session) {
-  return (session.participants ?? [])
-    .reduce((total, participant) => total + Math.max(0, participant.amountCents), 0);
-}
-
 /**
  * @param {string|null|undefined} iso
  * @returns {string}
@@ -900,11 +894,10 @@ function renderSessions() {
     card.type = "button";
     card.className = "session-card";
     const playerCount = s.participants?.length ?? 0;
-    const played = sessionPlayedCents(s);
     card.innerHTML = `
       <span class="sess-date">${esc(formatRecentDate(s.playedAt))}</span>
       <span class="sess-summary">
-        <span class="sess-stats"><strong>${playerCount} ${playerCount === 1 ? "player" : "players"}</strong><span>${esc(formatCents(played))} played</span></span>
+        <span class="sess-player-count"><strong>${playerCount} ${playerCount === 1 ? "player" : "players"}</strong></span>
         ${s.title ? `<span class="sess-title">${esc(s.title)}</span>` : ""}
       </span>
       <span class="chip chip-${esc(s.status)}">${esc(statusLabel(s.status))}</span>

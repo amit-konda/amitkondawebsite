@@ -427,9 +427,8 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .sess-date { color: var(--muted); font-size: 0.85rem; min-width: 64px; }
 .sess-summary { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-.sess-stats { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-.sess-stats strong { font-weight: 650; }
-.sess-stats span { color: var(--muted); font-size: 0.88rem; }
+.sess-player-count { display: block; min-width: 0; }
+.sess-player-count strong { font-weight: 650; }
 .sess-title { color: var(--muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sess-chev { color: var(--muted); font-size: 1.1rem; }
 

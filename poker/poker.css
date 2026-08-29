@@ -212,8 +212,8 @@ main {
 }
 .btn-primary:hover:not(:disabled) { background: var(--felt-dark); border-color: var(--felt-dark); }
 
-.btn-live { border-color: rgba(31, 107, 79, 0.25); color: var(--felt-dark); background: rgba(226, 241, 231, 0.66); }
-.btn-live:hover:not(:disabled) { background: rgba(212, 236, 220, 0.92); }
+.btn-live { border-color: var(--felt); color: #FFFFFF; background: var(--felt); }
+.btn-live:hover:not(:disabled) { background: var(--felt-dark); border-color: var(--felt-dark); }
 
 .btn-ghost { background: transparent; border-color: transparent; }
 .btn-ghost:hover:not(:disabled) { background: #ECE9E0; }

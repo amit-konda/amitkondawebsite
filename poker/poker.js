@@ -841,9 +841,11 @@ function renderOverallLedger() {
     current.netCents += row.netCents; current.sessionsPlayed += row.sessionsPlayed; current.isViewer ||= row.isViewer; byId.set(row.memberId, current);
   }
   const rows = [...byId.values()].sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
-  if (!rows.length) { body.innerHTML = `<p class="empty-state">No members yet.</p>`; return; }
-  const total = rows.reduce((sum, row) => sum + row.netCents, 0);
-  body.innerHTML = rows.map((r) => `<div class="ledger-row"><div><strong>${esc(r.name)}</strong>${r.isViewer ? ` <span class="you-tag">YOU</span>` : ""}<div class="ledger-sub">${r.sessionsPlayed} combined session${r.sessionsPlayed === 1 ? "" : "s"}</div></div><strong class="ledger-amount ${r.netCents > 0 ? "positive" : r.netCents < 0 ? "negative" : "zero"}">${esc(formatCents(r.netCents))}</strong></div>`).join("") + `<div class="ledger-total"><strong>Total</strong><strong>${esc(formatCents(total))}</strong></div>`;
+  const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
+  const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
+  if (!rows.length) { body.innerHTML = head + `<p class="empty-state">No members yet.</p>` + total; return; }
+  const html = rows.map((r) => { const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`; return `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${esc(played)} · combined games & bets</div></div>`; }).join("");
+  body.innerHTML = head + html + total;
 }
 
 async function renderHandshakeDashboard() {

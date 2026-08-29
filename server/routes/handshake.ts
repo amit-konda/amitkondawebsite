@@ -13,12 +13,12 @@ const settleSchema = z.object({ winnerMemberId: z.string().uuid() });
 
 export function registerHandshakeRoutes(router: Router): void {
   router.get("/api/poker/handshake/ledger", async (ctx) => {
-    requireGroup(ctx);
+    const claims = requireGroup(ctx);
     const active = await db.select({ id: members.id, name: members.displayName }).from(members).where(eq(members.status, "active"));
     const settled = await db.select({ first: handshakeBets.firstMemberId, second: handshakeBets.secondMemberId, winner: handshakeBets.winnerMemberId, amount: handshakeBets.amountCents }).from(handshakeBets).where(eq(handshakeBets.status, "settled"));
     const totals = new Map(active.map((m) => [m.id, 0]));
     for (const b of settled) { const amount = Number(b.amount); if (!b.winner) continue; const loser = b.winner === b.first ? b.second : b.first; totals.set(b.winner, (totals.get(b.winner) ?? 0) + amount); totals.set(loser, (totals.get(loser) ?? 0) - amount); }
-    const rows = active.map((m) => ({ memberId: m.id, name: m.name, netCents: totals.get(m.id) ?? 0 }));
+    const rows = active.map((m) => ({ memberId: m.id, name: m.name, netCents: totals.get(m.id) ?? 0, sessionsPlayed: 0, lastPlayedAt: null, isViewer: m.id === claims.mid }));
     rows.sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
     return { totalCents: rows.reduce((s, r) => s + r.netCents, 0), rows };
   });

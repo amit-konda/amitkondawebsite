@@ -686,6 +686,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .check-row { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 0.95rem; }
 .check-row input { width: 20px; height: 20px; accent-color: var(--felt); }
+.choice-fieldset { border: 1px solid var(--row-line); border-radius: 14px; padding: 10px 14px 12px; margin: 0; }
+.choice-row { display: flex; align-items: center; gap: 10px; padding: 9px 2px; font-weight: 550; }
+.choice-row input { width: 19px; height: 19px; accent-color: var(--felt); }
 
 .corrections-grid { border: 1px solid var(--row-line); border-radius: 10px; padding: 8px 12px; background: var(--card); }
 

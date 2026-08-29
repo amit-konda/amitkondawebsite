@@ -425,8 +425,12 @@ textarea.input { resize: vertical; min-height: 88px; }
 .session-card:hover { background: #F7F4EC; }
 .session-card:last-of-type { border-bottom: none; }
 
-.sess-date { color: var(--muted); font-size: 0.85rem; min-width: 92px; }
-.sess-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sess-date { color: var(--muted); font-size: 0.85rem; min-width: 64px; }
+.sess-summary { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.sess-stats { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.sess-stats strong { font-weight: 650; }
+.sess-stats span { color: var(--muted); font-size: 0.88rem; }
+.sess-title { color: var(--muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sess-chev { color: var(--muted); font-size: 1.1rem; }
 
 /* ── Chips ───────────────────────────────────────────────── */
@@ -745,7 +749,8 @@ textarea.input { resize: vertical; min-height: 88px; }
 
   .sess-date { min-width: 0; }
   .session-card { flex-wrap: wrap; row-gap: 2px; padding: 12px 6px; }
-  .sess-title { width: 100%; order: 3; white-space: normal; }
+  .sess-summary { width: auto; }
+  .sess-title { white-space: normal; }
   .sess-chev { margin-left: auto; }
 
   .part-amount { width: 120px; }

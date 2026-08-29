@@ -292,7 +292,7 @@ export function registerSessionsRoutes(router: Router): void {
       })
       .from(members)
       .leftJoin(sessionResults, eq(sessionResults.memberId, members.id))
-      .leftJoin(pokerSessions, eq(pokerSessions.id, sessionResults.sessionId))
+      .leftJoin(pokerSessions, and(eq(pokerSessions.id, sessionResults.sessionId), eq(pokerSessions.gameType, "poker")))
       .groupBy(members.id, members.displayName);
     const allRows = rows.map((r) => ({ ...r, netCents: Number(r.netCents) }));
     const activeIds = new Set((await db.select({ id: members.id }).from(members).where(eq(members.status, "active"))).map((m) => m.id));
@@ -347,6 +347,7 @@ export function registerSessionsRoutes(router: Router): void {
         // raw Date params crash the postgres.js driver when drizzle's
         // transparent serializer is installed (drizzle-orm/postgres-js).
         and(
+          eq(pokerSessions.gameType, "poker"),
           ne(pokerSessions.status, "live"),
           after
             ? sql`(${pokerSessions.playedAt}, ${pokerSessions.id}) < (${after.playedAt.toISOString()}::timestamptz, ${after.id})`

@@ -1922,6 +1922,15 @@ async function onFeedbackSubmit(event) {
   note.hidden = false;
 }
 
+function openFeedbackModal() {
+  const body = document.createElement("form");
+  body.className = "stack";
+  body.id = "feedback-form";
+  body.innerHTML = `<label class="field" for="feedback-kind">Type<select id="feedback-kind" class="input"><option value="suggestion">Suggestion</option><option value="bug">Bug report</option></select></label><label class="field" for="feedback-message">What should we know?<textarea id="feedback-message" class="input" rows="4" maxlength="2000" required></textarea></label><button class="btn btn-primary" type="submit">Send feedback</button><p id="feedback-note" class="form-note" role="status" hidden></p>`;
+  body.addEventListener("submit", onFeedbackSubmit);
+  openModal({ title: "Suggestions & bugs", body });
+}
+
 function onAddSession() {
   if (!state.status?.viewer) {
     showBanner({
@@ -1964,7 +1973,7 @@ function wireStatic() {
   wireCollapsible("dash-admin-toggle", "dash-admin-form");
   /** @type {HTMLButtonElement} */ (el("logout-btn")).addEventListener("click", onLogout);
   /** @type {HTMLSelectElement} */ (el("viewer-select")).addEventListener("change", onViewerChange);
-  el("feedback-form").addEventListener("submit", onFeedbackSubmit);
+  el("feedback-btn").addEventListener("click", openFeedbackModal);
   /** @type {HTMLButtonElement} */ (el("add-session-btn")).addEventListener("click", onAddSession);
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);

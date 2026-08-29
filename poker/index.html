@@ -72,6 +72,7 @@
     <div class="dash">
       <div class="dash-actions">
         <button id="add-session-btn" class="btn btn-primary" type="button">+ Add session</button>
+        <button id="feedback-btn" class="btn btn-ghost" type="button">Feedback</button>
         <button id="dash-admin-toggle" class="linkish linkish-small" type="button" aria-expanded="false" aria-controls="dash-admin-form" hidden>Admin sign-in</button>
       </div>
 
@@ -107,21 +108,6 @@
           <h2 class="card-heading">Recent sessions</h2>
           <div id="sessions-body"></div>
         </div>
-      </div>
-      <div class="card feedback-card">
-        <h2 class="card-heading">Suggestions &amp; bugs</h2>
-        <form id="feedback-form" class="stack" novalidate>
-          <div class="field-row">
-            <label class="field" for="feedback-kind">Type
-              <select id="feedback-kind" class="input"><option value="suggestion">Suggestion</option><option value="bug">Bug report</option></select>
-            </label>
-          </div>
-          <label class="field" for="feedback-message">What should we know?
-            <textarea id="feedback-message" class="input" rows="3" maxlength="2000" required></textarea>
-          </label>
-          <button class="btn btn-primary" type="submit">Send feedback</button>
-          <p id="feedback-note" class="form-note" role="status" hidden></p>
-        </form>
       </div>
     </div>
   </section>

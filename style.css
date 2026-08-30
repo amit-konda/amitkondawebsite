@@ -63,12 +63,36 @@ a:visited {
   letter-spacing: 0.05em;
   font-size: clamp(1rem, 2vw, 1.35rem);
   margin: 12px 0 0;
+  width: min(100%, 1100px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.center .position > span:first-child {
+  text-align: right;
+}
+
+.center .position > span:last-child {
+  text-align: left;
 }
 
 .center .contact {
   margin: 18px 0 0;
   font-size: clamp(0.85rem, 1.5vw, 1.05rem);
   letter-spacing: 0.03em;
+  width: min(100%, 1100px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.center .contact a:first-child {
+  text-align: right;
+}
+
+.center .contact a:last-child {
+  text-align: left;
 }
 
 .center .contact a {
@@ -103,13 +127,11 @@ a:visited {
 
 @media (max-width: 560px) {
   .center .contact {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   }
 
   .center .contact .sep {
-    display: none;
+    margin: 0 8px;
   }
 
   .rail {

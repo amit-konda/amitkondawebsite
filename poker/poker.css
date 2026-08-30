@@ -689,6 +689,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 .choice-fieldset { border: 1px solid var(--row-line); border-radius: 14px; padding: 10px 14px 12px; margin: 0; }
 .choice-row { display: flex; align-items: center; gap: 10px; padding: 9px 2px; font-weight: 550; }
 .choice-row input { width: 19px; height: 19px; accent-color: var(--felt); }
+.choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.choice-grid .btn { width: 100%; }
+.live-saved { min-width: 42px; color: var(--felt-dark); font-size: .78rem; font-weight: 650; }
 
 .corrections-grid { border: 1px solid var(--row-line); border-radius: 10px; padding: 8px 12px; background: var(--card); }
 

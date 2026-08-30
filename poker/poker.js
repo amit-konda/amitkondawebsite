@@ -1029,6 +1029,20 @@ function openStartLiveModal() {
   });
 }
 
+function openRebuyChooser(sessionId, participant) {
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<p class="form-hint">Choose a common buy-in amount for ${esc(participant.name)}.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary rebuy-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost rebuy-custom">Custom</button></div><div class="modal-actions"><button type="button" class="btn btn-ghost rebuy-cancel">Cancel</button></div>`;
+  openModal({ title: "Add buy-in", body });
+  q(body, ".rebuy-cancel").addEventListener("click", closeModal);
+  q(body, ".rebuy-custom").addEventListener("click", () => { closeModal(); const raw = prompt(`Additional buy-in for ${participant.name}`, ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents && cents > 0) saveRebuy(sessionId, participant.memberId, cents); });
+  body.querySelectorAll(".rebuy-choice").forEach((button) => button.addEventListener("click", () => { const cents = Number(button.getAttribute("data-amount")) * 100; closeModal(); saveRebuy(sessionId, participant.memberId, cents); }));
+}
+
+async function saveRebuy(sessionId, memberId, amountCents) {
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); }
+}
+
 function openLiveModal() {
   if (!state.live) return;
   const body = document.createElement("div"); body.className = "stack live-panel";
@@ -1037,10 +1051,10 @@ function openLiveModal() {
   const list = q(body, ".live-player-list");
   for (const p of live.participants) {
     const row = document.createElement("div"); row.className = "live-player-row";
-    row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><button type="button" class="btn btn-small live-save-cashout">Save</button></div>`;
+    row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><span class="live-saved" aria-live="polite"></span></div>`;
     const cash = /** @type {HTMLInputElement} */ (q(row, ".live-cashout"));
-    q(row, ".live-rebuy").addEventListener("click", async () => { const raw = prompt(`Additional buy-in for ${p.name}`, ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents == null || cents <= 0) return; try { await api(`/live/${encodeURIComponent(live.session.id)}/buyins`, { method: "POST", body: { memberId: p.memberId, amountCents: cents } }); closeModal(); await refreshStatus(); route(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); } });
-    q(row, ".live-save-cashout").addEventListener("click", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; try { await api(`/live/${encodeURIComponent(live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); closeModal(); await refreshStatus(); route(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
+    q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(live.session.id, p));
+    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
     list.appendChild(row);
   }
   q(body, "#live-close").addEventListener("click", closeModal);
@@ -1173,7 +1187,7 @@ function openSessionModal(opts) {
     row.innerHTML = `
       <input type="checkbox" class="part-check" id="${esc(checkId)}">
       <label for="${esc(checkId)}" class="part-name">${esc(e.name)}${e.active ? "" : ' <span class="part-inactive">(inactive)</span>'}</label>
-      <input type="text" inputmode="decimal" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="+0.00" autocomplete="off" hidden>`;
+      <input type="text" inputmode="text" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="+0.00 or -0.00" autocomplete="off" hidden>`;
     const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
     const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
     if (resultByMember.has(e.id)) {

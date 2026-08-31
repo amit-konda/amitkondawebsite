@@ -702,6 +702,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 .member-row { display: flex; align-items: center; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--row-line); }
 .member-row:last-child { border-bottom: none; }
 .member-row .part-name { font-size: 1rem; }
+.member-row-inactive { opacity: 0.68; }
+.member-inactive-tag { font-size: 0.72rem; font-weight: 650; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); background: rgba(30, 55, 43, 0.08); border-radius: 999px; padding: 3px 9px; }
+.member-section-hint { margin-top: 14px; }
 
 .inline-note { margin: 8px 0 0; font-size: 0.9rem; color: var(--felt-dark); font-weight: 600; }
 

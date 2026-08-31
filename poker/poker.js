@@ -99,6 +99,7 @@ const MAX_AMOUNT_CENTS = 100_000_000; // $1,000,000 — mirrors server/domain/mo
 const CENTS_RE = /^([+-]?)(\d*)(?:\.(\d{1,2}))?$/; // mirrors server
 const SESSION_PAGE_LIMIT = 8;
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
+const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall"]);
 
 /* ── State ─────────────────────────────────────────────────── */
 
@@ -581,8 +582,37 @@ function clearTokenFromUrl() {
   }
 }
 
+/**
+ * Build the shareable app URL for a tab (+ optional session id) so views
+ * are deep-linkable and survive a refresh. "overall" is the default tab
+ * and is omitted from the URL to keep the default link clean.
+ * @param {{tab?: string, session?: string|null}} parts
+ * @returns {string}
+ */
+function buildAppUrl(parts) {
+  const usp = new URLSearchParams();
+  const tab = parts.tab ?? state.gameTab;
+  if (tab && tab !== "overall") usp.set("tab", tab);
+  if (parts.session) usp.set("session", parts.session);
+  const qs = usp.toString();
+  return location.pathname + (qs ? "?" + qs : "");
+}
+
+/** Push a new history entry for in-app navigation (tab switch, open detail). */
+function pushAppUrl(parts) {
+  const url = buildAppUrl(parts);
+  if (url !== location.pathname + location.search) {
+    try {
+      history.pushState(null, "", url);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function route() {
-  const token = new URLSearchParams(location.search).get("token");
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
   state.token = token && token.length > 0 ? token : null;
   if (!state.status || !state.status.group) {
     el("topbar-controls").hidden = true;
@@ -592,15 +622,27 @@ function route() {
   }
   el("topbar-controls").hidden = false;
   el("game-tabs").hidden = false;
-  updateGameTabs();
   if (state.token) {
+    updateGameTabs();
     renderDisputeView();
-  } else {
-    if (state.gameTab === "blackjack") renderBlackjackDashboard();
-    else if (state.gameTab === "overall") renderOverallDashboard();
-    else if (state.gameTab === "handshake") renderHandshakeDashboard();
-    else renderDashboard();
+    return;
   }
+  const tabParam = params.get("tab");
+  state.gameTab = tabParam && VALID_TABS.has(tabParam) ? tabParam : "overall";
+  updateGameTabs();
+  const sessionId = params.get("session");
+  if (sessionId) {
+    if (state.gameTab === "blackjack") {
+      openBlackjackDetail(sessionId, { push: false });
+    } else {
+      showSessionDetail(sessionId, { push: false });
+    }
+    return;
+  }
+  if (state.gameTab === "blackjack") renderBlackjackDashboard();
+  else if (state.gameTab === "overall") renderOverallDashboard();
+  else if (state.gameTab === "handshake") renderHandshakeDashboard();
+  else renderDashboard();
 }
 
 /* ── Gate ──────────────────────────────────────────────────── */
@@ -903,8 +945,10 @@ function openBlackjackModal() {
   q(body, "#bj-submit").addEventListener("click", async () => { const verify = /** @type {HTMLInputElement} */ (q(body, "#bj-verify")); const results = rows.map((r) => ({ memberId: r.memberId, amountCents: parseDollarsToCents(r.amount.value) })).filter((r) => r.amountCents !== null); if (!verify.checked) return showBanner({ kind: "error", message: "Confirm that you verified the results as the dealer." }); if (results.length === 0) return showBanner({ kind: "error", message: "Enter at least one player result." }); const submit = /** @type {HTMLButtonElement} */ (q(body, "#bj-submit")); submit.disabled = true; try { await api("/blackjack/sessions", { method: "POST", body: { requestKey: crypto.randomUUID(), playedAt: new Date(`${field("bj-date").value}T12:00:00`).toISOString(), title: field("bj-title").value.trim() || undefined, verifiedDealer: true, players: results } }); closeModal(); await Promise.all([loadBlackjackLedger(), loadBlackjackSessions()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the blackjack session.") }); submit.disabled = false; } });
 }
 
-async function openBlackjackDetail(id) {
-  if (!id) return; try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><p class="detail-meta">Dealer: ${esc(s.participants.find((p) => p.memberId === s.dealerMemberId)?.name || "Unknown")}</p><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => route()); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
+async function openBlackjackDetail(id, opts = {}) {
+  if (!id) return;
+  if (opts.push !== false) pushAppUrl({ tab: "blackjack", session: id });
+  try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><p class="detail-meta">Dealer: ${esc(s.participants.find((p) => p.memberId === s.dealerMemberId)?.name || "Unknown")}</p><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => { pushAppUrl({ tab: "blackjack" }); renderBlackjackDashboard(); }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
 }
 
 /**
@@ -1046,10 +1090,35 @@ function openStartLiveModal() {
 
 function openRebuyChooser(sessionId, participant) {
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<p class="form-hint">Choose a common buy-in amount for ${esc(participant.name)}.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary rebuy-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost rebuy-custom">Custom</button></div><div class="modal-actions"><button type="button" class="btn btn-ghost rebuy-cancel">Cancel</button></div>`;
+  body.innerHTML = `<p class="form-hint">Choose a common buy-in amount for ${esc(participant.name)}.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary rebuy-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost rebuy-custom">Custom</button></div><div id="rebuy-custom-wrap" class="stack" hidden><label class="field" for="rebuy-custom-amount">Custom amount</label><div class="field-row"><input id="rebuy-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="rebuy-custom-submit">Add</button></div><p id="rebuy-custom-error" class="form-error" role="alert" hidden></p></div><div class="modal-actions"><button type="button" class="btn btn-ghost rebuy-cancel">Cancel</button></div>`;
   openModal({ title: "Add buy-in", body });
   q(body, ".rebuy-cancel").addEventListener("click", closeModal);
-  q(body, ".rebuy-custom").addEventListener("click", () => { closeModal(); const raw = prompt(`Additional buy-in for ${participant.name}`, ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents && cents > 0) saveRebuy(sessionId, participant.memberId, cents); });
+  const customWrap = /** @type {HTMLElement} */ (q(body, "#rebuy-custom-wrap"));
+  const customInput = /** @type {HTMLInputElement} */ (q(body, "#rebuy-custom-amount"));
+  const customError = /** @type {HTMLElement} */ (q(body, "#rebuy-custom-error"));
+  q(body, ".rebuy-custom").addEventListener("click", () => {
+    customWrap.hidden = false;
+    customInput.focus();
+  });
+  const submitCustom = () => {
+    const cents = parseDollarsToCents(customInput.value);
+    if (cents == null || cents <= 0) {
+      customError.textContent = "Enter an amount like 20 or 20.00.";
+      customError.hidden = false;
+      customInput.focus();
+      return;
+    }
+    customError.hidden = true;
+    closeModal();
+    saveRebuy(sessionId, participant.memberId, cents);
+  };
+  q(body, "#rebuy-custom-submit").addEventListener("click", submitCustom);
+  customInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitCustom();
+    }
+  });
   body.querySelectorAll(".rebuy-choice").forEach((button) => button.addEventListener("click", () => { const cents = Number(button.getAttribute("data-amount")) * 100; closeModal(); saveRebuy(sessionId, participant.memberId, cents); }));
 }
 
@@ -1326,7 +1395,8 @@ function openSessionModal(opts) {
 /**
  * @param {string} id
  */
-function showSessionDetail(id) {
+function showSessionDetail(id, opts = {}) {
+  if (opts.push !== false) pushAppUrl({ tab: state.gameTab, session: id });
   showView("detail");
   const body = el("detail-body");
   body.innerHTML = `
@@ -1335,7 +1405,10 @@ function showSessionDetail(id) {
       <div class="spinner" aria-hidden="true"></div>
       <p class="loading-text">Loading session…</p>
     </div>`;
-  q(body, "#detail-back").addEventListener("click", () => renderDashboard());
+  q(body, "#detail-back").addEventListener("click", () => {
+    pushAppUrl({ tab: state.gameTab });
+    renderDashboard();
+  });
   loadSessionDetail(id);
 }
 
@@ -1799,25 +1872,44 @@ function openMembersPanel() {
 
   async function refreshList() {
     let adminMembers;
-    try { adminMembers = (await api("/admin/members")).members ?? []; state.members = adminMembers; fillViewerSelect(); }
+    try { adminMembers = (await api("/admin/members")).members ?? []; }
     catch {
       renderErrorBox(listWrap, "Couldn't load members.", refreshList);
       return;
     }
+    // Admin sees everyone here, but the viewer picker and session forms must
+    // only ever offer active members — resync state.members from /members
+    // (active-only) so opening this panel can't leak a deactivated member
+    // into those pickers.
+    await loadMembers();
     listWrap.innerHTML = "";
-    if (state.members.length === 0) {
+    const active = adminMembers.filter((m) => m.status === "active");
+    const inactive = adminMembers.filter((m) => m.status !== "active");
+    if (active.length === 0 && inactive.length === 0) {
       const p = document.createElement("p");
       p.className = "empty-state";
-      p.textContent = "No active members yet — add the first one above.";
+      p.textContent = "No members yet — add the first one above.";
       listWrap.appendChild(p);
       return;
     }
-    const hint = document.createElement("p");
-    hint.className = "form-hint";
-    hint.textContent = "Members who have been deactivated don't appear in this list.";
-    listWrap.appendChild(hint);
-    for (const m of state.members) {
-      listWrap.appendChild(buildMemberRow(m, refreshList));
+    if (active.length === 0) {
+      const p = document.createElement("p");
+      p.className = "empty-state";
+      p.textContent = "No active members — add one above, or reactivate someone below.";
+      listWrap.appendChild(p);
+    } else {
+      for (const m of active) {
+        listWrap.appendChild(buildMemberRow(m, refreshList));
+      }
+    }
+    if (inactive.length > 0) {
+      const hint = document.createElement("p");
+      hint.className = "form-hint member-section-hint";
+      hint.textContent = "Deactivated — hidden from the viewer picker and session forms until reactivated.";
+      listWrap.appendChild(hint);
+      for (const m of inactive) {
+        listWrap.appendChild(buildMemberRow(m, refreshList));
+      }
     }
   }
 
@@ -1831,11 +1923,17 @@ function openMembersPanel() {
  */
 function buildMemberRow(m, refresh) {
   const row = document.createElement("div");
-  row.className = "member-row";
+  row.className = "member-row" + (m.status === "active" ? "" : " member-row-inactive");
   const name = document.createElement("span");
   name.className = "part-name";
   name.textContent = m.name;
   row.appendChild(name);
+  if (m.status !== "active") {
+    const tag = document.createElement("span");
+    tag.className = "member-inactive-tag";
+    tag.textContent = "Deactivated";
+    row.appendChild(tag);
+  }
   const edit = document.createElement("button");
   edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
   edit.addEventListener("click", () => {
@@ -1845,22 +1943,61 @@ function buildMemberRow(m, refresh) {
     openModal({ title: "Edit member", body });
   });
   row.appendChild(edit);
-  const deact = document.createElement("button");
-  deact.type = "button";
-  deact.className = "btn btn-small btn-danger";
-  deact.textContent = "Deactivate";
-  deact.addEventListener("click", async () => {
-    deact.disabled = true;
-    try {
-      await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { status: "inactive" } });
-      showBanner({ kind: "info", message: `${m.name} was deactivated.` });
-      await refresh();
-    } catch (e) {
-      deact.disabled = false;
-      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't deactivate the member.") });
-    }
-  });
-  row.appendChild(deact);
+  if (m.status === "active") {
+    const deact = document.createElement("button");
+    deact.type = "button";
+    deact.className = "btn btn-small btn-danger";
+    deact.textContent = "Deactivate";
+    let armed = false;
+    let armTimer = 0;
+    deact.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        deact.textContent = "Click again to confirm";
+        deact.classList.add("btn-danger-solid");
+        armTimer = window.setTimeout(() => {
+          armed = false;
+          deact.textContent = "Deactivate";
+          deact.classList.remove("btn-danger-solid");
+        }, 4000);
+        return;
+      }
+      window.clearTimeout(armTimer);
+      deact.disabled = true;
+      deact.textContent = "Deactivating…";
+      try {
+        await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { status: "inactive" } });
+        showBanner({ kind: "info", message: `${m.name} was deactivated. Reactivate them anytime from this list.` });
+        await refresh();
+      } catch (e) {
+        armed = false;
+        deact.disabled = false;
+        deact.textContent = "Deactivate";
+        deact.classList.remove("btn-danger-solid");
+        showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't deactivate the member.") });
+      }
+    });
+    row.appendChild(deact);
+  } else {
+    const react = document.createElement("button");
+    react.type = "button";
+    react.className = "btn btn-small btn-primary";
+    react.textContent = "Reactivate";
+    react.addEventListener("click", async () => {
+      react.disabled = true;
+      react.textContent = "Reactivating…";
+      try {
+        await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { status: "active" } });
+        showBanner({ kind: "info", message: `${m.name} was reactivated.` });
+        await refresh();
+      } catch (e) {
+        react.disabled = false;
+        react.textContent = "Reactivate";
+        showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't reactivate the member.") });
+      }
+    });
+    row.appendChild(react);
+  }
   return row;
 }
 
@@ -2220,6 +2357,7 @@ async function onAdminLock() {
 /* ── Init ──────────────────────────────────────────────────── */
 
 function wireStatic() {
+  window.addEventListener("popstate", () => route());
   el("gate-form").addEventListener("submit", onGateUnlock);
   el("gate-request-form").addEventListener("submit", onRequestSubmit);
   el("gate-admin-form").addEventListener("submit", onAdminUnlock);
@@ -2234,15 +2372,27 @@ function wireStatic() {
   el("start-live-btn").addEventListener("click", openStartLiveModal);
   el("live-banner").addEventListener("click", openLiveModal);
   el("add-blackjack-btn").addEventListener("click", openBlackjackModal);
-  el("tab-poker").addEventListener("click", () => { state.gameTab = "poker"; updateGameTabs(); route(); });
-  el("tab-blackjack").addEventListener("click", () => { state.gameTab = "blackjack"; updateGameTabs(); route(); });
-  el("tab-overall").addEventListener("click", () => { state.gameTab = "overall"; updateGameTabs(); route(); });
+  el("tab-poker").addEventListener("click", () => goToTab("poker"));
+  el("tab-blackjack").addEventListener("click", () => goToTab("blackjack"));
+  el("tab-overall").addEventListener("click", () => goToTab("overall"));
   el("add-handshake-btn").addEventListener("click", openHandshakeModal);
-  el("tab-handshake").addEventListener("click", () => { state.gameTab = "handshake"; updateGameTabs(); route(); });
+  el("tab-handshake").addEventListener("click", () => goToTab("handshake"));
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
   /** @type {HTMLButtonElement} */ (el("admin-lock-btn")).addEventListener("click", onAdminLock);
+}
+
+/**
+ * Switch the active game tab and reflect it in the URL so the tab (and,
+ * via route(), any open session detail) stays deep-linkable and survives
+ * a refresh or the browser back/forward buttons.
+ * @param {string} tab
+ */
+function goToTab(tab) {
+  state.gameTab = tab;
+  pushAppUrl({ tab });
+  route();
 }
 
 function updateGameTabs() {

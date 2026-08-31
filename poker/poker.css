@@ -868,6 +868,12 @@ textarea.input { resize: vertical; min-height: 88px; }
 .ledger-row { padding-top: 13px; padding-bottom: 13px; border-bottom-color: var(--row-line); }
 .ledger-row:hover { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
 .ledger-total { border-top-color: rgba(30, 55, 43, 0.16); }
+.ledger-history { grid-column: 1 / -1; margin-top: 8px; border-top: 1px solid var(--row-line); }
+.ledger-history summary { padding: 7px 0 2px; color: var(--felt-dark); font-size: .82rem; font-weight: 650; cursor: pointer; }
+.ledger-history-list { display: grid; gap: 5px; padding: 5px 0 2px 2px; }
+.ledger-history-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .82rem; }
+.ledger-history-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ledger-history-row strong { flex: none; font-variant-numeric: tabular-nums; }
 
 .session-card { border-radius: 12px; transition: background 0.16s, transform 0.16s; }
 .session-card:hover { background: rgba(222, 237, 226, 0.34); transform: translateX(2px); }

@@ -829,7 +829,7 @@ async function renderOverallDashboard() {
   body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   const membersOk = await loadMembers();
   if (!membersOk) { showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
-  await Promise.allSettled([loadLedger(), loadBlackjackLedger(), loadHandshakeLedger()]);
+  await Promise.allSettled([loadLedger(), loadSessions(true), loadBlackjackLedger(), loadBlackjackSessions(), loadHandshakeLedger(), loadHandshakeBets()]);
   renderOverallLedger();
 }
 
@@ -844,7 +844,11 @@ function renderOverallLedger() {
   const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
   const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (!rows.length) { body.innerHTML = head + `<p class="empty-state">No members yet.</p>` + total; return; }
-  const html = rows.map((r) => { const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`; return `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${esc(played)} · combined games & bets</div></div>`; }).join("");
+  const activity = new Map(rows.map((r) => [r.memberId, []]));
+  for (const s of state.sessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
+  for (const s of state.blackjackSessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
+  for (const b of state.handshakeBets) { const settled = b.status === "settled" && b.winnerMemberId; const firstAmount = settled ? (b.winnerMemberId === b.firstMemberId ? b.amountCents : -b.amountCents) : 0; const secondAmount = -firstAmount; activity.get(b.firstMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: firstAmount, open: !settled }); activity.get(b.secondMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: secondAmount, open: !settled }); }
+  const html = rows.map((r) => { const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`; const items = (activity.get(r.memberId) ?? []).sort((a, b) => b.date.localeCompare(a.date)); const history = items.length ? `<details class="ledger-history"><summary>Recent activity</summary><div class="ledger-history-list">${items.slice(0, 8).map((item) => `<div class="ledger-history-row"><span>${esc(new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} · ${esc(item.label)}</span><strong class="${item.open ? "zero" : moneyClass(item.amount)}">${item.open ? "Open" : esc(formatCents(item.amount))}</strong></div>`).join("")}</div></details>` : ""; return `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${esc(played)} · combined games & bets</div>${history}</div>`; }).join("");
   body.innerHTML = head + html + total;
 }
 

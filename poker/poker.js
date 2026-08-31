@@ -384,6 +384,13 @@ function friendlyMessage(err, fallback) {
  */
 function showBanner(opts) {
   const root = el("banner-root");
+  // Avoid piling up identical banners: several flows (re-rendering the
+  // dashboard, repeated modal-guard checks, etc.) can call showBanner with
+  // the exact same message more than once before it's dismissed. Treat a
+  // duplicate as a no-op instead of stacking another copy.
+  for (const existing of root.querySelectorAll(".banner-msg")) {
+    if (existing.textContent === opts.message) return;
+  }
   const item = document.createElement("div");
   item.className = "banner" + (opts.kind === "error" ? " banner-error" : " banner-info");
   item.setAttribute("role", opts.kind === "error" ? "alert" : "status");

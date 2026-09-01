@@ -3,13 +3,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireGroup, requireViewer } from "../auth.js";
 import { db } from "../db/client.js";
-import { handshakeBets, members } from "../db/schema.js";
+import { handshakeBetCategories, handshakeBets, members } from "../db/schema.js";
 import { MAX_AMOUNT_CENTS } from "../domain/money.js";
 import { badRequest, notFound } from "../errors.js";
 import type { Router } from "../router.js";
 
-const createSchema = z.object({ requestKey: z.string().min(8).max(64), description: z.string().min(1).max(200), amountCents: z.number().int().positive().max(MAX_AMOUNT_CENTS), firstMemberId: z.string().uuid(), secondMemberId: z.string().uuid() });
+const createSchema = z.object({ requestKey: z.string().min(8).max(64), description: z.string().min(1).max(200), amountCents: z.number().int().positive().max(MAX_AMOUNT_CENTS), firstMemberId: z.string().uuid(), secondMemberId: z.string().uuid(), categoryId: z.string().uuid().optional() });
 const settleSchema = z.object({ winnerMemberId: z.string().uuid() });
+const createCategorySchema = z.object({ name: z.string().trim().min(1).max(40) });
 
 export function registerHandshakeRoutes(router: Router): void {
   router.get("/api/poker/handshake/ledger", async (ctx) => {
@@ -24,18 +25,37 @@ export function registerHandshakeRoutes(router: Router): void {
   });
   router.get("/api/poker/handshake/bets", async (ctx) => {
     requireGroup(ctx);
-    const rows = await db.select({ id: handshakeBets.id, description: handshakeBets.description, amountCents: handshakeBets.amountCents, firstMemberId: handshakeBets.firstMemberId, secondMemberId: handshakeBets.secondMemberId, winnerMemberId: handshakeBets.winnerMemberId, status: handshakeBets.status, createdAt: handshakeBets.createdAt }).from(handshakeBets).orderBy(asc(handshakeBets.status), sql`${handshakeBets.createdAt} desc`).limit(50);
+    const rows = await db.select({ id: handshakeBets.id, description: handshakeBets.description, amountCents: handshakeBets.amountCents, firstMemberId: handshakeBets.firstMemberId, secondMemberId: handshakeBets.secondMemberId, winnerMemberId: handshakeBets.winnerMemberId, categoryId: handshakeBets.categoryId, status: handshakeBets.status, createdAt: handshakeBets.createdAt }).from(handshakeBets).orderBy(asc(handshakeBets.status), sql`${handshakeBets.createdAt} desc`).limit(50);
     const ids = [...new Set(rows.flatMap((r) => [r.firstMemberId, r.secondMemberId, r.winnerMemberId].filter(Boolean) as string[]))];
     const names = new Map((ids.length ? await db.select({ id: members.id, name: members.displayName }).from(members).where(inArray(members.id, ids)) : []).map((m) => [m.id, m.name]));
-    return { bets: rows.map((r) => ({ ...r, amountCents: Number(r.amountCents), firstMember: { id: r.firstMemberId, name: names.get(r.firstMemberId) ?? "Unknown" }, secondMember: { id: r.secondMemberId, name: names.get(r.secondMemberId) ?? "Unknown" }, winnerMember: r.winnerMemberId ? { id: r.winnerMemberId, name: names.get(r.winnerMemberId) ?? "Unknown" } : null })) };
+    const categoryIds = [...new Set(rows.map((r) => r.categoryId).filter(Boolean) as string[])];
+    const categoryNames = new Map((categoryIds.length ? await db.select({ id: handshakeBetCategories.id, name: handshakeBetCategories.name }).from(handshakeBetCategories).where(inArray(handshakeBetCategories.id, categoryIds)) : []).map((c) => [c.id, c.name]));
+    return { bets: rows.map((r) => ({ ...r, amountCents: Number(r.amountCents), firstMember: { id: r.firstMemberId, name: names.get(r.firstMemberId) ?? "Unknown" }, secondMember: { id: r.secondMemberId, name: names.get(r.secondMemberId) ?? "Unknown" }, winnerMember: r.winnerMemberId ? { id: r.winnerMemberId, name: names.get(r.winnerMemberId) ?? "Unknown" } : null, category: r.categoryId ? { id: r.categoryId, name: categoryNames.get(r.categoryId) ?? "Unknown" } : null })) };
+  });
+  router.get("/api/poker/handshake/categories", async (ctx) => {
+    requireGroup(ctx);
+    const rows = await db.select({ id: handshakeBetCategories.id, name: handshakeBetCategories.name }).from(handshakeBetCategories).orderBy(asc(handshakeBetCategories.name));
+    return { categories: rows };
+  });
+  router.post("/api/poker/handshake/categories", async (ctx) => {
+    const claims = requireViewer(ctx); const body = createCategorySchema.parse(ctx.body);
+    const existing = (await db.select({ id: handshakeBetCategories.id, name: handshakeBetCategories.name }).from(handshakeBetCategories).where(sql`lower(${handshakeBetCategories.name}) = lower(${body.name})`).limit(1))[0];
+    if (existing) return { created: false, ...existing };
+    const id = randomUUID();
+    await db.insert(handshakeBetCategories).values({ id, name: body.name, createdByMemberId: claims.mid });
+    return { created: true, id, name: body.name };
   });
   router.post("/api/poker/handshake/bets", async (ctx) => {
     const claims = requireViewer(ctx); const body = createSchema.parse(ctx.body);
     if (body.firstMemberId === body.secondMemberId) throw badRequest("same_member", "Choose two different members.");
     const active = await db.select({ id: members.id }).from(members).where(and(eq(members.status, "active"), inArray(members.id, [body.firstMemberId, body.secondMemberId])));
     if (active.length !== 2) throw badRequest("invalid_members", "Choose active members only.");
+    if (body.categoryId) {
+      const category = (await db.select({ id: handshakeBetCategories.id }).from(handshakeBetCategories).where(eq(handshakeBetCategories.id, body.categoryId)).limit(1))[0];
+      if (!category) throw badRequest("invalid_category", "Choose a valid category.");
+    }
     const id = randomUUID();
-    await db.insert(handshakeBets).values({ id, description: body.description, amountCents: body.amountCents, firstMemberId: body.firstMemberId, secondMemberId: body.secondMemberId, createdByMemberId: claims.mid });
+    await db.insert(handshakeBets).values({ id, description: body.description, amountCents: body.amountCents, firstMemberId: body.firstMemberId, secondMemberId: body.secondMemberId, categoryId: body.categoryId ?? null, createdByMemberId: claims.mid });
     return { created: true, id };
   });
   router.post("/api/poker/handshake/bets/:id/settle", async (ctx) => {

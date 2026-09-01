@@ -126,6 +126,24 @@ export const pokerSessions = pgTable(
   ]
 );
 
+// Handshake bet categories are a small, user-extensible tag list (Golf,
+// Football, Meals, ...) rather than a fixed enum — anyone can add a new one
+// from the "Add handshake bet" modal, so it's a normal table with a
+// case-insensitive unique name, not a pgEnum.
+export const handshakeBetCategories = pgTable(
+  "handshake_bet_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [
+    check("handshake_bet_categories_name_len", sql`char_length(${t.name}) between 1 and 40`),
+    uniqueIndex("handshake_bet_categories_name_ci_idx").on(sql`lower(${t.name})`)
+  ]
+);
+
 export const handshakeBets = pgTable(
   "handshake_bets",
   {
@@ -135,6 +153,7 @@ export const handshakeBets = pgTable(
     firstMemberId: uuid("first_member_id").notNull().references(() => members.id),
     secondMemberId: uuid("second_member_id").notNull().references(() => members.id),
     winnerMemberId: uuid("winner_member_id").references(() => members.id),
+    categoryId: uuid("category_id").references(() => handshakeBetCategories.id),
     status: handshakeBetStatus("status").notNull().default("open"),
     createdByMemberId: uuid("created_by_member_id").references(() => members.id),
     createdAt: ts("created_at").notNull().defaultNow(),
@@ -145,7 +164,8 @@ export const handshakeBets = pgTable(
     check("handshake_bets_amount_limit", sql`${t.amountCents} <= 100000000`),
     check("handshake_bets_distinct_members", sql`${t.firstMemberId} <> ${t.secondMemberId}`),
     index("handshake_bets_status_idx").on(t.status),
-    index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId)
+    index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId),
+    index("handshake_bets_category_idx").on(t.categoryId)
   ]
 );
 

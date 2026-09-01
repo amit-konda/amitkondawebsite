@@ -601,6 +601,45 @@ test("live session: auto-populate buy-in, add player mid-session, undo, and bala
 
 // ---------------------------------------------------------------------------
 
+test("handshake bets: add a new category on the fly and see it on the bet card", async ({ page }) => {
+  const fay = await seedMember(tdb, "Fay", "fay+e2e@example.com");
+  const gus = await seedMember(tdb, "Gus", "gus+e2e@example.com");
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Fay");
+  await page.getByRole("button", { name: "Handshake bets", exact: true }).click();
+  await expect(page.locator(".dash-grid-handshake")).toBeVisible({ timeout: 10_000 });
+
+  await page.getByRole("button", { name: "+ Add handshake bet" }).click();
+  await page.locator("#hb-description").fill("18 holes, loser buys drinks");
+  await page.locator("#hb-amount").fill("20");
+  await page.locator("#hb-opponent").selectOption({ label: "Gus" });
+
+  // Add a brand-new category from the modal instead of picking a seeded one.
+  await page.locator("#hb-category").selectOption("__new__");
+  await expect(page.locator("#hb-category-new-wrap")).toBeVisible();
+  await page.locator("#hb-category-new").fill("Bowling");
+  await page.locator("#hb-category-new-add").click();
+  await expect(page.locator("#hb-category-new-wrap")).toBeHidden({ timeout: 10_000 });
+  await expect(page.locator("#hb-category")).toHaveValue(/.+/); // a real category id got selected
+
+  await page.locator("#hb-submit").click();
+
+  // The open-bet card shows the new category as a chip alongside the bet.
+  const card = page.locator(".open-bet-card").filter({ hasText: "18 holes, loser buys drinks" });
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  await expect(card.locator(".chip-category")).toHaveText("Bowling");
+
+  // The category is now available for reuse without recreating it.
+  await page.getByRole("button", { name: "+ Add handshake bet" }).click();
+  await expect(page.locator("#hb-category").getByRole("option", { name: "Bowling" })).toHaveCount(1);
+  await page.locator("#hb-cancel").click();
+
+  expect(gus.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
 // Sanity: the seeded dispute-token helper hashes exactly like the server.
 test("token hash round-trips the production hasher", () => {
   expect(hashToken("e2e-token-abc")).toMatch(/^[0-9a-f]{64}$/);

@@ -554,31 +554,26 @@ test("live session: auto-populate buy-in, add player mid-session, undo, and bala
   await page.locator("#live-undo").click();
   await expect(liveList.getByText("Cleo", { exact: true })).toHaveCount(0, { timeout: 10_000 });
 
-  // --- balance-gated end: unbalanced cash-outs must block ending, in red ---
+  // --- balance-gated end: the warning stays hidden while the session is in
+  // progress, and only appears once the user actually tries to end it ---
   const remainder = page.locator("#live-remainder");
   const endBtn = page.locator("#live-end");
   const rowByName = (name: string) => page.locator(".live-player-row").filter({ hasText: name });
-  // Each cash-out is saved to the server (async, on the "change" event) as
-  // soon as it's entered — wait for the row's "Saved" flash so the server
-  // actually has the value before checking the balance / clicking End,
-  // otherwise ending can race ahead of the save.
+  await expect(remainder).toBeHidden();
   await rowByName("Ana").locator(".live-cashout").fill("60");
   await rowByName("Ana").locator(".live-cashout").blur();
-  await expect(rowByName("Ana").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
   await rowByName("Ben").locator(".live-cashout").fill("30");
   await rowByName("Ben").locator(".live-cashout").blur();
-  await expect(rowByName("Ben").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
-  await expect(remainder).toHaveText(/Off by -?\$10\.00/);
-  await expect(remainder).toHaveClass(/remainder-off/);
-  await expect(endBtn).toBeDisabled();
+  await expect(remainder).toBeHidden();
 
-  // --- correcting the cash-out balances it to zero, in green, and unblocks end ---
+  await endBtn.click();
+  await expect(remainder).toHaveText(/off by -?\$10\.00/);
+  await expect(remainder).toHaveClass(/remainder-off/);
+
+  // --- correcting the cash-out clears the warning and unblocks end ---
   await rowByName("Ben").locator(".live-cashout").fill("40");
   await rowByName("Ben").locator(".live-cashout").blur();
-  await expect(rowByName("Ben").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
-  await expect(remainder).toHaveText(/balance at \$0\.00/);
-  await expect(remainder).toHaveClass(/remainder-ok/);
-  await expect(endBtn).toBeEnabled();
+  await expect(remainder).toBeHidden();
 
   await endBtn.click();
   await expect(page.getByText(/live session ended/i)).toBeVisible({ timeout: 15_000 });

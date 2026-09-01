@@ -121,6 +121,9 @@ const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall"]);
  *   gameTab: string,
  *   handshakeLedger: LedgerData|null,
  *   handshakeBets: any[],
+ *   sessionSearch: string,
+ *   sessionFilter: "all"|"disputed"|"voided",
+ *   settleTransfers: any[],
  * }}
  */
 const state = {
@@ -140,6 +143,9 @@ const state = {
   gameTab: "overall",
   handshakeLedger: null,
   handshakeBets: [],
+  sessionSearch: "",
+  sessionFilter: "all",
+  settleTransfers: [],
 };
 
 /* ── DOM helpers ───────────────────────────────────────────── */
@@ -220,6 +226,19 @@ function formatCents(cents) {
 }
 
 /**
+ * Format cents as a plain (unsigned) dollar amount: "1,234.56".
+ * @param {number} cents
+ * @returns {string}
+ */
+function formatPlainCents(cents) {
+  const abs = Math.abs(cents);
+  const dollars = Math.floor(abs / 100);
+  const frac = String(abs % 100).padStart(2, "0");
+  const grouped = dollars.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${grouped}.${frac}`;
+}
+
+/**
  * Signed dollar value for prefilling an amount input ("+100.00" / "-40.00").
  * @param {number} cents
  * @returns {string}
@@ -236,6 +255,78 @@ function toDollarsInput(cents) {
  */
 function moneyClass(cents) {
   return cents > 0 ? "pos" : cents < 0 ? "neg" : "";
+}
+
+/**
+ * Greedy debt-simplification: pair the largest debtor against the largest
+ * creditor repeatedly until everyone is settled. Computed client-side only —
+ * never persisted, always recalculated from the current ledger rows.
+ * @param {any[]} rows
+ * @returns {any[]}
+ */
+function computeSettleUp(rows) {
+  const debtors = rows
+    .filter((r) => r.netCents < 0)
+    .map((r) => ({ ...r, remaining: -r.netCents }))
+    .sort((a, b) => b.remaining - a.remaining);
+  const creditors = rows
+    .filter((r) => r.netCents > 0)
+    .map((r) => ({ ...r, remaining: r.netCents }))
+    .sort((a, b) => b.remaining - a.remaining);
+  const transfers = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const d = debtors[i], c = creditors[j];
+    const amount = Math.min(d.remaining, c.remaining);
+    if (amount > 0) {
+      transfers.push({
+        fromId: d.memberId, fromName: d.name, fromIsViewer: !!d.isViewer,
+        toId: c.memberId, toName: c.name, toIsViewer: !!c.isViewer,
+        amountCents: amount,
+      });
+    }
+    d.remaining -= amount;
+    c.remaining -= amount;
+    if (d.remaining <= 0) i++;
+    if (c.remaining <= 0) j++;
+  }
+  return transfers;
+}
+
+/**
+ * @param {any[]} transfers
+ * @param {string} heading
+ * @returns {string}
+ */
+function settleUpAsText(transfers, heading) {
+  const lines = [heading, ""];
+  if (!transfers.length) lines.push("Everyone is settled up.");
+  else for (const t of transfers) lines.push(`${t.fromName} pays ${t.toName}: ${formatPlainCents(t.amountCents)}`);
+  return lines.join("\n");
+}
+
+/**
+ * @param {string} text
+ * @returns {Promise<boolean>}
+ */
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.className = "copy-helper";
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 /* ── Dates ─────────────────────────────────────────────────── */
@@ -293,12 +384,13 @@ function formatDateTime(iso) {
 
 /**
  * @param {string} status
+ * @param {{short?: boolean}} [opts]
  * @returns {string}
  */
-function statusLabel(status) {
+function statusLabel(status, opts = {}) {
   switch (status) {
     case "live": return "Live";
-    case "disputed": return "Included pending review";
+    case "disputed": return opts.short ? "In review" : "Included pending review";
     case "resolved": return "Resolved";
     case "voided": return "Voided";
     default: return "Included";
@@ -866,6 +958,7 @@ async function renderDashboard() {
 async function renderBlackjackDashboard() {
   showView("blackjack");
   fillViewerSelect();
+  renderDealerBanner();
   const ledgerBody = el("blackjack-ledger-body");
   const sessionsBody = el("blackjack-sessions-body");
   ledgerBody.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
@@ -983,13 +1076,88 @@ function ledgerActivityDetails(memberId, kind) {
 }
 
 async function renderHandshakeDashboard() {
-  showView("handshake"); fillViewerSelect();
-  el("handshake-ledger-body").innerHTML = `<div class="skel skel-row"></div>`; el("handshake-bets-body").innerHTML = `<div class="skel skel-block"></div>`;
+  showView("handshake");
+  fillViewerSelect();
+  el("handshake-open-body").innerHTML = `<div class="skel skel-block"></div>`;
+  el("handshake-settled-body").innerHTML = `<div class="skel skel-row"></div>`;
   await Promise.allSettled([loadHandshakeLedger(), loadHandshakeBets()]);
 }
-async function loadHandshakeLedger() { try { const d = await api("/handshake/ledger"); state.handshakeLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] }; const b = el("handshake-ledger-body"); const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`; const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`; const html = state.handshakeLedger.rows.map((r) => `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">handshake bets${ledgerActivityDetails(r.memberId, "handshake")}</div></div>`).join(""); b.innerHTML = head + (html || `<p class="empty-state">No settled bets yet.</p>`) + total; } catch (e) { renderErrorBox(el("handshake-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake balances."), loadHandshakeLedger); } }
-async function loadHandshakeBets() { try { const d = await api("/handshake/bets"); state.handshakeBets = d.bets ?? []; renderHandshakeBets(); if (state.gameTab === "handshake" || state.gameTab === "overall") await loadHandshakeLedger(); } catch (e) { renderErrorBox(el("handshake-bets-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake bets."), loadHandshakeBets); } }
-function renderHandshakeBets() { const body = el("handshake-bets-body"); if (!state.handshakeBets.length) { body.innerHTML = `<p class="empty-state">No handshake bets yet.</p>`; return; } body.innerHTML = state.handshakeBets.map((b) => `<div class="request-item handshake-bet"><strong>${esc(b.description)}</strong><div class="request-meta">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)} · ${esc(formatCents(b.amountCents))}</div><div class="request-meta">${b.status === "open" ? "Open" : `Won by ${esc(b.winnerMember?.name ?? "Unknown")}`}</div>${b.status === "open" ? `<button class="btn btn-small btn-primary handshake-settle" data-id="${esc(b.id)}">Settle bet</button>` : ""}</div>`).join(""); body.querySelectorAll(".handshake-settle").forEach((node) => node.addEventListener("click", () => { const bet = state.handshakeBets.find((b) => b.id === node.getAttribute("data-id")); if (bet) openHandshakeSettleModal(bet); })); }
+
+async function loadHandshakeLedger() {
+  try {
+    const d = await api("/handshake/ledger");
+    state.handshakeLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] };
+    renderHandshakeScreen();
+  } catch (e) {
+    renderErrorBox(el("handshake-open-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake balances."), loadHandshakeLedger);
+  }
+}
+
+async function loadHandshakeBets() {
+  try {
+    const d = await api("/handshake/bets");
+    state.handshakeBets = d.bets ?? [];
+    renderHandshakeScreen();
+    if (state.gameTab === "handshake" || state.gameTab === "overall") await loadHandshakeLedger();
+  } catch (e) {
+    renderErrorBox(el("handshake-settled-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake bets."), loadHandshakeBets);
+  }
+}
+
+/**
+ * Renders both halves of the Handshake bets screen: the open-bet action
+ * cards + settled-balances summary (into #handshake-open-body), and the
+ * settled-bets history table (into #handshake-settled-body).
+ */
+function renderHandshakeScreen() {
+  const bets = state.handshakeBets ?? [];
+  const openBets = bets.filter((b) => b.status === "open");
+  const settledBets = bets.filter((b) => b.status === "settled");
+  const ledgerRows = state.handshakeLedger?.rows ?? [];
+  const viewerRow = ledgerRows.find((r) => r.isViewer) ?? null;
+
+  const heading = el("handshake-heading");
+  const parts = [`${openBets.length} open`, `${settledBets.length} settled`];
+  if (viewerRow && viewerRow.netCents !== 0) parts.push(`you're ${viewerRow.netCents > 0 ? "up" : "down"} ${formatPlainCents(viewerRow.netCents)}`);
+  else if (viewerRow) parts.push("you're settled up");
+  heading.textContent = parts.join(" · ");
+
+  const grid = el("handshake-open-body");
+  const cards = openBets.map(
+    (b) => `<div class="open-bet-card">
+      <div class="open-bet-head"><span class="chip chip-open">Open</span><span class="open-bet-amount money">${esc(formatPlainCents(b.amountCents))}</span></div>
+      <div class="open-bet-title">${esc(b.description)}</div>
+      <div class="open-bet-parties">${esc(b.firstMember.name)} <span class="muted-inline">vs</span> ${esc(b.secondMember.name)}</div>
+      <button type="button" class="btn btn-primary handshake-settle" data-id="${esc(b.id)}">Settle bet</button>
+    </div>`
+  );
+  if (openBets.length <= 1) {
+    cards.push(`<div class="bet-empty-card"><div class="form-hint">${openBets.length === 0 ? "Nothing outstanding." : "Nothing else outstanding."}</div><button type="button" class="btn" id="handshake-start-bet">Start a bet</button></div>`);
+  }
+  const settledBalancesCard = `<div class="settled-balances-card">
+    <div class="overall-eyebrow">Settled balances</div>
+    ${ledgerRows.length ? ledgerRows.map((r) => `<div class="settled-balances-row"><span>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</span><strong class="money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</strong></div>`).join("") : `<p class="empty-state">No settled bets yet.</p>`}
+  </div>`;
+  grid.innerHTML = cards.join("") + settledBalancesCard;
+  grid.querySelectorAll(".handshake-settle").forEach((node) => node.addEventListener("click", () => {
+    const bet = bets.find((b) => b.id === node.getAttribute("data-id"));
+    if (bet) openHandshakeSettleModal(bet);
+  }));
+  const startBtn = document.getElementById("handshake-start-bet");
+  if (startBtn) startBtn.addEventListener("click", openHandshakeModal);
+
+  const settledBody = el("handshake-settled-body");
+  if (!settledBets.length) {
+    settledBody.innerHTML = `<p class="empty-state">No settled bets yet.</p>`;
+  } else {
+    const head = `<div class="bet-table-head"><span>Date</span><span>Bet</span><span>Bettors</span><span>Winner</span><span class="num">Amount</span></div>`;
+    const rowsHtml = [...settledBets]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((b) => `<div class="bet-table-row"><span class="sr-date">${esc(formatDate(b.createdAt))}</span><span class="sr-title">${esc(b.description)}</span><span class="sr-players">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)}</span><span>${esc(b.winnerMember?.name ?? "Unknown")}</span><span class="num money">${esc(formatPlainCents(b.amountCents))}</span></div>`)
+      .join("");
+    settledBody.innerHTML = head + rowsHtml;
+  }
+}
 function openHandshakeSettleModal(bet) { const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<p class="form-hint">Choose the winner to settle this bet.</p><fieldset class="choice-fieldset"><legend class="field">Winner</legend><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.firstMember.id)}" checked> ${esc(bet.firstMember.name)}</label><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.secondMember.id)}"> ${esc(bet.secondMember.name)}</label></fieldset><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-settle-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-settle-submit">Settle bet</button></div>`; openModal({ title: "Settle handshake bet", body }); q(body, "#hb-settle-cancel").addEventListener("click", closeModal); q(body, "#hb-settle-submit").addEventListener("click", async () => { const winnerId = /** @type {HTMLInputElement|null} */ (body.querySelector("input[name=hb-winner]:checked"))?.value; if (!winnerId) return; try { await api(`/handshake/bets/${encodeURIComponent(bet.id)}/settle`, { method: "POST", body: { winnerMemberId: winnerId } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't settle the bet.") }); } }); }
 function openHandshakeModal() { if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first." }); return; } const others = state.members.filter((m) => m.id !== state.status?.viewer?.id); const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><label class="check-row"><input id="hb-settle-now" type="checkbox"> Settle this bet now</label><div id="hb-winner-wrap" hidden><label class="field" for="hb-winner-now">Winner</label><select id="hb-winner-now" class="input"></select></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`; openModal({ title: "Add handshake bet", body }); const opponent = /** @type {HTMLSelectElement} */ (q(body, "#hb-opponent")); const winner = /** @type {HTMLSelectElement} */ (q(body, "#hb-winner-now")); const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); }; syncWinnerChoices(); opponent.addEventListener("change", syncWinnerChoices); const settleNow = /** @type {HTMLInputElement} */ (q(body, "#hb-settle-now")); settleNow.addEventListener("change", () => { q(body, "#hb-winner-wrap").hidden = !settleNow.checked; }); q(body, "#hb-cancel").addEventListener("click", closeModal); q(body, "#hb-submit").addEventListener("click", async () => { const amount = parseDollarsToCents(field("hb-amount").value); if (!field("hb-description").value.trim() || amount == null || amount <= 0) return showBanner({ kind: "error", message: "Enter a description and positive amount." }); try { const created = await api("/handshake/bets", { method: "POST", body: { requestKey: crypto.randomUUID(), description: field("hb-description").value.trim(), amountCents: amount, firstMemberId: state.status.viewer.id, secondMemberId: opponent.value } }); if (settleNow.checked) await api(`/handshake/bets/${encodeURIComponent(created.id)}/settle`, { method: "POST", body: { winnerMemberId: winner.value } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the bet.") }); } }); }
 
@@ -997,7 +1165,19 @@ function renderBlackjackLedger() {
   const body = el("blackjack-ledger-body"); const ledger = state.blackjackLedger;
   const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`; const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (!ledger || ledger.rows.length === 0) { body.innerHTML = head + `<p class="empty-state">No blackjack sessions yet.</p>` + total; return; }
-  body.innerHTML = head + ledger.rows.map((r) => `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"} · last played ${esc(r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never")}${ledgerActivityDetails(r.memberId, "blackjack")}</div></div>`).join("") + total;
+  body.innerHTML = head + ledger.rows.map((r) => `<div class="ledger-row${r.isViewer ? " ledger-row-dealer" : ""}"><div class="lr-name">${esc(r.name)}${r.isViewer ? ' <span class="chip chip-resolved">dealer</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"} · last played ${esc(r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never")}${ledgerActivityDetails(r.memberId, "blackjack")}</div></div>`).join("") + total;
+}
+
+/** Reflects the current viewer as "the dealer" in the Blackjack banner. */
+function renderDealerBanner() {
+  const viewer = state.status?.viewer ?? null;
+  const initials = viewer
+    ? viewer.name.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()
+    : "?";
+  el("dealer-avatar").textContent = initials || "?";
+  el("dealer-copy").textContent = viewer
+    ? `${viewer.name} · your result is calculated from the players'`
+    : "Select your name in the top bar — the selected profile becomes the dealer.";
 }
 
 async function loadBlackjackSessions() {
@@ -1008,7 +1188,21 @@ async function loadBlackjackSessions() {
 function renderBlackjackSessions() {
   const body = el("blackjack-sessions-body");
   if (!state.blackjackSessions.length) { body.innerHTML = `<p class="empty-state">No blackjack sessions yet.</p>`; return; }
-  body.innerHTML = state.blackjackSessions.map((s) => { const date = new Date(s.playedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }); const players = s.participants.filter((p) => p.memberId !== s.recordedBy).length; return `<button class="session-card" type="button" data-blackjack-id="${esc(s.id)}"><span class="sess-date">${esc(date)}</span><span class="sess-summary">${players} player${players === 1 ? "" : "s"}</span><span class="sess-title">${esc(s.title || "Blackjack")}</span><span class="sess-chev">›</span></button>`; }).join("");
+  body.innerHTML = state.blackjackSessions.map((s) => {
+    const date = new Date(s.playedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const dealer = s.participants.find((p) => p.memberId === s.recordedBy);
+    const players = s.participants.filter((p) => p.memberId !== s.recordedBy).length;
+    const dealerFirstName = dealer ? dealer.name.split(" ")[0] : "Unknown";
+    const net = dealer ? dealer.amountCents : 0;
+    return `<button class="session-card" type="button" data-blackjack-id="${esc(s.id)}">
+      <span class="sess-date">${esc(date)}</span>
+      <span class="sess-summary">
+        <span class="sess-title-strong">${esc(s.title || "Blackjack")}</span>
+        <span class="sess-title">${players} player${players === 1 ? "" : "s"} · dealer ${esc(dealerFirstName)}</span>
+      </span>
+      <span class="money ${moneyClass(net)}">${esc(formatCents(net))}</span>
+    </button>`;
+  }).join("");
   body.querySelectorAll("[data-blackjack-id]").forEach((node) => node.addEventListener("click", () => openBlackjackDetail(node.getAttribute("data-blackjack-id"))));
 }
 
@@ -1082,27 +1276,63 @@ async function loadLedger() {
 function renderLedger() {
   const body = el("ledger-body");
   const rows = state.ledger?.rows ?? [];
-  const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
+  const head = `<div class="ledger-head-share"><span>Player</span><span>Share</span><span class="num">Net</span></div>`;
   const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (rows.length === 0) {
     body.innerHTML =
       head +
       `<p class="empty-state">No sessions yet — add the first one to start the ledger.</p>` +
       total;
+    renderSettleUp();
     return;
   }
+  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.netCents)));
   const html = rows
     .map((r) => {
       const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`;
       const last = r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never";
-      return `<div class="ledger-row">
+      const pct = Math.round((Math.abs(r.netCents) / maxAbs) * 100);
+      return `<div class="ledger-row-share">
         <div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div>
+        <progress class="share-bar ${moneyClass(r.netCents)}" value="${pct}" max="100" aria-hidden="true"></progress>
         <div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div>
         <div class="lr-meta">${esc(played)} · last played ${esc(last)}${ledgerActivityDetails(r.memberId, "poker")}</div>
       </div>`;
     })
     .join("");
   body.innerHTML = head + html + total;
+  renderSettleUp();
+}
+
+function renderSettleUp() {
+  const body = el("settle-body");
+  const countEl = el("settle-count");
+  const transfers = computeSettleUp(state.ledger?.rows ?? []);
+  state.settleTransfers = transfers;
+  countEl.textContent = `${transfers.length} ${transfers.length === 1 ? "payment" : "payments"}`;
+  if (!transfers.length) {
+    body.innerHTML = `<p class="empty-state">Everyone is settled up.</p>`;
+    return;
+  }
+  body.innerHTML = transfers
+    .map(
+      (t) => `<div class="settle-row">
+        <span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span>
+        <span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span>
+      </div>`,
+    )
+    .join("");
+}
+
+async function onSettleCopy() {
+  const ok = await copyTextToClipboard(settleUpAsText(state.settleTransfers ?? [], "Settle up — Poker Ledger"));
+  showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
+}
+
+function onSettleEmail() {
+  const text = settleUpAsText(state.settleTransfers ?? [], "Settle up — Poker Ledger");
+  const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(text)}`;
+  window.location.href = url;
 }
 
 /**
@@ -1243,32 +1473,71 @@ async function saveLivePlayer(sessionId, memberId, amountCents) {
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.") }); }
 }
 
+/**
+ * @param {SessionSummary} s
+ * @param {string} query
+ * @returns {boolean}
+ */
+function sessionMatchesSearch(s, query) {
+  const q = (query ?? "").trim().toLowerCase();
+  if (!q) return true;
+  const hay = [s.title || "", formatRecentDate(s.playedAt), ...(s.participants ?? []).map((p) => p.name)].join(" ").toLowerCase();
+  return hay.includes(q);
+}
+
 function renderSessions() {
   const body = el("sessions-body");
+  const counts = {
+    all: state.sessions.length,
+    disputed: state.sessions.filter((s) => s.status === "disputed").length,
+    voided: state.sessions.filter((s) => s.status === "voided").length,
+  };
+  const allCount = document.getElementById("sf-count-all");
+  const disputedCount = document.getElementById("sf-count-disputed");
+  const voidedCount = document.getElementById("sf-count-voided");
+  if (allCount) allCount.textContent = String(counts.all);
+  if (disputedCount) disputedCount.textContent = String(counts.disputed);
+  if (voidedCount) voidedCount.textContent = String(counts.voided);
+
   if (state.sessions.length === 0) {
     body.innerHTML = `<p class="empty-state">No sessions yet.</p>`;
     return;
   }
-  body.innerHTML = "";
-  const list = document.createElement("div");
-  list.className = "session-list";
-  for (const s of state.sessions) {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = "session-card";
-    const playerCount = s.participants?.length ?? 0;
-    card.innerHTML = `
-      <span class="sess-date">${esc(formatRecentDate(s.playedAt))}</span>
-      <span class="sess-summary">
-        <span class="sess-player-count"><strong>${playerCount} ${playerCount === 1 ? "player" : "players"}</strong></span>
-        ${s.title ? `<span class="sess-title">${esc(s.title)}</span>` : ""}
-      </span>
-      <span class="chip chip-${esc(s.status)}">${esc(statusLabel(s.status))}</span>
-      <span class="sess-chev" aria-hidden="true">›</span>`;
-    card.addEventListener("click", () => showSessionDetail(s.id));
-    list.appendChild(card);
+
+  const filtered = state.sessions.filter((s) => {
+    if (state.sessionFilter === "disputed" && s.status !== "disputed") return false;
+    if (state.sessionFilter === "voided" && s.status !== "voided") return false;
+    return sessionMatchesSearch(s, state.sessionSearch);
+  });
+
+  if (filtered.length === 0) {
+    body.innerHTML = `<p class="empty-state">No sessions match your search.</p>`;
+    return;
   }
-  body.appendChild(list);
+
+  const viewerId = state.status?.viewer?.id ?? null;
+  const head = `<div class="session-head"><span>Date</span><span>Session</span><span>Players</span><span>Status</span><span class="num">Your result</span><span></span></div>`;
+  const rowsHtml = filtered
+    .map((s) => {
+      const playerCount = s.participants?.length ?? 0;
+      const names = (s.participants ?? []).map((p) => p.name);
+      const preview = names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
+      const mine = viewerId && s.status !== "voided" ? s.participants?.find((p) => p.memberId === viewerId) : null;
+      const result = mine
+        ? `<span class="sr-result money ${moneyClass(mine.amountCents)}">${esc(formatCents(mine.amountCents))}</span>`
+        : `<span class="sr-result money muted-inline">—</span>`;
+      return `<button type="button" class="session-row" data-session-id="${esc(s.id)}">
+        <span class="sr-date">${esc(formatRecentDate(s.playedAt))}</span>
+        <span class="sr-title">${esc(s.title || "Session")}</span>
+        <span class="sr-players">${playerCount} · ${esc(preview)}</span>
+        <span class="sr-status chip chip-${esc(s.status)}">${esc(statusLabel(s.status, { short: true }))}</span>
+        ${result}
+        <span class="sr-chev" aria-hidden="true">›</span>
+      </button>`;
+    })
+    .join("");
+  body.innerHTML = head + `<div class="session-list">${rowsHtml}</div>`;
+  body.querySelectorAll("[data-session-id]").forEach((node) => node.addEventListener("click", () => showSessionDetail(node.getAttribute("data-session-id"))));
   if (state.nextCursor) {
     const more = document.createElement("button");
     more.type = "button";
@@ -2386,6 +2655,7 @@ async function onViewerChange() {
     }
     clearSkippedNamePrompt();
     fillViewerSelect();
+    renderDealerBanner();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
     dismissBanner("Pick your name in the top bar so the sessions you record are marked as yours.");
@@ -2577,6 +2847,20 @@ function wireStatic() {
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
   /** @type {HTMLButtonElement} */ (el("admin-lock-btn")).addEventListener("click", onAdminLock);
+  el("sessions-search").addEventListener("input", (e) => {
+    state.sessionSearch = /** @type {HTMLInputElement} */ (e.target).value;
+    renderSessions();
+  });
+  el("sessions-filters").addEventListener("click", (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest("[data-filter]");
+    if (!btn) return;
+    state.sessionFilter = btn.getAttribute("data-filter") || "all";
+    el("sessions-filters").querySelectorAll("[data-filter]").forEach((n) => n.classList.toggle("is-active", n === btn));
+    renderSessions();
+  });
+  el("settle-copy").addEventListener("click", onSettleCopy);
+  el("settle-email").addEventListener("click", onSettleEmail);
+  el("overall-settle-btn").addEventListener("click", openOverallSettleModal);
 }
 
 /**

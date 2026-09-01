@@ -17,7 +17,7 @@
   <a class="topbar-home" href="/" aria-label="Back to amitkonda.com">&larr;&nbsp;amitkonda.com</a>
   <span class="topbar-title">Poker Ledger</span>
   <nav class="game-tabs" id="game-tabs" aria-label="Game ledger">
-    <button class="game-tab is-active" id="tab-overall" type="button" aria-selected="true">Ledger</button>
+    <button class="game-tab is-active" id="tab-overall" type="button" aria-selected="true">Overall</button>
     <button class="game-tab" id="tab-poker" type="button" aria-selected="false">Poker</button>
     <button class="game-tab" id="tab-handshake" type="button" aria-selected="false">Handshake bets</button>
     <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
@@ -87,14 +87,37 @@
         <span class="sess-chev" aria-hidden="true">›</span>
       </button>
 
-      <div class="dash-grid">
-        <div class="card">
-          <h2 class="card-heading">Poker ledger</h2>
-          <div id="ledger-body"></div>
+      <div class="dash-poker-grid">
+        <div class="dash-poker-main">
+          <div class="card">
+            <h2 class="card-heading">Poker ledger</h2>
+            <p class="form-hint">Running balance since the group started. Always sums to zero.</p>
+            <div id="ledger-body"></div>
+          </div>
+          <div class="card">
+            <div class="sessions-toolbar">
+              <h2 class="card-heading">Sessions</h2>
+              <input type="text" id="sessions-search" class="input sessions-search" placeholder="Search sessions">
+              <div class="sessions-filters" id="sessions-filters">
+                <button type="button" class="chip-btn chip-all is-active" data-filter="all">All <span id="sf-count-all">0</span></button>
+                <button type="button" class="chip-btn chip-btn-disputed" data-filter="disputed">Disputed <span id="sf-count-disputed">0</span></button>
+                <button type="button" class="chip-btn chip-btn-voided" data-filter="voided">Voided <span id="sf-count-voided">0</span></button>
+              </div>
+            </div>
+            <div id="sessions-body"></div>
+          </div>
         </div>
-        <div class="card">
-          <h2 class="card-heading">Recent sessions</h2>
-          <div id="sessions-body"></div>
+        <div class="card settle-card">
+          <div class="settle-head">
+            <h2 class="card-heading">Settle up</h2>
+            <span class="chip" id="settle-count">0 payments</span>
+          </div>
+          <p class="form-hint">Fewest transfers that clear every balance. Nothing is recorded — this is just the maths.</p>
+          <div id="settle-body"></div>
+          <div class="settle-actions">
+            <button type="button" class="btn" id="settle-copy">Copy as text</button>
+            <button type="button" class="btn btn-ghost" id="settle-email">Email the group</button>
+          </div>
         </div>
       </div>
     </div>
@@ -102,26 +125,54 @@
 
   <section id="view-blackjack" class="view" hidden>
     <div class="dash">
-      <div class="dash-actions">
+      <div class="dealer-banner">
+        <span class="dealer-avatar" id="dealer-avatar">?</span>
+        <span class="dealer-text">
+          <strong class="dealer-eyebrow">Dealing as</strong>
+          <span class="dealer-copy" id="dealer-copy">Select your name in the top bar — the selected profile becomes the dealer.</span>
+        </span>
         <button id="add-blackjack-btn" class="btn btn-primary" type="button">+ Add blackjack session</button>
-        <span class="form-hint blackjack-dealer-note">The selected profile is the dealer.</span>
       </div>
-      <div class="dash-grid">
+      <div class="dash-grid dash-grid-blackjack">
         <div class="card"><h2 class="card-heading">Blackjack ledger</h2><div id="blackjack-ledger-body"></div></div>
-        <div class="card"><h2 class="card-heading">Recent blackjack</h2><div id="blackjack-sessions-body"></div></div>
+        <div class="card">
+          <h2 class="card-heading">Recent blackjack</h2>
+          <div id="blackjack-sessions-body"></div>
+          <p class="form-hint bj-footnote">The dealer's net is always the inverse of the table's.</p>
+        </div>
       </div>
     </div>
   </section>
 
   <section id="view-overall" class="view" hidden>
     <div class="dash">
-      <div class="dash-actions"><span class="form-hint overall-note">Poker + Blackjack + handshake bets</span></div>
-      <div class="card overall-card"><h2 class="card-heading">Overall ledger</h2><p class="form-hint">Your combined running balance across every game and bet.</p><div id="overall-ledger-body"></div></div>
+      <div class="overall-headline">
+        <div class="overall-headline-text">
+          <div class="overall-eyebrow">Overall &middot; poker + blackjack + handshake bets</div>
+          <h1 id="overall-heading">Overall ledger</h1>
+          <div class="overall-stats" id="overall-stats" hidden></div>
+        </div>
+        <button type="button" class="btn" id="overall-settle-btn">Settle up</button>
+      </div>
+      <div class="card overall-card">
+        <div id="overall-ledger-body"></div>
+        <p class="form-hint overall-footnote">Open handshake bets aren't included until they're settled.</p>
+      </div>
     </div>
   </section>
 
   <section id="view-handshake" class="view" hidden>
-    <div class="dash"><div class="dash-actions"><button id="add-handshake-btn" class="btn btn-primary" type="button">+ Add handshake bet</button></div><div class="dash-grid"><div class="card"><h2 class="card-heading">Handshake bets ledger</h2><p class="form-hint">Settled bets only. Open bets don’t affect balances yet.</p><div id="handshake-ledger-body"></div></div><div class="card"><h2 class="card-heading">Bets</h2><div id="handshake-bets-body"></div></div></div></div>
+    <div class="dash">
+      <div class="handshake-headline">
+        <div class="handshake-headline-text">
+          <div class="overall-eyebrow">Handshake bets</div>
+          <h1 id="handshake-heading">0 open &middot; 0 settled</h1>
+        </div>
+        <button id="add-handshake-btn" class="btn btn-primary" type="button">+ Add handshake bet</button>
+      </div>
+      <div class="handshake-actions-grid" id="handshake-open-body"></div>
+      <div class="card"><h2 class="card-heading">Settled bets</h2><div id="handshake-settled-body"></div></div>
+    </div>
   </section>
 
   <!-- ── SESSION DETAIL ───────────────────────────────────── -->

@@ -36,6 +36,13 @@
       "when": 1787969000000,
       "tag": "0004_handshake_bets",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788293342906,
+      "tag": "0005_live_session_undo_log",
+      "breakpoints": true
     }
   ]
 }

@@ -515,6 +515,92 @@ test("void keeps ledger zero", async ({ page }) => {
 
 // ---------------------------------------------------------------------------
 
+test("live session: auto-populate buy-in, add player mid-session, undo, and balance-gated end", async ({ page }) => {
+  const ana = await seedMember(tdb, "Ana", "ana+e2e@example.com");
+  const ben = await seedMember(tdb, "Ben", "ben+e2e@example.com");
+  const cleo = await seedMember(tdb, "Cleo", "cleo+e2e@example.com");
+  const rowFor = (name: string) => page.locator(".part-row").filter({ hasText: name });
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Ana");
+  await page.getByRole("button", { name: "Poker", exact: true }).click();
+  await page.locator("#start-live-btn").click();
+  await expect(page.getByRole("checkbox").first()).toBeVisible({ timeout: 10_000 });
+
+  // --- auto-populate: typing Ana's buy-in fills Ben's still-blank row too ---
+  await rowFor("Ana").getByRole("checkbox").check();
+  await rowFor("Ben").getByRole("checkbox").check();
+  await rowFor("Ana").locator(".part-amount").fill("50");
+  await expect(rowFor("Ben").locator(".part-amount")).toHaveValue("50");
+
+  await page.locator("#live-start-submit").click();
+
+  // --- live modal: open it from the dashboard banner ---
+  const liveBanner = page.locator("#live-banner");
+  await expect(liveBanner).toBeVisible({ timeout: 15_000 });
+  await liveBanner.click();
+  const liveList = page.locator(".live-player-list");
+  await expect(liveList.getByText("Ana", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(liveList.getByText("Ben", { exact: true })).toBeVisible();
+
+  // --- add a late player mid-session ---
+  await page.locator("#live-add-player").click();
+  await page.locator("#live-new-player").selectOption({ label: "Cleo" });
+  await page.locator('.live-add-choice[data-amount="30"]').click();
+  await expect(liveList.getByText("Cleo", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(liveList.getByText(/Bought in \+?\$30\.00/)).toBeVisible();
+
+  // --- undo the add-player action: Cleo drops back out ---
+  await page.locator("#live-undo").click();
+  await expect(liveList.getByText("Cleo", { exact: true })).toHaveCount(0, { timeout: 10_000 });
+
+  // --- balance-gated end: unbalanced cash-outs must block ending, in red ---
+  const remainder = page.locator("#live-remainder");
+  const endBtn = page.locator("#live-end");
+  const rowByName = (name: string) => page.locator(".live-player-row").filter({ hasText: name });
+  // Each cash-out is saved to the server (async, on the "change" event) as
+  // soon as it's entered — wait for the row's "Saved" flash so the server
+  // actually has the value before checking the balance / clicking End,
+  // otherwise ending can race ahead of the save.
+  await rowByName("Ana").locator(".live-cashout").fill("60");
+  await rowByName("Ana").locator(".live-cashout").blur();
+  await expect(rowByName("Ana").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
+  await rowByName("Ben").locator(".live-cashout").fill("30");
+  await rowByName("Ben").locator(".live-cashout").blur();
+  await expect(rowByName("Ben").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
+  await expect(remainder).toHaveText(/Off by -?\$10\.00/);
+  await expect(remainder).toHaveClass(/remainder-off/);
+  await expect(endBtn).toBeDisabled();
+
+  // --- correcting the cash-out balances it to zero, in green, and unblocks end ---
+  await rowByName("Ben").locator(".live-cashout").fill("40");
+  await rowByName("Ben").locator(".live-cashout").blur();
+  await expect(rowByName("Ben").locator(".live-saved")).toHaveText("Saved", { timeout: 10_000 });
+  await expect(remainder).toHaveText(/balance at \$0\.00/);
+  await expect(remainder).toHaveClass(/remainder-ok/);
+  await expect(endBtn).toBeEnabled();
+
+  await endBtn.click();
+  await expect(page.getByText(/live session ended/i)).toBeVisible({ timeout: 15_000 });
+  await expect(liveBanner).toBeHidden({ timeout: 10_000 });
+
+  // --- DB: session landed as a normal (non-live) session, ledger stays zero ---
+  await expect
+    .poll(async () => {
+      const [row] = await tdb.db
+        .select({ status: pokerSessions.status })
+        .from(pokerSessions)
+        .where(and(eq(pokerSessions.recordedByMemberId, ana.id), eq(pokerSessions.status, "active")));
+      return row?.status;
+    }, { timeout: 15_000 })
+    .toBe("active");
+  expect(await memberSessionsPlayed(tdb, ben.id)).toBeGreaterThanOrEqual(1);
+  expect(cleo.id).toBeTruthy(); // Cleo was seeded but undone out of the session
+  expect(await ledgerTotalCents(tdb)).toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+
 // Sanity: the seeded dispute-token helper hashes exactly like the server.
 test("token hash round-trips the production hasher", () => {
   expect(hashToken("e2e-token-abc")).toMatch(/^[0-9a-f]{64}$/);

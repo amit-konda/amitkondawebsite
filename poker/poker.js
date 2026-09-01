@@ -1379,16 +1379,30 @@ function moneyInputValue(cents) { return cents == null ? "" : toDollarsInput(cen
 function openStartLiveModal() {
   const body = document.createElement("div");
   body.className = "stack";
-  body.innerHTML = `<div class="form-grid"><div><label class="field" for="live-title">Session name (optional)</label><input id="live-title" class="input" maxlength="120" placeholder="Friday night game"></div><div><label class="field" for="live-notes">Notes (optional)</label><input id="live-notes" class="input" maxlength="2000"></div></div><fieldset class="part-fieldset"><legend class="field">Players and starting buy-in</legend><div id="live-start-members"></div></fieldset><p class="form-hint">You can add rebuys and update cash-outs while the session is live.</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-start-cancel">Cancel</button><button type="button" class="btn btn-primary" id="live-start-submit">Start live session</button></div>`;
+  body.innerHTML = `<div class="form-grid"><div><label class="field" for="live-title">Session name (optional)</label><input id="live-title" class="input" maxlength="120" placeholder="Friday night game"></div><div><label class="field" for="live-notes">Notes (optional)</label><input id="live-notes" class="input" maxlength="2000"></div></div><fieldset class="part-fieldset"><div id="live-start-members"></div></fieldset><p class="form-hint">You can add rebuys and update cash-outs while the session is live.</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-start-cancel">Cancel</button><button type="button" class="btn btn-primary" id="live-start-submit">Start live session</button></div>`;
   openModal({ title: "Start live session", body });
   const membersEl = q(body, "#live-start-members");
   const rows = [];
+  // The buy-in is almost always the same across the table: once someone
+  // types an amount, it auto-fills every other row that hasn't been typed
+  // into yet, so entering it once is usually enough. Typing into a row
+  // marks it "touched" so it stops following further changes elsewhere —
+  // that row's amount is now the player's own, deliberate override.
+  const touched = new Set();
   for (const m of state.members) {
+    const checkId = `live-c-${m.id}`;
     const row = document.createElement("div"); row.className = "part-row";
-    row.innerHTML = `<input type="checkbox" class="part-check"><span class="part-name">${esc(m.name)}</span><input type="text" class="input part-amount money" inputmode="decimal" placeholder="$0.00" hidden>`;
+    row.innerHTML = `<input type="checkbox" class="part-check" id="${checkId}"><label for="${checkId}" class="part-name">${esc(m.name)}</label><input type="text" class="input part-amount money" inputmode="decimal" placeholder="$0.00" hidden>`;
     const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
     const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
     check.addEventListener("change", () => { amount.hidden = !check.checked; if (check.checked) amount.focus(); });
+    amount.addEventListener("input", () => {
+      touched.add(m.id);
+      for (const r of rows) {
+        if (r.memberId === m.id || touched.has(r.memberId)) continue;
+        r.amount.value = amount.value;
+      }
+    });
     rows.push({ memberId: m.id, check, amount }); membersEl.appendChild(row);
   }
   q(body, "#live-start-cancel").addEventListener("click", closeModal);
@@ -1435,28 +1449,81 @@ function openRebuyChooser(sessionId, participant) {
 }
 
 async function saveRebuy(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); }
+}
+
+/**
+ * Sum of (cash-out − buy-in) across the live session's participants, using
+ * each row's currently-typed cash-out value (not just what's been saved to
+ * the server yet) so the balance reads live as the user types. A blank or
+ * unparseable field counts as 0 — money not yet accounted for — same as it
+ * would if nobody had touched that field.
+ */
+function liveBalanceDiffCents(participants, cashInputs) {
+  let sum = 0;
+  for (const p of participants) {
+    const raw = cashInputs.get(p.memberId)?.value ?? "";
+    const cents = raw.trim() === "" ? 0 : parseDollarsToCents(raw);
+    sum += (cents ?? 0) - p.buyInCents;
+  }
+  return sum;
 }
 
 function openLiveModal() {
   if (!state.live) return;
   const body = document.createElement("div"); body.className = "stack live-panel";
-  const live = state.live;
-  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div><div class="live-player-list"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
+  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-modal-actions"><button type="button" class="btn btn-ghost btn-small" id="live-undo" title="Undo the most recent change">↶ Undo</button><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div></div><div class="live-player-list"></div><p class="remainder" id="live-remainder" aria-live="polite"></p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end" disabled>End session</button></div>`;
+  openModal({ title: state.live.session.title || "Live session", body, wide: true });
+
   const list = q(body, ".live-player-list");
-  for (const p of live.participants) {
+  const remainderEl = q(body, "#live-remainder");
+  const endBtn = /** @type {HTMLButtonElement} */ (q(body, "#live-end"));
+  /** @type {Map<string, HTMLInputElement>} */
+  const cashInputs = new Map();
+
+  function recomputeBalance() {
+    const participants = state.live.participants;
+    const diff = liveBalanceDiffCents(participants, cashInputs);
+    const complete = participants.every((p) => {
+      const raw = cashInputs.get(p.memberId)?.value ?? "";
+      return raw.trim() !== "" && parseDollarsToCents(raw) !== null;
+    });
+    if (complete && diff === 0) {
+      remainderEl.textContent = "Cash-outs balance at $0.00 — ready to end the session.";
+      remainderEl.className = "remainder remainder-ok";
+      endBtn.disabled = false;
+    } else {
+      const missing = participants.length - participants.filter((p) => { const raw = cashInputs.get(p.memberId)?.value ?? ""; return raw.trim() !== "" && parseDollarsToCents(raw) !== null; }).length;
+      remainderEl.textContent = `Off by ${formatCents(diff)}${missing ? ` · ${missing} cash-out${missing === 1 ? "" : "s"} not entered yet` : ""} — must balance to $0.00 before ending.`;
+      remainderEl.className = "remainder remainder-off";
+      endBtn.disabled = true;
+    }
+  }
+
+  for (const p of state.live.participants) {
     const row = document.createElement("div"); row.className = "live-player-row";
     row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><span class="live-saved" aria-live="polite"></span></div>`;
     const cash = /** @type {HTMLInputElement} */ (q(row, ".live-cashout"));
-    q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(live.session.id, p));
-    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
+    cashInputs.set(p.memberId, cash);
+    q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(state.live.session.id, p));
+    cash.addEventListener("input", recomputeBalance);
+    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(state.live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
     list.appendChild(row);
   }
+  recomputeBalance();
+
   q(body, "#live-close").addEventListener("click", closeModal);
-  q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(live.session.id, live.participants.map((p) => p.memberId)));
-  q(body, "#live-end").addEventListener("click", async () => { try { await api(`/live/${encodeURIComponent(live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); } });
-  openModal({ title: live.session.title || "Live session", body, wide: true });
+  q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(state.live.session.id, state.live.participants.map((p) => p.memberId)));
+  q(body, "#live-undo").addEventListener("click", async () => {
+    try { await api(`/live/${encodeURIComponent(state.live.session.id)}/undo`, { method: "POST", body: {} }); await loadLive(); await openLiveModal(); }
+    catch (e) { const err = /** @type {ApiError} */ (e); if (err?.code === "nothing_to_undo") showBanner({ kind: "info", message: "Nothing to undo." }); else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't undo the last change.") }); }
+  });
+  q(body, "#live-end").addEventListener("click", async () => {
+    if (endBtn.disabled) return;
+    try { await api(`/live/${encodeURIComponent(state.live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); }
+    catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); }
+  });
 }
 
 function openLiveAddPlayerChooser(sessionId, existingIds) {
@@ -1472,7 +1539,7 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
 }
 
 async function saveLivePlayer(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.") }); }
 }
 

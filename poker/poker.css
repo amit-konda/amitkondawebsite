@@ -571,6 +571,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .remainder { font-weight: 700; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
 .remainder-ok { color: var(--pos); }
+.remainder-off { color: var(--neg); }
 
 .reasons { margin: 4px 0 0; padding-left: 18px; color: #7A2A23; font-size: 0.9rem; }
 .reasons li { margin: 2px 0; }
@@ -856,6 +857,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 .live-panel { gap: 16px; }
 .live-modal-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .live-modal-tools .form-hint { margin: 0; }
+.live-modal-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .live-player-list { display: flex; flex-direction: column; gap: 8px; }
 .live-player-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
 .live-player-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -899,6 +901,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   #live-start-members .part-amount { grid-column: 2; width: 100%; }
   .live-player-row { align-items: flex-start; flex-direction: column; }
   .live-modal-tools { align-items: stretch; flex-direction: column; }
+  .live-modal-actions { justify-content: stretch; }
+  .live-modal-actions .btn { flex: 1; }
   .live-player-actions { width: 100%; }
   .live-player-actions .live-cashout { flex: 1; width: auto; }
 }

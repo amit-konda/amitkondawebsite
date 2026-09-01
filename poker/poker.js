@@ -684,6 +684,7 @@ async function onGateUnlock(ev) {
     field("gate-password").value = "";
     await refreshStatus();
     route();
+    void maybeShowNamePrompt();
   } catch (e) {
     const errObj = /** @type {ApiError} */ (e);
     err.textContent = friendlyMessage(errObj, "Couldn't unlock. Check the password and try again.");
@@ -2294,6 +2295,7 @@ async function onViewerChange() {
     if (state.status) {
       state.status = { ...state.status, viewer: data?.viewer ?? null };
     }
+    clearSkippedNamePrompt();
     fillViewerSelect();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
@@ -2359,6 +2361,99 @@ async function onAdminLock() {
   } catch (e) {
     showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't lock admin.") });
   }
+}
+
+/* ── Name prompt (ask once at login) ──────────────────────── */
+
+const NAME_PROMPT_SKIP_KEY = "pokerSkipNamePrompt";
+
+function hasSkippedNamePrompt() {
+  try {
+    return localStorage.getItem(NAME_PROMPT_SKIP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setSkippedNamePrompt() {
+  try {
+    localStorage.setItem(NAME_PROMPT_SKIP_KEY, "1");
+  } catch {
+    /* ignore — private browsing / storage disabled */
+  }
+}
+
+function clearSkippedNamePrompt() {
+  try {
+    localStorage.removeItem(NAME_PROMPT_SKIP_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Ask once, right after logging in, who's using this device — instead of
+ * letting people discover the requirement piecemeal via guard banners on
+ * whichever action they try first. Only called right after a fresh login
+ * (onGateUnlock) or a returning page load (init), so it never re-nags
+ * mid-session; the existing per-action banners remain as a fallback for
+ * anyone who dismisses or skips it.
+ */
+async function maybeShowNamePrompt() {
+  if (!state.status?.group || state.status.viewer || hasSkippedNamePrompt() || activeModal) return;
+  let members;
+  try {
+    members = (await api("/members")).members ?? [];
+  } catch {
+    return;
+  }
+  if (members.length === 0 || state.status?.viewer || hasSkippedNamePrompt() || activeModal) return;
+  state.members = members;
+  fillViewerSelect();
+
+  const body = document.createElement("div");
+  body.className = "stack";
+  body.innerHTML = `
+    <p class="form-hint">Pick your name so sessions you record are marked as yours. You can change this anytime from the top bar.</p>
+    <label class="field" for="name-prompt-select">Your name</label>
+    <select id="name-prompt-select" class="input">
+      <option value="">Select your name…</option>
+      ${members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}
+    </select>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="name-prompt-skip">Just checking balances</button>
+      <button type="button" class="btn btn-primary" id="name-prompt-submit" disabled>Continue</button>
+    </div>`;
+  openModal({ title: "Who are you?", body });
+  const select = /** @type {HTMLSelectElement} */ (q(body, "#name-prompt-select"));
+  const submit = /** @type {HTMLButtonElement} */ (q(body, "#name-prompt-submit"));
+  select.addEventListener("change", () => {
+    submit.disabled = !select.value;
+  });
+  q(body, "#name-prompt-skip").addEventListener("click", () => {
+    setSkippedNamePrompt();
+    closeModal();
+  });
+  submit.addEventListener("click", async () => {
+    if (!select.value) return;
+    submit.disabled = true;
+    const label = submit.textContent;
+    submit.textContent = "Saving…";
+    try {
+      const data = await api("/viewer", { method: "POST", body: { memberId: select.value } });
+      if (state.status) {
+        state.status = { ...state.status, viewer: data?.viewer ?? null };
+      }
+      clearSkippedNamePrompt();
+      fillViewerSelect();
+      closeModal();
+      route();
+    } catch (e) {
+      submit.disabled = false;
+      submit.textContent = label ?? "Continue";
+      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save your name — pick it from the top bar instead.") });
+    }
+  });
 }
 
 /* ── Init ──────────────────────────────────────────────────── */
@@ -2429,6 +2524,7 @@ async function init() {
     });
   }
   route();
+  void maybeShowNamePrompt();
 }
 
 init();

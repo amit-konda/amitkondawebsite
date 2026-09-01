@@ -1069,7 +1069,7 @@ function openOverallSettleModal() {
 }
 function ledgerActivityDetails(memberId, kind) {
   const items = [];
-  if (kind === "poker") for (const s of state.sessions) for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
+  if (kind === "poker") for (const s of state.sessions) if (s.status !== "voided") for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
   if (kind === "blackjack") for (const s of state.blackjackSessions) for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
   if (kind === "handshake") for (const b of state.handshakeBets) if (b.firstMemberId === memberId || b.secondMemberId === memberId) { const settled = b.status === "settled" && b.winnerMemberId; const amount = !settled ? 0 : b.winnerMemberId === memberId ? b.amountCents : -b.amountCents; items.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount, open: !settled }); }
   items.sort((a, b) => b.date.localeCompare(a.date));
@@ -1349,7 +1349,7 @@ async function loadLedger() {
 function renderLedger() {
   const body = el("ledger-body");
   const rows = state.ledger?.rows ?? [];
-  const head = `<div class="ledger-head-share"><span>Player</span><span>Share</span><span class="num">Net</span></div>`;
+  const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
   const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (rows.length === 0) {
     body.innerHTML =
@@ -1359,15 +1359,12 @@ function renderLedger() {
     renderSettleUp();
     return;
   }
-  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.netCents)));
   const html = rows
     .map((r) => {
       const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`;
       const last = r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never";
-      const pct = Math.round((Math.abs(r.netCents) / maxAbs) * 100);
-      return `<div class="ledger-row-share">
+      return `<div class="ledger-row">
         <div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div>
-        <progress class="share-bar ${moneyClass(r.netCents)}" value="${pct}" max="100" aria-hidden="true"></progress>
         <div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div>
         <div class="lr-meta">${esc(played)} · last played ${esc(last)}${ledgerActivityDetails(r.memberId, "poker")}</div>
       </div>`;

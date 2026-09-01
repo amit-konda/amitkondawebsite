@@ -158,7 +158,10 @@ export async function loginAsGroup(page: Page, password: string = GROUP_PASSWORD
   if ((await gateField.count()) > 0) {
     await unlockGroupGate(page, password);
   }
-  await expect(page.getByRole("button", { name: /add session/i })).toBeVisible({
+  // Tab-agnostic: the default landing tab is "Ledger" (Overall), and the
+  // Add-session button only lives under the "Poker" tab, so assert on the
+  // always-visible tab nav rather than a button that may be on a hidden view.
+  await expect(page.getByRole("button", { name: "Poker", exact: true })).toBeVisible({
     timeout: 10_000
   });
 }
@@ -220,7 +223,10 @@ export async function setViewer(page: Page, memberName: string): Promise<void> {
 
 /** Open the Add Session form and wait for the participant checkboxes. */
 export async function openAddSession(page: Page): Promise<void> {
-  await page.getByRole("button", { name: /add session/i }).click();
+  // The Add-session button lives under the "Poker" tab, not the default
+  // "Ledger" (Overall) tab — switch tabs first so the button is present.
+  await page.getByRole("button", { name: "Poker", exact: true }).click();
+  await page.getByRole("button", { name: /add (past )?session/i }).click();
   await expect(page.getByRole("checkbox").first()).toBeVisible({ timeout: 10_000 });
 }
 

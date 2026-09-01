@@ -2462,14 +2462,14 @@ function clearSkippedNamePrompt() {
  * anyone who dismisses or skips it.
  */
 async function maybeShowNamePrompt() {
-  if (!state.status?.group || state.status.viewer || hasSkippedNamePrompt() || activeModal) return;
+  if (!state.status?.group || state.status.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
   let members;
   try {
     members = (await api("/members")).members ?? [];
   } catch {
     return;
   }
-  if (members.length === 0 || state.status?.viewer || hasSkippedNamePrompt() || activeModal) return;
+  if (members.length === 0 || state.status?.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
   state.members = members;
   fillViewerSelect();
 

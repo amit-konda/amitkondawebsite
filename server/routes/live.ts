@@ -1,10 +1,10 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireGroup, requireViewer } from "../auth.js";
 import { db } from "../db/client.js";
-import { liveBuyIns, liveCashOuts, members, pokerSessions, sessionResults } from "../db/schema.js";
-import { MAX_AMOUNT_CENTS } from "../domain/money.js";
+import { liveBuyIns, liveCashOuts, liveSessionEvents, members, pokerSessions, sessionResults } from "../db/schema.js";
+import { MAX_AMOUNT_CENTS, formatCents } from "../domain/money.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { Handler, Router } from "../router.js";
 
@@ -73,7 +73,10 @@ export function registerLiveRoutes(router: Router): void {
     const session = (await db.select({ id: pokerSessions.id, status: pokerSessions.status }).from(pokerSessions).where(eq(pokerSessions.id, ctx.params.id!)).limit(1))[0];
     if (!session) throw notFound();
     if (session.status !== "live") throw conflict("This live session has ended.");
-    await db.insert(liveBuyIns).values({ sessionId: session.id, memberId: body.memberId, amountCents: body.amountCents, recordedByMemberId: claims.mid });
+    await db.transaction(async (tx) => {
+      const [row] = await tx.insert(liveBuyIns).values({ sessionId: session.id, memberId: body.memberId, amountCents: body.amountCents, recordedByMemberId: claims.mid }).returning({ id: liveBuyIns.id });
+      await tx.insert(liveSessionEvents).values({ sessionId: session.id, memberId: body.memberId, kind: "buy_in", buyInId: row!.id });
+    });
     return livePayload(session.id);
   });
 
@@ -83,8 +86,35 @@ export function registerLiveRoutes(router: Router): void {
     const session = (await db.select({ id: pokerSessions.id, status: pokerSessions.status }).from(pokerSessions).where(eq(pokerSessions.id, ctx.params.id!)).limit(1))[0];
     if (!session) throw notFound();
     if (session.status !== "live") throw conflict("This live session has ended.");
-    await db.insert(liveCashOuts).values({ sessionId: session.id, memberId: body.memberId, amountCents: body.amountCents, recordedByMemberId: claims.mid }).onConflictDoUpdate({ target: [liveCashOuts.sessionId, liveCashOuts.memberId], set: { amountCents: body.amountCents, recordedByMemberId: claims.mid, updatedAt: new Date() } });
+    await db.transaction(async (tx) => {
+      const existing = (await tx.select({ amountCents: liveCashOuts.amountCents }).from(liveCashOuts).where(and(eq(liveCashOuts.sessionId, session.id), eq(liveCashOuts.memberId, body.memberId))).limit(1))[0];
+      await tx.insert(liveCashOuts).values({ sessionId: session.id, memberId: body.memberId, amountCents: body.amountCents, recordedByMemberId: claims.mid }).onConflictDoUpdate({ target: [liveCashOuts.sessionId, liveCashOuts.memberId], set: { amountCents: body.amountCents, recordedByMemberId: claims.mid, updatedAt: new Date() } });
+      await tx.insert(liveSessionEvents).values({ sessionId: session.id, memberId: body.memberId, kind: "cash_out", previousCashOutCents: existing ? existing.amountCents : null, hadPreviousCashOut: !!existing });
+    });
     return livePayload(session.id);
+  });
+
+  route(router, "post", "/live/:id/undo", async (ctx) => {
+    requireViewer(ctx);
+    const id = ctx.params.id!;
+    const session = (await db.select({ id: pokerSessions.id, status: pokerSessions.status }).from(pokerSessions).where(eq(pokerSessions.id, id)).limit(1))[0];
+    if (!session) throw notFound();
+    if (session.status !== "live") throw conflict("This live session has ended.");
+    const event = (await db.select().from(liveSessionEvents).where(eq(liveSessionEvents.sessionId, id)).orderBy(desc(liveSessionEvents.createdAt)).limit(1))[0];
+    if (!event) throw badRequest("nothing_to_undo", "Nothing to undo.");
+    await db.transaction(async (tx) => {
+      if (event.kind === "buy_in") {
+        if (event.buyInId) await tx.delete(liveBuyIns).where(eq(liveBuyIns.id, event.buyInId));
+      } else {
+        if (event.hadPreviousCashOut) {
+          await tx.update(liveCashOuts).set({ amountCents: event.previousCashOutCents ?? 0, updatedAt: new Date() }).where(and(eq(liveCashOuts.sessionId, id), eq(liveCashOuts.memberId, event.memberId)));
+        } else {
+          await tx.delete(liveCashOuts).where(and(eq(liveCashOuts.sessionId, id), eq(liveCashOuts.memberId, event.memberId)));
+        }
+      }
+      await tx.delete(liveSessionEvents).where(eq(liveSessionEvents.id, event.id));
+    });
+    return { ...(await livePayload(id)), undone: true };
   });
 
   route(router, "post", "/live/:id/end", async (ctx) => {
@@ -95,10 +125,13 @@ export function registerLiveRoutes(router: Router): void {
     if (live.participants.length < 2) throw badRequest("not_enough_players", "Add at least two players before ending the session.");
     const missing = live.participants.filter((p) => p.cashOutCents === null);
     if (missing.length) throw badRequest("cashouts_required", "Enter a cash-out amount for every player.");
+    const diffCents = live.participants.reduce((sum, p) => sum + (p.cashOutCents ?? 0) - p.buyInCents, 0);
+    if (diffCents !== 0) throw badRequest("unbalanced", `Cash-outs don't balance yet — off by ${formatCents(diffCents)}. They must net to $0.00 before the session can end.`);
     await db.transaction(async (tx) => {
       await tx.delete(sessionResults).where(eq(sessionResults.sessionId, id));
       await tx.insert(sessionResults).values(live.participants.map((p) => ({ sessionId: id, memberId: p.memberId, amountCents: (p.cashOutCents ?? 0) - p.buyInCents })));
       await tx.update(pokerSessions).set({ status: "active", version: live.session.version + 1, updatedAt: new Date() }).where(and(eq(pokerSessions.id, id), eq(pokerSessions.status, "live")));
+      await tx.delete(liveSessionEvents).where(eq(liveSessionEvents.sessionId, id));
     });
     return { ...(await livePayload(id)), ended: true, endedByMemberId: claims.mid };
   });

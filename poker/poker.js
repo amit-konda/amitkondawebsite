@@ -121,6 +121,7 @@ const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall"]);
  *   gameTab: string,
  *   handshakeLedger: LedgerData|null,
  *   handshakeBets: any[],
+ *   handshakeCategories: any[],
  *   sessionSearch: string,
  *   sessionFilter: "all"|"disputed"|"voided",
  *   settleTransfers: any[],
@@ -143,6 +144,7 @@ const state = {
   gameTab: "overall",
   handshakeLedger: null,
   handshakeBets: [],
+  handshakeCategories: [],
   sessionSearch: "",
   sessionFilter: "all",
   settleTransfers: [],
@@ -1067,7 +1069,7 @@ function openOverallSettleModal() {
 }
 function ledgerActivityDetails(memberId, kind) {
   const items = [];
-  if (kind === "poker") for (const s of state.sessions) for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
+  if (kind === "poker") for (const s of state.sessions) if (s.status !== "voided") for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
   if (kind === "blackjack") for (const s of state.blackjackSessions) for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
   if (kind === "handshake") for (const b of state.handshakeBets) if (b.firstMemberId === memberId || b.secondMemberId === memberId) { const settled = b.status === "settled" && b.winnerMemberId; const amount = !settled ? 0 : b.winnerMemberId === memberId ? b.amountCents : -b.amountCents; items.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount, open: !settled }); }
   items.sort((a, b) => b.date.localeCompare(a.date));
@@ -1080,7 +1082,16 @@ async function renderHandshakeDashboard() {
   fillViewerSelect();
   el("handshake-open-body").innerHTML = `<div class="skel skel-block"></div>`;
   el("handshake-settled-body").innerHTML = `<div class="skel skel-row"></div>`;
-  await Promise.allSettled([loadHandshakeLedger(), loadHandshakeBets()]);
+  await Promise.allSettled([loadHandshakeLedger(), loadHandshakeBets(), loadHandshakeCategories()]);
+}
+
+async function loadHandshakeCategories() {
+  try {
+    const d = await api("/handshake/categories");
+    state.handshakeCategories = d.categories ?? [];
+  } catch {
+    // Non-fatal: the "add bet" modal falls back to "Uncategorized" only.
+  }
 }
 
 async function loadHandshakeLedger() {
@@ -1105,9 +1116,10 @@ async function loadHandshakeBets() {
 }
 
 /**
- * Renders both halves of the Handshake bets screen: the open-bet action
- * cards + settled-balances summary (into #handshake-open-body), and the
- * settled-bets history table (into #handshake-settled-body).
+ * Renders the three pieces of the Handshake bets screen: the open-bet
+ * action cards (into #handshake-open-body, a responsive auto-fill grid),
+ * the settled-balances sidebar summary (into #handshake-balances-body),
+ * and the settled-bets history table (into #handshake-settled-body).
  */
 function renderHandshakeScreen() {
   const bets = state.handshakeBets ?? [];
@@ -1123,28 +1135,30 @@ function renderHandshakeScreen() {
   heading.textContent = parts.join(" · ");
 
   const grid = el("handshake-open-body");
+  const categoryChip = (b) => (b.category ? `<span class="chip chip-category">${esc(b.category.name)}</span>` : "");
   const cards = openBets.map(
     (b) => `<div class="open-bet-card">
-      <div class="open-bet-head"><span class="chip chip-open">Open</span><span class="open-bet-amount money">${esc(formatPlainCents(b.amountCents))}</span></div>
+      <div class="open-bet-head"><span class="chip chip-open">Open</span>${categoryChip(b)}<span class="open-bet-amount money">${esc(formatPlainCents(b.amountCents))}</span></div>
       <div class="open-bet-title">${esc(b.description)}</div>
       <div class="open-bet-parties">${esc(b.firstMember.name)} <span class="muted-inline">vs</span> ${esc(b.secondMember.name)}</div>
       <button type="button" class="btn btn-primary handshake-settle" data-id="${esc(b.id)}">Settle bet</button>
     </div>`
   );
-  if (openBets.length <= 1) {
-    cards.push(`<div class="bet-empty-card"><div class="form-hint">${openBets.length === 0 ? "Nothing outstanding." : "Nothing else outstanding."}</div><button type="button" class="btn" id="handshake-start-bet">Start a bet</button></div>`);
+  if (!cards.length) {
+    cards.push(`<div class="bet-empty-card"><div class="form-hint">Nothing outstanding.</div><button type="button" class="btn" id="handshake-start-bet">Start a bet</button></div>`);
   }
-  const settledBalancesCard = `<div class="settled-balances-card">
-    <div class="overall-eyebrow">Settled balances</div>
-    ${ledgerRows.length ? ledgerRows.map((r) => `<div class="settled-balances-row"><span>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</span><strong class="money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</strong></div>`).join("") : `<p class="empty-state">No settled bets yet.</p>`}
-  </div>`;
-  grid.innerHTML = cards.join("") + settledBalancesCard;
+  grid.innerHTML = cards.join("");
   grid.querySelectorAll(".handshake-settle").forEach((node) => node.addEventListener("click", () => {
     const bet = bets.find((b) => b.id === node.getAttribute("data-id"));
     if (bet) openHandshakeSettleModal(bet);
   }));
   const startBtn = document.getElementById("handshake-start-bet");
   if (startBtn) startBtn.addEventListener("click", openHandshakeModal);
+
+  const balancesBody = el("handshake-balances-body");
+  balancesBody.innerHTML = ledgerRows.length
+    ? ledgerRows.map((r) => `<div class="settled-balances-row"><span>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</span><strong class="money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</strong></div>`).join("")
+    : `<p class="empty-state">No settled bets yet.</p>`;
 
   const settledBody = el("handshake-settled-body");
   if (!settledBets.length) {
@@ -1153,13 +1167,69 @@ function renderHandshakeScreen() {
     const head = `<div class="bet-table-head"><span>Date</span><span>Bet</span><span>Bettors</span><span>Winner</span><span class="num">Amount</span></div>`;
     const rowsHtml = [...settledBets]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((b) => `<div class="bet-table-row"><span class="sr-date">${esc(formatDate(b.createdAt))}</span><span class="sr-title">${esc(b.description)}</span><span class="sr-players">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)}</span><span>${esc(b.winnerMember?.name ?? "Unknown")}</span><span class="num money">${esc(formatPlainCents(b.amountCents))}</span></div>`)
+      .map((b) => `<div class="bet-table-row"><span class="sr-date">${esc(formatDate(b.createdAt))}</span><span class="sr-title">${esc(b.description)}${b.category ? ` <span class="chip chip-category">${esc(b.category.name)}</span>` : ""}</span><span class="sr-players">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)}</span><span>${esc(b.winnerMember?.name ?? "Unknown")}</span><span class="num money">${esc(formatPlainCents(b.amountCents))}</span></div>`)
       .join("");
     settledBody.innerHTML = head + rowsHtml;
   }
 }
 function openHandshakeSettleModal(bet) { const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<p class="form-hint">Choose the winner to settle this bet.</p><fieldset class="choice-fieldset"><legend class="field">Winner</legend><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.firstMember.id)}" checked> ${esc(bet.firstMember.name)}</label><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.secondMember.id)}"> ${esc(bet.secondMember.name)}</label></fieldset><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-settle-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-settle-submit">Settle bet</button></div>`; openModal({ title: "Settle handshake bet", body }); q(body, "#hb-settle-cancel").addEventListener("click", closeModal); q(body, "#hb-settle-submit").addEventListener("click", async () => { const winnerId = /** @type {HTMLInputElement|null} */ (body.querySelector("input[name=hb-winner]:checked"))?.value; if (!winnerId) return; try { await api(`/handshake/bets/${encodeURIComponent(bet.id)}/settle`, { method: "POST", body: { winnerMemberId: winnerId } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't settle the bet.") }); } }); }
-function openHandshakeModal() { if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first." }); return; } const others = state.members.filter((m) => m.id !== state.status?.viewer?.id); const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><label class="check-row"><input id="hb-settle-now" type="checkbox"> Settle this bet now</label><div id="hb-winner-wrap" hidden><label class="field" for="hb-winner-now">Winner</label><select id="hb-winner-now" class="input"></select></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`; openModal({ title: "Add handshake bet", body }); const opponent = /** @type {HTMLSelectElement} */ (q(body, "#hb-opponent")); const winner = /** @type {HTMLSelectElement} */ (q(body, "#hb-winner-now")); const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); }; syncWinnerChoices(); opponent.addEventListener("change", syncWinnerChoices); const settleNow = /** @type {HTMLInputElement} */ (q(body, "#hb-settle-now")); settleNow.addEventListener("change", () => { q(body, "#hb-winner-wrap").hidden = !settleNow.checked; }); q(body, "#hb-cancel").addEventListener("click", closeModal); q(body, "#hb-submit").addEventListener("click", async () => { const amount = parseDollarsToCents(field("hb-amount").value); if (!field("hb-description").value.trim() || amount == null || amount <= 0) return showBanner({ kind: "error", message: "Enter a description and positive amount." }); try { const created = await api("/handshake/bets", { method: "POST", body: { requestKey: crypto.randomUUID(), description: field("hb-description").value.trim(), amountCents: amount, firstMemberId: state.status.viewer.id, secondMemberId: opponent.value } }); if (settleNow.checked) await api(`/handshake/bets/${encodeURIComponent(created.id)}/settle`, { method: "POST", body: { winnerMemberId: winner.value } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the bet.") }); } }); }
+function openHandshakeModal() {
+  if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first." }); return; }
+  const others = state.members.filter((m) => m.id !== state.status?.viewer?.id);
+  const categoryOptions = () => state.handshakeCategories.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><label class="field" for="hb-category">Category (optional)</label><select id="hb-category" class="input"><option value="">No category</option>${categoryOptions()}<option value="__new__">+ Add new category…</option></select><div id="hb-category-new-wrap" class="field-row" hidden><input id="hb-category-new" class="input" maxlength="40" placeholder="e.g. Bowling"><button type="button" class="btn" id="hb-category-new-add">Add</button></div><label class="check-row"><input id="hb-settle-now" type="checkbox"> Settle this bet now</label><div id="hb-winner-wrap" hidden><label class="field" for="hb-winner-now">Winner</label><select id="hb-winner-now" class="input"></select></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`;
+  openModal({ title: "Add handshake bet", body });
+  const opponent = /** @type {HTMLSelectElement} */ (q(body, "#hb-opponent"));
+  const winner = /** @type {HTMLSelectElement} */ (q(body, "#hb-winner-now"));
+  const category = /** @type {HTMLSelectElement} */ (q(body, "#hb-category"));
+  const categoryNewWrap = q(body, "#hb-category-new-wrap");
+  const categoryNewInput = /** @type {HTMLInputElement} */ (q(body, "#hb-category-new"));
+  const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); };
+  syncWinnerChoices();
+  opponent.addEventListener("change", syncWinnerChoices);
+  const settleNow = /** @type {HTMLInputElement} */ (q(body, "#hb-settle-now"));
+  settleNow.addEventListener("change", () => { q(body, "#hb-winner-wrap").hidden = !settleNow.checked; });
+  category.addEventListener("change", () => {
+    categoryNewWrap.hidden = category.value !== "__new__";
+    if (category.value === "__new__") categoryNewInput.focus();
+  });
+  const addCategory = async () => {
+    const name = categoryNewInput.value.trim();
+    if (!name) return;
+    try {
+      const created = await api("/handshake/categories", { method: "POST", body: { name } });
+      if (!state.handshakeCategories.some((c) => c.id === created.id)) {
+        state.handshakeCategories.push({ id: created.id, name: created.name });
+        state.handshakeCategories.sort((a, b) => a.name.localeCompare(b.name));
+      }
+      const newOption = document.createElement("option");
+      newOption.value = created.id; newOption.textContent = created.name;
+      category.insertBefore(newOption, q(category, 'option[value="__new__"]'));
+      category.value = created.id;
+      categoryNewWrap.hidden = true;
+      categoryNewInput.value = "";
+    } catch (e) {
+      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the category.") });
+    }
+  };
+  q(body, "#hb-category-new-add").addEventListener("click", addCategory);
+  categoryNewInput.addEventListener("keydown", (e) => { if (/** @type {KeyboardEvent} */ (e).key === "Enter") { e.preventDefault(); void addCategory(); } });
+  q(body, "#hb-cancel").addEventListener("click", closeModal);
+  q(body, "#hb-submit").addEventListener("click", async () => {
+    const amount = parseDollarsToCents(field("hb-amount").value);
+    if (!field("hb-description").value.trim() || amount == null || amount <= 0) return showBanner({ kind: "error", message: "Enter a description and positive amount." });
+    const categoryId = category.value && category.value !== "__new__" ? category.value : undefined;
+    try {
+      const created = await api("/handshake/bets", { method: "POST", body: { requestKey: crypto.randomUUID(), description: field("hb-description").value.trim(), amountCents: amount, firstMemberId: state.status.viewer.id, secondMemberId: opponent.value, categoryId } });
+      if (settleNow.checked) await api(`/handshake/bets/${encodeURIComponent(created.id)}/settle`, { method: "POST", body: { winnerMemberId: winner.value } });
+      closeModal();
+      await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]);
+    } catch (e) {
+      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the bet.") });
+    }
+  });
+}
 
 function renderBlackjackLedger() {
   const body = el("blackjack-ledger-body"); const ledger = state.blackjackLedger;
@@ -1279,7 +1349,7 @@ async function loadLedger() {
 function renderLedger() {
   const body = el("ledger-body");
   const rows = state.ledger?.rows ?? [];
-  const head = `<div class="ledger-head-share"><span>Player</span><span>Share</span><span class="num">Net</span></div>`;
+  const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
   const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (rows.length === 0) {
     body.innerHTML =
@@ -1289,15 +1359,12 @@ function renderLedger() {
     renderSettleUp();
     return;
   }
-  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.netCents)));
   const html = rows
     .map((r) => {
       const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`;
       const last = r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never";
-      const pct = Math.round((Math.abs(r.netCents) / maxAbs) * 100);
-      return `<div class="ledger-row-share">
+      return `<div class="ledger-row">
         <div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div>
-        <progress class="share-bar ${moneyClass(r.netCents)}" value="${pct}" max="100" aria-hidden="true"></progress>
         <div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div>
         <div class="lr-meta">${esc(played)} · last played ${esc(last)}${ledgerActivityDetails(r.memberId, "poker")}</div>
       </div>`;
@@ -1379,16 +1446,30 @@ function moneyInputValue(cents) { return cents == null ? "" : toDollarsInput(cen
 function openStartLiveModal() {
   const body = document.createElement("div");
   body.className = "stack";
-  body.innerHTML = `<div class="form-grid"><div><label class="field" for="live-title">Session name (optional)</label><input id="live-title" class="input" maxlength="120" placeholder="Friday night game"></div><div><label class="field" for="live-notes">Notes (optional)</label><input id="live-notes" class="input" maxlength="2000"></div></div><fieldset class="part-fieldset"><legend class="field">Players and starting buy-in</legend><div id="live-start-members"></div></fieldset><p class="form-hint">You can add rebuys and update cash-outs while the session is live.</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-start-cancel">Cancel</button><button type="button" class="btn btn-primary" id="live-start-submit">Start live session</button></div>`;
+  body.innerHTML = `<div class="form-grid"><div><label class="field" for="live-title">Session name (optional)</label><input id="live-title" class="input" maxlength="120" placeholder="Friday night game"></div><div><label class="field" for="live-notes">Notes (optional)</label><input id="live-notes" class="input" maxlength="2000"></div></div><fieldset class="part-fieldset"><div id="live-start-members"></div></fieldset><p class="form-hint">You can add rebuys and update cash-outs while the session is live.</p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-start-cancel">Cancel</button><button type="button" class="btn btn-primary" id="live-start-submit">Start live session</button></div>`;
   openModal({ title: "Start live session", body });
   const membersEl = q(body, "#live-start-members");
   const rows = [];
+  // The buy-in is almost always the same across the table: once someone
+  // types an amount, it auto-fills every other row that hasn't been typed
+  // into yet, so entering it once is usually enough. Typing into a row
+  // marks it "touched" so it stops following further changes elsewhere —
+  // that row's amount is now the player's own, deliberate override.
+  const touched = new Set();
   for (const m of state.members) {
+    const checkId = `live-c-${m.id}`;
     const row = document.createElement("div"); row.className = "part-row";
-    row.innerHTML = `<input type="checkbox" class="part-check"><span class="part-name">${esc(m.name)}</span><input type="text" class="input part-amount money" inputmode="decimal" placeholder="$0.00" hidden>`;
+    row.innerHTML = `<input type="checkbox" class="part-check" id="${checkId}"><label for="${checkId}" class="part-name">${esc(m.name)}</label><input type="text" class="input part-amount money" inputmode="decimal" placeholder="$0.00" hidden>`;
     const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
     const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
     check.addEventListener("change", () => { amount.hidden = !check.checked; if (check.checked) amount.focus(); });
+    amount.addEventListener("input", () => {
+      touched.add(m.id);
+      for (const r of rows) {
+        if (r.memberId === m.id || touched.has(r.memberId)) continue;
+        r.amount.value = amount.value;
+      }
+    });
     rows.push({ memberId: m.id, check, amount }); membersEl.appendChild(row);
   }
   q(body, "#live-start-cancel").addEventListener("click", closeModal);
@@ -1435,28 +1516,81 @@ function openRebuyChooser(sessionId, participant) {
 }
 
 async function saveRebuy(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); }
+}
+
+/**
+ * Sum of (cash-out − buy-in) across the live session's participants, using
+ * each row's currently-typed cash-out value (not just what's been saved to
+ * the server yet) so the balance reads live as the user types. A blank or
+ * unparseable field counts as 0 — money not yet accounted for — same as it
+ * would if nobody had touched that field.
+ */
+function liveBalanceDiffCents(participants, cashInputs) {
+  let sum = 0;
+  for (const p of participants) {
+    const raw = cashInputs.get(p.memberId)?.value ?? "";
+    const cents = raw.trim() === "" ? 0 : parseDollarsToCents(raw);
+    sum += (cents ?? 0) - p.buyInCents;
+  }
+  return sum;
 }
 
 function openLiveModal() {
   if (!state.live) return;
   const body = document.createElement("div"); body.className = "stack live-panel";
-  const live = state.live;
-  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div><div class="live-player-list"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
+  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-modal-actions"><button type="button" class="btn btn-ghost btn-small" id="live-undo" title="Undo the most recent change">↶ Undo</button><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div></div><div class="live-player-list"></div><p class="remainder" id="live-remainder" aria-live="polite"></p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end" disabled>End session</button></div>`;
+  openModal({ title: state.live.session.title || "Live session", body, wide: true });
+
   const list = q(body, ".live-player-list");
-  for (const p of live.participants) {
+  const remainderEl = q(body, "#live-remainder");
+  const endBtn = /** @type {HTMLButtonElement} */ (q(body, "#live-end"));
+  /** @type {Map<string, HTMLInputElement>} */
+  const cashInputs = new Map();
+
+  function recomputeBalance() {
+    const participants = state.live.participants;
+    const diff = liveBalanceDiffCents(participants, cashInputs);
+    const complete = participants.every((p) => {
+      const raw = cashInputs.get(p.memberId)?.value ?? "";
+      return raw.trim() !== "" && parseDollarsToCents(raw) !== null;
+    });
+    if (complete && diff === 0) {
+      remainderEl.textContent = "Cash-outs balance at $0.00 — ready to end the session.";
+      remainderEl.className = "remainder remainder-ok";
+      endBtn.disabled = false;
+    } else {
+      const missing = participants.length - participants.filter((p) => { const raw = cashInputs.get(p.memberId)?.value ?? ""; return raw.trim() !== "" && parseDollarsToCents(raw) !== null; }).length;
+      remainderEl.textContent = `Off by ${formatCents(diff)}${missing ? ` · ${missing} cash-out${missing === 1 ? "" : "s"} not entered yet` : ""} — must balance to $0.00 before ending.`;
+      remainderEl.className = "remainder remainder-off";
+      endBtn.disabled = true;
+    }
+  }
+
+  for (const p of state.live.participants) {
     const row = document.createElement("div"); row.className = "live-player-row";
     row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><span class="live-saved" aria-live="polite"></span></div>`;
     const cash = /** @type {HTMLInputElement} */ (q(row, ".live-cashout"));
-    q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(live.session.id, p));
-    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
+    cashInputs.set(p.memberId, cash);
+    q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(state.live.session.id, p));
+    cash.addEventListener("input", recomputeBalance);
+    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(state.live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
     list.appendChild(row);
   }
+  recomputeBalance();
+
   q(body, "#live-close").addEventListener("click", closeModal);
-  q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(live.session.id, live.participants.map((p) => p.memberId)));
-  q(body, "#live-end").addEventListener("click", async () => { try { await api(`/live/${encodeURIComponent(live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); } });
-  openModal({ title: live.session.title || "Live session", body, wide: true });
+  q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(state.live.session.id, state.live.participants.map((p) => p.memberId)));
+  q(body, "#live-undo").addEventListener("click", async () => {
+    try { await api(`/live/${encodeURIComponent(state.live.session.id)}/undo`, { method: "POST", body: {} }); await loadLive(); await openLiveModal(); }
+    catch (e) { const err = /** @type {ApiError} */ (e); if (err?.code === "nothing_to_undo") showBanner({ kind: "info", message: "Nothing to undo." }); else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't undo the last change.") }); }
+  });
+  q(body, "#live-end").addEventListener("click", async () => {
+    if (endBtn.disabled) return;
+    try { await api(`/live/${encodeURIComponent(state.live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); }
+    catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); }
+  });
 }
 
 function openLiveAddPlayerChooser(sessionId, existingIds) {
@@ -1472,7 +1606,7 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
 }
 
 async function saveLivePlayer(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.") }); }
 }
 

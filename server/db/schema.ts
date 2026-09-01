@@ -6,6 +6,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   index,
   integer,
@@ -24,6 +25,7 @@ export const joinRequestStatus = pgEnum("join_request_status", ["pending", "appr
 export const sessionStatus = pgEnum("session_status", ["active", "live", "disputed", "resolved", "voided"]);
 export const gameType = pgEnum("game_type", ["poker", "blackjack"]);
 export const handshakeBetStatus = pgEnum("handshake_bet_status", ["open", "settled", "voided"]);
+export const liveSessionEventKind = pgEnum("live_session_event_kind", ["buy_in", "cash_out"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
@@ -124,6 +126,24 @@ export const pokerSessions = pgTable(
   ]
 );
 
+// Handshake bet categories are a small, user-extensible tag list (Golf,
+// Football, Meals, ...) rather than a fixed enum — anyone can add a new one
+// from the "Add handshake bet" modal, so it's a normal table with a
+// case-insensitive unique name, not a pgEnum.
+export const handshakeBetCategories = pgTable(
+  "handshake_bet_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [
+    check("handshake_bet_categories_name_len", sql`char_length(${t.name}) between 1 and 40`),
+    uniqueIndex("handshake_bet_categories_name_ci_idx").on(sql`lower(${t.name})`)
+  ]
+);
+
 export const handshakeBets = pgTable(
   "handshake_bets",
   {
@@ -133,6 +153,7 @@ export const handshakeBets = pgTable(
     firstMemberId: uuid("first_member_id").notNull().references(() => members.id),
     secondMemberId: uuid("second_member_id").notNull().references(() => members.id),
     winnerMemberId: uuid("winner_member_id").references(() => members.id),
+    categoryId: uuid("category_id").references(() => handshakeBetCategories.id),
     status: handshakeBetStatus("status").notNull().default("open"),
     createdByMemberId: uuid("created_by_member_id").references(() => members.id),
     createdAt: ts("created_at").notNull().defaultNow(),
@@ -143,7 +164,8 @@ export const handshakeBets = pgTable(
     check("handshake_bets_amount_limit", sql`${t.amountCents} <= 100000000`),
     check("handshake_bets_distinct_members", sql`${t.firstMemberId} <> ${t.secondMemberId}`),
     index("handshake_bets_status_idx").on(t.status),
-    index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId)
+    index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId),
+    index("handshake_bets_category_idx").on(t.categoryId)
   ]
 );
 
@@ -205,6 +227,31 @@ export const liveCashOuts = pgTable(
     uniqueIndex("live_cash_outs_session_member_uidx").on(t.sessionId, t.memberId),
     index("live_cash_outs_session_idx").on(t.sessionId)
   ]
+);
+
+// Undo log for the live-session modal: one row per buy-in/cash-out mutation,
+// newest first. Undo pops the most recent row and reverses just that change
+// (delete the buy-in row it points at, or restore the cash-out's prior
+// value) — a simple LIFO stack, not a full history browser. Session-start
+// buy-ins are NOT logged here (nothing to "undo" back to before the session
+// existed); only actions taken from the live modal are.
+export const liveSessionEvents = pgTable(
+  "live_session_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sessionId: uuid("session_id").notNull().references(() => pokerSessions.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id").notNull().references(() => members.id),
+    kind: liveSessionEventKind("kind").notNull(),
+    // Set when kind = 'buy_in': the live_buy_ins row to delete on undo.
+    buyInId: uuid("buy_in_id").references(() => liveBuyIns.id, { onDelete: "cascade" }),
+    // Set when kind = 'cash_out': what to restore the cash-out to on undo.
+    // hadPreviousCashOut distinguishes "restore to $0.00" from "no prior
+    // cash-out — remove the row entirely".
+    previousCashOutCents: bigint("previous_cash_out_cents", { mode: "number" }),
+    hadPreviousCashOut: boolean("had_previous_cash_out").notNull().default(false),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [index("live_session_events_session_idx").on(t.sessionId, t.createdAt)]
 );
 
 // ---------------------------------------------------------------------------

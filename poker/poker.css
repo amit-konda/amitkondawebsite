@@ -465,6 +465,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 .chip-open { background: #FBF3E1; border-color: #E2CD9B; color: #5C4B15; }
 .chip-approved { background: #E7F1EB; border-color: #C2D9CC; color: #173F2E; }
 .chip-rejected { background: #FBF0EF; border-color: #E0AFA9; color: #7A2A23; }
+.chip-category { background: rgba(31, 107, 79, 0.09); border-color: rgba(31, 107, 79, 0.22); color: var(--felt-dark); }
 
 /* ── Money ───────────────────────────────────────────────── */
 
@@ -571,6 +572,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .remainder { font-weight: 700; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
 .remainder-ok { color: var(--pos); }
+.remainder-off { color: var(--neg); }
 
 .reasons { margin: 4px 0 0; padding-left: 18px; color: #7A2A23; font-size: 0.9rem; }
 .reasons li { margin: 2px 0; }
@@ -856,6 +858,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 .live-panel { gap: 16px; }
 .live-modal-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .live-modal-tools .form-hint { margin: 0; }
+.live-modal-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .live-player-list { display: flex; flex-direction: column; gap: 8px; }
 .live-player-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--row-line); }
 .live-player-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -899,6 +902,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   #live-start-members .part-amount { grid-column: 2; width: 100%; }
   .live-player-row { align-items: flex-start; flex-direction: column; }
   .live-modal-tools { align-items: stretch; flex-direction: column; }
+  .live-modal-actions { justify-content: stretch; }
+  .live-modal-actions .btn { flex: 1; }
   .live-player-actions { width: 100%; }
   .live-player-actions .live-cashout { flex: 1; width: auto; }
 }
@@ -927,50 +932,6 @@ textarea.input { resize: vertical; min-height: 88px; }
    can, which is what keeps the row grid from cramming/overlapping in that
    in-between range. */
 .dash-poker-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; container-type: inline-size; }
-
-.ledger-head-share, .ledger-row-share {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 116px 104px;
-  grid-template-areas: "name share net" "meta meta meta";
-  column-gap: 14px;
-  align-items: center;
-  padding: 12px 6px;
-}
-.ledger-head-share {
-  grid-template-areas: none;
-  padding: 0 6px 8px;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ledger-head-share span:last-child { text-align: right; }
-.ledger-row-share { border-bottom: 1px solid var(--row-line); }
-.ledger-row-share:last-of-type { border-bottom: none; }
-.ledger-row-share:hover { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
-.ledger-row-share .lr-name { grid-area: name; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.ledger-row-share .lr-net { grid-area: net; text-align: right; font-weight: 600; }
-.ledger-row-share .lr-meta { grid-area: meta; color: var(--muted); font-size: 0.82rem; margin-top: 1px; }
-
-progress.share-bar {
-  grid-area: share;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  width: 100%;
-  height: 8px;
-  border: none;
-  border-radius: 999px;
-  background: rgba(30, 55, 43, 0.08);
-  overflow: hidden;
-}
-progress.share-bar::-webkit-progress-bar { background: rgba(30, 55, 43, 0.08); border-radius: 999px; }
-progress.share-bar::-webkit-progress-value { background: var(--felt); border-radius: 999px; }
-progress.share-bar::-moz-progress-bar { background: var(--felt); border-radius: 999px; }
-progress.share-bar.neg::-webkit-progress-value { background: var(--neg); }
-progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
 
 /* Settle up card */
 .settle-card { display: flex; flex-direction: column; }
@@ -1065,9 +1026,17 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
 .handshake-headline { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 20px; flex-wrap: wrap; }
 .handshake-headline-text { flex: 1; min-width: 0; }
 .handshake-headline-text h1 { font-size: 1.7rem; margin: 4px 0 0; }
-.handshake-actions-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0 0 20px; }
+/* Two-column layout: open bets + settled history on the left, a sticky
+   settled-balances summary on the right — mirrors .dash-grid-blackjack's
+   main+sidebar split so the page reads consistently whatever the open-bet
+   count is, instead of a fixed 3-column grid that left an empty cell
+   whenever there weren't a multiple of 3 cards to fill it. */
+.dash-grid-handshake { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.dash-handshake-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.handshake-open-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.dash-grid-handshake .settled-balances-card { position: sticky; top: 20px; }
 .open-bet-card { background: #FBF3E1; border: 1px solid #E2CD9B; border-radius: 24px; box-shadow: var(--shadow); padding: 20px; }
-.open-bet-head { display: flex; align-items: center; gap: 8px; }
+.open-bet-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .open-bet-amount { margin-left: auto; font-weight: 700; }
 .open-bet-title { font-weight: 650; font-size: 1.05rem; margin: 10px 0 2px; }
 .open-bet-parties { color: #5C4B15; font-size: 0.88rem; }
@@ -1132,6 +1101,8 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
 @media (max-width: 880px) {
   .dash-poker-grid { grid-template-columns: minmax(0, 1fr); }
   .dash-grid-blackjack { grid-template-columns: minmax(0, 1fr); }
+  .dash-grid-handshake { grid-template-columns: minmax(0, 1fr); }
+  .dash-grid-handshake .settled-balances-card { position: static; }
 }
 /* The session list's own row layout responds to the sessions card's
    rendered width (see container-type on .dash-poker-main above), not the
@@ -1156,8 +1127,6 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
   .sr-status { grid-area: status; justify-self: start; }
 }
 @media (max-width: 640px) {
-  .handshake-actions-grid { grid-template-columns: minmax(0, 1fr); }
-
   .bet-table-head { display: none; }
   .bet-table-row { display: flex; flex-direction: column; gap: 2px; padding: 12px 6px; }
   .bet-table-row .sr-title { order: 1; font-weight: 650; }

@@ -30,36 +30,6 @@
 <main id="main">
   <div id="banner-root" class="banner-root" role="region" aria-live="polite" aria-label="Messages"></div>
 
-  <!-- Admin controls are tab-independent: they render outside the per-tab
-       view sections so they stay reachable no matter which game tab is
-       active (Overall is the default landing tab). -->
-  <div class="dash-actions admin-toolbar">
-    <button id="dash-admin-toggle" class="linkish linkish-small" type="button" aria-expanded="false" aria-controls="dash-admin-form" hidden>Admin sign-in</button>
-  </div>
-
-  <div id="admin-badges" class="admin-badges" hidden>
-    <button id="badge-requests" class="badge" type="button" aria-haspopup="dialog">
-      Requests <span id="badge-requests-count" class="badge-count">0</span>
-    </button>
-    <button id="badge-disputes" class="badge" type="button" aria-haspopup="dialog">
-      Disputes <span id="badge-disputes-count" class="badge-count">0</span>
-    </button>
-    <button id="badge-members" class="badge" type="button" aria-haspopup="dialog">Members</button>
-    <button id="admin-lock-btn" class="btn btn-ghost btn-small" type="button">Lock admin</button>
-  </div>
-
-  <div class="card dash-admin-card" id="dash-admin-form" hidden>
-    <form class="stack" id="dash-admin-form-inner" novalidate>
-      <p class="form-hint">Enter your admin PIN to unlock admin tools.</p>
-      <label class="field" for="dash-admin-pin">Admin PIN</label>
-      <div class="field-row">
-        <input id="dash-admin-pin" name="adminpin" type="password" autocomplete="current-password" class="input" required>
-        <button id="dash-admin-unlock" class="btn btn-primary" type="submit">Unlock admin</button>
-      </div>
-      <p id="dash-admin-error" class="form-error" role="alert" hidden></p>
-    </form>
-  </div>
-
   <!-- ── GATE ─────────────────────────────────────────────── -->
   <section id="view-gate" class="view" hidden>
     <div class="card gate-card">

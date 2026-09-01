@@ -1043,7 +1043,7 @@ function renderOverallLedger() {
     return `<tr class="${r.isViewer ? "row-you" : ""}"><td>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}${history}</td>${cell(r.pokerCents)}${cell(r.blackjackCents)}${cell(r.handshakeCents)}${cell(r.netCents, true)}</tr>`;
   }).join("");
   const totals = rows.reduce((acc, r) => ({ poker: acc.poker + r.pokerCents, blackjack: acc.blackjack + r.blackjackCents, handshake: acc.handshake + r.handshakeCents, net: acc.net + r.netCents }), { poker: 0, blackjack: 0, handshake: 0, net: 0 });
-  body.innerHTML = `<table class="results-table overall-table"><thead><tr><th>Player</th><th class="num">Poker</th><th class="num">Blackjack</th><th class="num">Handshake</th><th class="num">Overall net</th></tr></thead><tbody>${bodyRows}</tbody><tfoot><tr><td>Total</td><td class="num money">${esc(formatCents(totals.poker))}</td><td class="num money">${esc(formatCents(totals.blackjack))}</td><td class="num money">${esc(formatCents(totals.handshake))}</td><td class="num money">${esc(formatCents(totals.net))}</td></tr></tfoot></table>`;
+  body.innerHTML = `<table class="overall-table"><thead><tr><th>Player</th><th class="num">Poker</th><th class="num">Blackjack</th><th class="num">Handshake</th><th class="num">Overall net</th></tr></thead><tbody>${bodyRows}</tbody><tfoot><tr><td>Total</td><td class="num money">${esc(formatCents(totals.poker))}</td><td class="num money">${esc(formatCents(totals.blackjack))}</td><td class="num money">${esc(formatCents(totals.handshake))}</td><td class="num money">${esc(formatCents(totals.net))}</td></tr></tfoot></table>`;
 }
 
 function openOverallSettleModal() {

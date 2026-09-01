@@ -283,7 +283,7 @@ export async function openSessionDetail(page: Page, title: string): Promise<void
   // so the list may still show its loading skeleton for a moment.
   await page.getByRole("button", { name: "Poker", exact: true }).click();
   await page
-    .locator("#sessions-body .session-card, #sessions-body .empty-state")
+    .locator("#sessions-body .session-row, #sessions-body .empty-state")
     .first()
     .waitFor({ state: "visible", timeout: 10_000 });
   await clickFirst([

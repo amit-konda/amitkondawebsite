@@ -476,8 +476,8 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 /* ── Results table ───────────────────────────────────────── */
 
-.results-table { width: 100%; border-collapse: collapse; }
-.results-table th {
+.results-table, .overall-table { width: 100%; border-collapse: collapse; }
+.results-table th, .overall-table th {
   text-align: left;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
@@ -487,13 +487,13 @@ textarea.input { resize: vertical; min-height: 88px; }
   text-transform: uppercase;
   color: var(--muted);
 }
-.results-table td { padding: 10px; border-bottom: 1px solid var(--row-line); vertical-align: middle; }
-.results-table tbody tr:last-child td { border-bottom: none; }
-.results-table tfoot td { border-top: 2px solid var(--border); font-weight: 700; padding-top: 12px; }
-.results-table .num { text-align: right; }
+.results-table td, .overall-table td { padding: 10px; border-bottom: 1px solid var(--row-line); vertical-align: middle; }
+.results-table tbody tr:last-child td, .overall-table tbody tr:last-child td { border-bottom: none; }
+.results-table tfoot td, .overall-table tfoot td { border-top: 2px solid var(--border); font-weight: 700; padding-top: 12px; }
+.results-table .num, .overall-table .num { text-align: right; }
 
-.results-table .row-you { background: #F4F8F5; }
-.results-table .row-you td:first-child { box-shadow: inset 3px 0 0 var(--felt); }
+.results-table .row-you, .overall-table .row-you { background: #F4F8F5; }
+.results-table .row-you td:first-child, .overall-table .row-you td:first-child { box-shadow: inset 3px 0 0 var(--felt); }
 
 .you-tag {
   display: inline-block;

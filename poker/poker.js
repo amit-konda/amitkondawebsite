@@ -861,12 +861,6 @@ async function renderDashboard() {
   await Promise.allSettled([loadLedger(), loadSessions(true), loadLive()]);
   if (livePollTimer) clearInterval(livePollTimer);
   livePollTimer = window.setInterval(() => { void loadLive(); }, 30000);
-  if (state.status && !state.status.viewer) {
-    showBanner({
-      kind: "info",
-      message: "Pick your name in the top bar so the sessions you record are marked as yours.",
-    });
-  }
 }
 
 async function renderBlackjackDashboard() {
@@ -2442,6 +2436,12 @@ async function maybeShowNamePrompt() {
   }
   if (members.length === 0 || state.status?.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
   state.members = members;
+  // This is a single-account ledger: use the first active member as the
+  // account identity instead of prompting for a profile.
+  await api("/viewer", { method: "POST", body: { memberId: members[0].id } });
+  await refreshStatus();
+  route();
+  return;
   fillViewerSelect();
 
   const body = document.createElement("div");
@@ -2501,7 +2501,6 @@ function wireStatic() {
   el("dash-admin-form-inner").addEventListener("submit", onDashAdminUnlock);
   wireCollapsible("dash-admin-toggle", "dash-admin-form");
   /** @type {HTMLButtonElement} */ (el("logout-btn")).addEventListener("click", onLogout);
-  /** @type {HTMLSelectElement} */ (el("viewer-select")).addEventListener("change", onViewerChange);
   el("feedback-btn").addEventListener("click", openFeedbackModal);
   /** @type {HTMLButtonElement} */ (el("add-session-btn")).addEventListener("click", onAddSession);
   el("start-live-btn").addEventListener("click", openStartLiveModal);

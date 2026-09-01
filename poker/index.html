@@ -23,7 +23,6 @@
     <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
   </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
-    <select id="viewer-select" class="input viewer-select" aria-label="Viewing as (choose your name)" hidden></select>
     <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
   </span>
 </header>
@@ -167,6 +166,7 @@
 </main>
 
 <div id="modal-root" class="modal-root" hidden></div>
+<select id="viewer-select" hidden aria-hidden="true" tabindex="-1"></select>
 
 <noscript><p class="noscript">This ledger needs JavaScript enabled to run.</p></noscript>
 

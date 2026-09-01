@@ -164,6 +164,26 @@ export async function loginAsGroup(page: Page, password: string = GROUP_PASSWORD
   await expect(page.getByRole("button", { name: "Poker", exact: true })).toBeVisible({
     timeout: 10_000
   });
+  await dismissNamePromptIfShown(page);
+}
+
+/**
+ * A fresh login with active members already seeded and no viewer chosen yet
+ * used to trigger a one-time "Who are you?" modal. Its backdrop could block
+ * clicks on everything behind it (admin sign-in included). The app has since
+ * moved to auto-selecting the first active member instead of prompting, so
+ * this is now a no-op in practice — kept as a defensive no-op so this helper
+ * stays safe regardless of which viewer-selection behavior is live.
+ */
+async function dismissNamePromptIfShown(page: Page): Promise<void> {
+  const skip = page.getByRole("button", { name: /just checking balances/i });
+  try {
+    await skip.waitFor({ state: "visible", timeout: 2_000 });
+    await skip.click();
+  } catch {
+    // Didn't appear this time (e.g. no active members seeded yet, or the app
+    // no longer shows this modal at all) — fine.
+  }
 }
 
 /**
@@ -257,6 +277,15 @@ export async function remainderText(page: Page): Promise<string> {
 
 /** Open a session's detail view from the dashboard's recent-sessions list. */
 export async function openSessionDetail(page: Page, title: string): Promise<void> {
+  // The sessions list lives under the "Poker" tab, not the default "Overall"
+  // tab — switch tabs first, then wait for the (async-loaded) list to finish
+  // rendering before looking for the row: switching tabs can race the fetch,
+  // so the list may still show its loading skeleton for a moment.
+  await page.getByRole("button", { name: "Poker", exact: true }).click();
+  await page
+    .locator("#sessions-body .session-card, #sessions-body .empty-state")
+    .first()
+    .waitFor({ state: "visible", timeout: 10_000 });
   await clickFirst([
     () => page.getByRole("link", { name: new RegExp(escapeRegExp(title), "i") }),
     () => page.getByRole("button", { name: new RegExp(escapeRegExp(title), "i") }),
@@ -267,8 +296,11 @@ export async function openSessionDetail(page: Page, title: string): Promise<void
 /** Void the session shown on the detail page (UI uses a two-click confirm, no dialog). */
 export async function voidSession(page: Page): Promise<void> {
   // The button's accessible name changes to "Click again to confirm void" once
-  // armed, so anchor on its class (unique on the detail view) instead.
-  const btn = page.locator("button.btn-danger").first();
+  // armed, so anchor on its class instead — but scoped to the admin-actions
+  // block: the (also red) "Dispute session" button lives outside it and can
+  // render alongside Void whenever a viewer is set, so a bare ".btn-danger"
+  // match is ambiguous.
+  const btn = page.locator(".detail-admin-actions button.btn-danger").first();
   await expect(btn).toBeVisible({ timeout: 10_000 });
   await btn.click();
   await expect(btn).toContainText(/click again|confirm/i, { timeout: 5_000 });

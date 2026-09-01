@@ -19,7 +19,14 @@ import { rateLimitBuckets } from "../../server/db/schema.js";
 let tdb: TestDb;
 let server: TestServer;
 
-const tinyPreset = { scope: "test_tiny", limit: 3, windowMs: 120, failClosed: true } as const;
+// windowMs is intentionally generous (not "tiny"): checkRateLimit buckets by
+// fixed, epoch-aligned windows (floor(now / windowMs) * windowMs), not a
+// sliding window from the first call. With a very short window, this test's
+// 8 sequential DB round-trips can straddle a window boundary under real CI
+// latency, resetting the count mid-test and spuriously failing. A few
+// seconds of headroom keeps the whole sequence inside one window without
+// slowing the test down (it never waits for expiry).
+const tinyPreset = { scope: "test_tiny", limit: 3, windowMs: 5_000, failClosed: true } as const;
 const globalPreset = { scope: "test_global", limit: 3, windowMs: 60_000, failClosed: true } as const;
 
 beforeAll(async () => {

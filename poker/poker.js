@@ -883,87 +883,25 @@ async function renderOverallDashboard() {
   renderOverallLedger();
 }
 
-/**
- * Merge the three per-game ledgers into one row per member, keeping each
- * game's contribution separately so the overall table can show a column
- * per game alongside the combined net.
- */
-function buildOverallRows() {
-  const byId = new Map();
-  const ensure = (row) => {
-    let cur = byId.get(row.memberId);
-    if (!cur) {
-      cur = { memberId: row.memberId, name: row.name, isViewer: false, pokerCents: 0, blackjackCents: 0, handshakeCents: 0, sessionsPlayed: 0 };
-      byId.set(row.memberId, cur);
-    }
-    return cur;
-  };
-  for (const row of state.ledger?.rows ?? []) { const cur = ensure(row); cur.pokerCents += row.netCents; cur.sessionsPlayed += row.sessionsPlayed; cur.isViewer ||= row.isViewer; }
-  for (const row of state.blackjackLedger?.rows ?? []) { const cur = ensure(row); cur.blackjackCents += row.netCents; cur.sessionsPlayed += row.sessionsPlayed; cur.isViewer ||= row.isViewer; }
-  for (const row of state.handshakeLedger?.rows ?? []) { const cur = ensure(row); cur.handshakeCents += row.netCents; cur.isViewer ||= row.isViewer; }
-  const rows = [...byId.values()].map((r) => ({ ...r, netCents: r.pokerCents + r.blackjackCents + r.handshakeCents }));
-  rows.sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
-  return rows;
-}
-
 function renderOverallLedger() {
   const body = el("overall-ledger-body");
-  const rows = buildOverallRows();
-  const viewerRow = rows.find((r) => r.isViewer) ?? null;
-  const heading = el("overall-heading");
-  if (viewerRow && viewerRow.netCents !== 0) {
-    heading.innerHTML = `You're ${viewerRow.netCents > 0 ? "up" : "down"} <span class="${moneyClass(viewerRow.netCents)}">${esc(formatPlainCents(viewerRow.netCents))}</span> across everything`;
-  } else if (viewerRow) {
-    heading.textContent = "You're settled up across everything";
-  } else {
-    heading.textContent = "Overall ledger";
+  const byId = new Map();
+  for (const row of [...(state.ledger?.rows ?? []), ...(state.blackjackLedger?.rows ?? []), ...(state.handshakeLedger?.rows ?? [])]) {
+    const current = byId.get(row.memberId) ?? { ...row, netCents: 0, sessionsPlayed: 0, isViewer: false };
+    current.netCents += row.netCents; current.sessionsPlayed += row.sessionsPlayed; current.isViewer ||= row.isViewer; byId.set(row.memberId, current);
   }
-  const statsEl = el("overall-stats");
-  if (viewerRow) {
-    statsEl.hidden = false;
-    statsEl.innerHTML = [
-      { label: "Poker", value: viewerRow.pokerCents },
-      { label: "Blackjack", value: viewerRow.blackjackCents },
-      { label: "Bets", value: viewerRow.handshakeCents },
-    ].map((s) => `<div class="overall-stat"><div class="overall-stat-label">${esc(s.label)}</div><div class="overall-stat-value ${moneyClass(s.value)}">${esc(formatCents(s.value))}</div></div>`).join("");
-  } else {
-    statsEl.hidden = true;
-    statsEl.innerHTML = "";
-  }
-  if (!rows.length) { body.innerHTML = `<p class="empty-state">No members yet.</p>`; return; }
+  const rows = [...byId.values()].sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
+  const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`;
+  const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
+  if (!rows.length) { body.innerHTML = head + `<p class="empty-state">No members yet.</p>` + total; return; }
   const activity = new Map(rows.map((r) => [r.memberId, []]));
   for (const s of state.sessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
   for (const s of state.blackjackSessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
   for (const b of state.handshakeBets) { const settled = b.status === "settled" && b.winnerMemberId; const firstAmount = settled ? (b.winnerMemberId === b.firstMemberId ? b.amountCents : -b.amountCents) : 0; const secondAmount = -firstAmount; activity.get(b.firstMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: firstAmount, open: !settled }); activity.get(b.secondMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: secondAmount, open: !settled }); }
-  const cell = (cents, bold) => `<td class="num money ${moneyClass(cents)}${bold ? " overall-net-cell" : ""}">${esc(formatCents(cents))}</td>`;
-  const bodyRows = rows.map((r) => {
-    const items = (activity.get(r.memberId) ?? []).sort((a, b) => b.date.localeCompare(a.date));
-    const history = items.length ? `<details class="ledger-history"><summary>Recent activity</summary><div class="ledger-history-list">${items.slice(0, 8).map((item) => `<div class="ledger-history-row"><span>${esc(new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} · ${esc(item.label)}</span><strong class="${item.open ? "zero" : moneyClass(item.amount)}">${item.open ? "Open" : esc(formatCents(item.amount))}</strong></div>`).join("")}</div></details>` : "";
-    return `<tr class="${r.isViewer ? "row-you" : ""}"><td>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}${history}</td>${cell(r.pokerCents)}${cell(r.blackjackCents)}${cell(r.handshakeCents)}${cell(r.netCents, true)}</tr>`;
-  }).join("");
-  const totals = rows.reduce((acc, r) => ({ poker: acc.poker + r.pokerCents, blackjack: acc.blackjack + r.blackjackCents, handshake: acc.handshake + r.handshakeCents, net: acc.net + r.netCents }), { poker: 0, blackjack: 0, handshake: 0, net: 0 });
-  body.innerHTML = `<table class="results-table overall-table"><thead><tr><th>Player</th><th class="num">Poker</th><th class="num">Blackjack</th><th class="num">Handshake</th><th class="num">Overall net</th></tr></thead><tbody>${bodyRows}</tbody><tfoot><tr><td>Total</td><td class="num money">${esc(formatCents(totals.poker))}</td><td class="num money">${esc(formatCents(totals.blackjack))}</td><td class="num money">${esc(formatCents(totals.handshake))}</td><td class="num money">${esc(formatCents(totals.net))}</td></tr></tfoot></table>`;
+  const html = rows.map((r) => { const played = `${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"}`; const items = (activity.get(r.memberId) ?? []).sort((a, b) => b.date.localeCompare(a.date)); const history = items.length ? `<details class="ledger-history"><summary>Recent activity</summary><div class="ledger-history-list">${items.slice(0, 8).map((item) => `<div class="ledger-history-row"><span>${esc(new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} · ${esc(item.label)}</span><strong class="${item.open ? "zero" : moneyClass(item.amount)}">${item.open ? "Open" : esc(formatCents(item.amount))}</strong></div>`).join("")}</div></details>` : ""; return `<div class="ledger-row"><div class="lr-name">${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${esc(played)} · combined games & bets${history}</div></div>`; }).join("");
+  body.innerHTML = head + html + total;
 }
 
-function openOverallSettleModal() {
-  const rows = buildOverallRows();
-  const transfers = computeSettleUp(rows);
-  const body = document.createElement("div");
-  body.className = "stack";
-  const list = transfers.length
-    ? transfers.map((t) => `<div class="settle-row"><span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span><span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span></div>`).join("")
-    : `<p class="empty-state">Everyone is settled up.</p>`;
-  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button><button type="button" class="btn btn-ghost" id="overall-settle-email">Email the group</button></div>`;
-  openModal({ title: "Settle up", body });
-  q(body, "#overall-settle-copy").addEventListener("click", async () => {
-    const ok = await copyTextToClipboard(settleUpAsText(transfers, "Settle up — Overall"));
-    showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
-  });
-  q(body, "#overall-settle-email").addEventListener("click", () => {
-    const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(settleUpAsText(transfers, "Settle up — Overall"))}`;
-    window.location.href = url;
-  });
-}
 function ledgerActivityDetails(memberId, kind) {
   const items = [];
   if (kind === "poker") for (const s of state.sessions) for (const p of s.participants) if (p.memberId === memberId) items.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });

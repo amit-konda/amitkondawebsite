@@ -47,7 +47,6 @@ import {
   seedMember,
   seedSession,
   setParticipantAmount,
-  setViewer,
   unlockAdmin,
   unlockGroupGate,
   voidSession,
@@ -205,8 +204,7 @@ test("unlock, select viewer, create 3-player session, receipts, zero ledger", as
   )[0]?.n ?? 0;
 
   await page.goto("/poker/");
-  await loginAsGroup(page, GROUP_PASSWORD);
-  await setViewer(page, "Maya");
+  await loginAsGroup(page, GROUP_PASSWORD, "Maya");
   await openAddSession(page);
 
   // Select exactly 3 of the 4 seeded members.

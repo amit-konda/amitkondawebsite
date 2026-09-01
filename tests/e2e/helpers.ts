@@ -148,8 +148,20 @@ export async function unlockGroupGate(page: Page, password: string): Promise<voi
   await expect(field).toBeHidden({ timeout: 10_000 });
 }
 
-/** Full group login: unlock the gate and confirm the dashboard is showing. */
-export async function loginAsGroup(page: Page, password: string = GROUP_PASSWORD): Promise<void> {
+/**
+ * Full group login: unlock the gate and confirm the dashboard is showing.
+ *
+ * Non-admin sign-ins with active members already seeded get a one-time
+ * "Who are you?" modal right after login. Pass `viewerName` to pick that
+ * member in the modal (this is the only way to set a viewer now — the
+ * top-bar dropdown was retired in favor of the modal); omit it to dismiss
+ * the modal via "Just checking balances" as most tests want.
+ */
+export async function loginAsGroup(
+  page: Page,
+  password: string = GROUP_PASSWORD,
+  viewerName?: string
+): Promise<void> {
   // Idempotent: if the group cookie is already set there is no gate to unlock.
   const gateField = page
     .locator('input[type="password"]')
@@ -164,16 +176,19 @@ export async function loginAsGroup(page: Page, password: string = GROUP_PASSWORD
   await expect(page.getByRole("button", { name: "Poker", exact: true })).toBeVisible({
     timeout: 10_000
   });
-  await dismissNamePromptIfShown(page);
+  if (viewerName) {
+    await selectViewerInPrompt(page, viewerName);
+  } else {
+    await dismissNamePromptIfShown(page);
+  }
 }
 
 /**
- * A fresh login with active members already seeded and no viewer chosen yet
- * used to trigger a one-time "Who are you?" modal. Its backdrop could block
- * clicks on everything behind it (admin sign-in included). The app has since
- * moved to auto-selecting the first active member instead of prompting, so
- * this is now a no-op in practice — kept as a defensive no-op so this helper
- * stays safe regardless of which viewer-selection behavior is live.
+ * Dismisses the "Who are you?" modal via its skip button ("Just checking
+ * balances") when it appears. Only non-admin sign-ins with active members
+ * and no viewer chosen yet get this modal — so it's a no-op whenever those
+ * conditions aren't met (no members seeded, admin session, viewer already
+ * set, or the prompt already skipped earlier this session).
  */
 async function dismissNamePromptIfShown(page: Page): Promise<void> {
   const skip = page.getByRole("button", { name: /just checking balances/i });
@@ -181,9 +196,24 @@ async function dismissNamePromptIfShown(page: Page): Promise<void> {
     await skip.waitFor({ state: "visible", timeout: 2_000 });
     await skip.click();
   } catch {
-    // Didn't appear this time (e.g. no active members seeded yet, or the app
-    // no longer shows this modal at all) — fine.
+    // Didn't appear this time — fine.
   }
+}
+
+/**
+ * Picks `memberName` in the "Who are you?" modal and submits. Requires the
+ * modal to actually be showing (active members seeded, non-admin, no viewer
+ * chosen yet) — used by loginAsGroup right after a fresh login.
+ */
+async function selectViewerInPrompt(page: Page, memberName: string): Promise<void> {
+  // Scoped to the dialog — "Your name" also labels the (hidden) request-access
+  // form's name field elsewhere on the gate.
+  const dialog = page.getByRole("dialog", { name: /who are you/i });
+  const select = dialog.getByLabel(/your name/i);
+  await select.waitFor({ state: "visible", timeout: 10_000 });
+  await select.selectOption({ label: memberName });
+  await dialog.getByRole("button", { name: /^continue$/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
 }
 
 /**
@@ -230,15 +260,6 @@ export async function openAdminPanel(page: Page, section: "Requests" | "Members"
     () => page.getByRole("heading", { name: re })
   ]);
   await el.click();
-}
-
-/** Select the current viewer (lightweight identity) from the dashboard dropdown. */
-export async function setViewer(page: Page, memberName: string): Promise<void> {
-  const select = await pickFirst([
-    () => page.getByLabel(/viewer|your name|select your name/i),
-    () => page.locator("select").first()
-  ]);
-  await select.selectOption({ label: memberName });
 }
 
 /** Open the Add Session form and wait for the participant checkboxes. */

@@ -624,16 +624,21 @@ function route() {
   if (!state.status || !state.status.group) {
     el("topbar-controls").hidden = true;
     el("game-tabs").hidden = true;
+    el("admin-badges").hidden = true;
+    el("dash-admin-toggle").hidden = true;
     renderGate();
     return;
   }
   el("topbar-controls").hidden = false;
   el("game-tabs").hidden = false;
   if (state.token) {
+    el("admin-badges").hidden = true;
+    el("dash-admin-toggle").hidden = true;
     updateGameTabs();
     renderDisputeView();
     return;
   }
+  syncAdminUi();
   const tabParam = params.get("tab");
   state.gameTab = tabParam && VALID_TABS.has(tabParam) ? tabParam : "overall";
   updateGameTabs();
@@ -820,8 +825,13 @@ function wireCollapsible(triggerId, formId) {
 
 /* ── Dashboard ─────────────────────────────────────────────── */
 
-async function renderDashboard() {
-  showView("dashboard");
+/**
+ * Admin sign-in toggle + Requests/Disputes/Members badges live outside the
+ * per-tab view sections (see index.html), so they must stay in sync on
+ * every route() pass rather than only when the Poker tab happens to be
+ * active — Overall is the default landing tab.
+ */
+function syncAdminUi() {
   if (state.status?.admin) {
     el("admin-badges").hidden = false;
     el("dash-admin-toggle").hidden = true;
@@ -832,6 +842,10 @@ async function renderDashboard() {
     el("admin-badges").hidden = true;
     el("dash-admin-toggle").hidden = false;
   }
+}
+
+async function renderDashboard() {
+  showView("dashboard");
   fillViewerSelect();
   el("ledger-body").innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   el("sessions-body").innerHTML = `<div class="skel skel-block"></div><div class="skel skel-block"></div>`;
@@ -975,6 +989,7 @@ async function loadMembers() {
 
 function fillViewerSelect() {
   const sel = /** @type {HTMLSelectElement} */ (el("viewer-select"));
+  sel.hidden = false;
   sel.innerHTML = "";
   const viewer = state.status?.viewer ?? null;
   const activeIds = new Set(state.members.map((m) => m.id));

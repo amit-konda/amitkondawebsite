@@ -1201,7 +1201,7 @@ function openLiveModal() {
   if (!state.live) return;
   const body = document.createElement("div"); body.className = "stack live-panel";
   const live = state.live;
-  body.innerHTML = `<p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-player-list"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
+  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div><div class="live-player-list"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
   const list = q(body, ".live-player-list");
   for (const p of live.participants) {
     const row = document.createElement("div"); row.className = "live-player-row";
@@ -1212,8 +1212,26 @@ function openLiveModal() {
     list.appendChild(row);
   }
   q(body, "#live-close").addEventListener("click", closeModal);
+  q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(live.session.id, live.participants.map((p) => p.memberId)));
   q(body, "#live-end").addEventListener("click", async () => { try { await api(`/live/${encodeURIComponent(live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); } });
   openModal({ title: live.session.title || "Live session", body, wide: true });
+}
+
+function openLiveAddPlayerChooser(sessionId, existingIds) {
+  const available = state.members.filter((m) => !existingIds.includes(m.id));
+  if (!available.length) { showBanner({ kind: "info", message: "Everyone is already in this live session." }); return; }
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<label class="field" for="live-new-player">Player</label><select id="live-new-player" class="input">${available.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><p class="form-hint">Choose their starting buy-in.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary live-add-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost live-add-custom">Custom</button></div><div class="modal-actions"><button type="button" class="btn btn-ghost live-add-cancel">Cancel</button></div>`;
+  openModal({ title: "Add player to live session", body });
+  q(body, ".live-add-cancel").addEventListener("click", closeModal);
+  const save = (cents) => { const memberId = field("live-new-player").value; closeModal(); void saveLivePlayer(sessionId, memberId, cents); };
+  body.querySelectorAll(".live-add-choice").forEach((button) => button.addEventListener("click", () => save(Number(button.getAttribute("data-amount")) * 100)));
+  q(body, ".live-add-custom").addEventListener("click", () => { const raw = prompt("Starting buy-in", ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents && cents > 0) save(cents); });
+}
+
+async function saveLivePlayer(sessionId, memberId, amountCents) {
+  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await refreshStatus(); route(); }
+  catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.") }); }
 }
 
 function renderSessions() {

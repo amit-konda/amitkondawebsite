@@ -1177,7 +1177,7 @@ function renderDealerBanner() {
   el("dealer-avatar").textContent = initials || "?";
   el("dealer-copy").textContent = viewer
     ? `${viewer.name} · your result is calculated from the players'`
-    : "Select your name in the top bar — the selected profile becomes the dealer.";
+    : "Pick your name when asked at sign-in — the selected profile becomes the dealer.";
 }
 
 async function loadBlackjackSessions() {
@@ -1238,8 +1238,11 @@ async function loadMembers() {
 }
 
 function fillViewerSelect() {
+  // The dropdown itself is orphaned/inert (see index.html) — picking a viewer
+  // happens only through the "Who are you?" modal now, so this no longer
+  // un-hides it. Kept populating the underlying <select> in case anything
+  // still reads its value, but it must never become visible again.
   const sel = /** @type {HTMLSelectElement} */ (el("viewer-select"));
-  sel.hidden = false;
   sel.innerHTML = "";
   const viewer = state.status?.viewer ?? null;
   const activeIds = new Set(state.members.map((m) => m.id));
@@ -2696,7 +2699,7 @@ function onAddSession() {
   if (!state.status?.viewer) {
     showBanner({
       kind: "info",
-      message: "Select your name in the top bar first — sessions are recorded for the selected name.",
+      message: "Pick your name when asked at sign-in first — sessions are recorded for the selected name.",
     });
     return;
   }
@@ -2757,29 +2760,27 @@ function clearSkippedNamePrompt() {
  * (onGateUnlock) or a returning page load (init), so it never re-nags
  * mid-session; the existing per-action banners remain as a fallback for
  * anyone who dismisses or skips it.
+ *
+ * Admins skip this: by the time this runs, state.status.admin already
+ * reflects any active admin session (admin unlock is a separate, later
+ * step from the group-password gate), and admins go straight to their
+ * tools instead of being asked who they are.
  */
 async function maybeShowNamePrompt() {
-  if (!state.status?.group || state.status.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
+  if (!state.status?.group || state.status.admin || state.status.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
   let members;
   try {
     members = (await api("/members")).members ?? [];
   } catch {
     return;
   }
-  if (members.length === 0 || state.status?.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
+  if (members.length === 0 || state.status?.admin || state.status?.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
   state.members = members;
-  // This is a single-account ledger: use the first active member as the
-  // account identity instead of prompting for a profile.
-  await api("/viewer", { method: "POST", body: { memberId: members[0].id } });
-  await refreshStatus();
-  route();
-  return;
-  fillViewerSelect();
 
   const body = document.createElement("div");
   body.className = "stack";
   body.innerHTML = `
-    <p class="form-hint">Pick your name so sessions you record are marked as yours. You can change this anytime from the top bar.</p>
+    <p class="form-hint">Pick your name so sessions you record are marked as yours, and the ledger shows your own totals.</p>
     <label class="field" for="name-prompt-select">Your name</label>
     <select id="name-prompt-select" class="input">
       <option value="">Select your name…</option>
@@ -2816,7 +2817,7 @@ async function maybeShowNamePrompt() {
     } catch (e) {
       submit.disabled = false;
       submit.textContent = label ?? "Continue";
-      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save your name — pick it from the top bar instead.") });
+      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save your name — try again.") });
     }
   });
 }

@@ -66,7 +66,7 @@ a:visited { color: var(--felt-dark); }
 .skip-link:focus { left: 0; }
 
 .noscript {
-  max-width: 1080px;
+  max-width: 1200px;
   margin: 40px auto;
   padding: 0 20px;
 }
@@ -78,7 +78,7 @@ a:visited { color: var(--felt-dark); }
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  max-width: 1080px;
+  max-width: 1200px;
   margin: 0 auto;
   margin-top: 16px;
   padding: 12px 16px;
@@ -122,7 +122,7 @@ a:visited { color: var(--felt-dark); }
 .viewer-select { min-width: 170px; max-width: 240px; }
 
 main {
-  max-width: 1080px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 14px 20px 64px;
 }
@@ -261,7 +261,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 /* ── Cards / views ───────────────────────────────────────── */
 
-.view { max-width: 1080px; }
+.view { max-width: 1200px; }
 
 .card {
   background: var(--card);
@@ -916,11 +916,17 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .dash-poker-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
-.dash-poker-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+/* Sizing container for .session-row's own responsive layout below: the
+   sessions list shares this column with the settle-up sidebar, so it can be
+   narrow even on a wide viewport — a plain viewport media query can't see
+   that, but a container query keyed off this element's own rendered width
+   can, which is what keeps the row grid from cramming/overlapping in that
+   in-between range. */
+.dash-poker-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; container-type: inline-size; }
 
 .ledger-head-share, .ledger-row-share {
   display: grid;
@@ -1031,6 +1037,11 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
 .session-row:hover { background: rgba(222, 237, 226, 0.34); }
 .session-list .session-row:last-of-type { border-bottom: none; }
 .sr-date, .sr-players { color: var(--muted); font-size: 0.88rem; }
+.sr-date, .sr-players, .sr-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .sr-title { font-weight: 650; }
 .sr-status { justify-self: start; }
 .sr-result { text-align: right; }
@@ -1122,9 +1133,14 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
   .dash-poker-grid { grid-template-columns: minmax(0, 1fr); }
   .dash-grid-blackjack { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 640px) {
-  .handshake-actions-grid { grid-template-columns: minmax(0, 1fr); }
-
+/* The session list's own row layout responds to the sessions card's
+   rendered width (see container-type on .dash-poker-main above), not the
+   viewport: the card can be narrow well before the whole page is, once it's
+   sharing a row with the settle-up sidebar. Above this threshold rows stay
+   a single truncated horizontal line (see .sr-title/.sr-players ellipsis
+   above); below it the five fixed-width columns (~540px including gaps)
+   no longer fit at all, so rows switch to a stacked layout instead. */
+@container (max-width: 680px) {
   .session-head { display: none; }
   .session-row {
     display: grid;
@@ -1138,6 +1154,9 @@ progress.share-bar.neg::-moz-progress-bar { background: var(--neg); }
   .sr-result { grid-area: result; }
   .sr-players { display: none; }
   .sr-status { grid-area: status; justify-self: start; }
+}
+@media (max-width: 640px) {
+  .handshake-actions-grid { grid-template-columns: minmax(0, 1fr); }
 
   .bet-table-head { display: none; }
   .bet-table-row { display: flex; flex-direction: column; gap: 2px; padding: 12px 6px; }

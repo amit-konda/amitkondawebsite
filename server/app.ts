@@ -14,6 +14,7 @@ import { registerFeedbackRoutes } from "./routes/feedback.js";
 import { registerLiveRoutes } from "./routes/live.js";
 import { registerBlackjackRoutes } from "./routes/blackjack.js";
 import { registerHandshakeRoutes } from "./routes/handshake.js";
+import { registerGolfRoutes } from "./routes/golf.js";
 
 export function createAppRouter(): Router {
   const r = new Router();
@@ -27,6 +28,7 @@ export function createAppRouter(): Router {
   registerLiveRoutes(r);
   registerBlackjackRoutes(r);
   registerHandshakeRoutes(r);
+  registerGolfRoutes(r);
   return r;
 }
 

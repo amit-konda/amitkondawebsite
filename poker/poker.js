@@ -99,7 +99,9 @@ const MAX_AMOUNT_CENTS = 100_000_000; // $1,000,000 — mirrors server/domain/mo
 const CENTS_RE = /^([+-]?)(\d*)(?:\.(\d{1,2}))?$/; // mirrors server
 const SESSION_PAGE_LIMIT = 8;
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
-const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall"]);
+const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall", "golf"]);
+const GOLF_COURSES = ["butler", "hancock"];
+const GOLF_COURSE_NAMES = { butler: "Butler Pitch & Putt", hancock: "Hancock" };
 
 /* ── State ─────────────────────────────────────────────────── */
 
@@ -125,6 +127,11 @@ const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall"]);
  *   sessionSearch: string,
  *   sessionFilter: "all"|"disputed"|"voided",
  *   settleTransfers: any[],
+ *   golfCourse: "butler"|"hancock",
+ *   golfRounds: any[],
+ *   golfLeaderboard: any[],
+ *   golfLineMembers: {a: string|null, b: string|null},
+ *   golfLine: any|null,
  * }}
  */
 const state = {
@@ -148,6 +155,11 @@ const state = {
   sessionSearch: "",
   sessionFilter: "all",
   settleTransfers: [],
+  golfCourse: "butler",
+  golfRounds: [],
+  golfLeaderboard: [],
+  golfLineMembers: { a: null, b: null },
+  golfLine: null,
 };
 
 /* ── DOM helpers ───────────────────────────────────────────── */
@@ -630,10 +642,10 @@ function closeModal() {
 
 /* ── Views ─────────────────────────────────────────────────── */
 
-const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-overall", "view-handshake", "view-detail", "view-dispute"];
+const VIEW_IDS = ["view-gate", "view-dashboard", "view-blackjack", "view-overall", "view-handshake", "view-golf", "view-detail", "view-dispute"];
 
 /**
- * @param {"gate"|"dashboard"|"blackjack"|"overall"|"handshake"|"detail"|"dispute"} name
+ * @param {"gate"|"dashboard"|"blackjack"|"overall"|"handshake"|"golf"|"detail"|"dispute"} name
  */
 function showView(name) {
   for (const id of VIEW_IDS) el(id).hidden = id !== "view-" + name;
@@ -753,6 +765,7 @@ function route() {
   if (state.gameTab === "blackjack") renderBlackjackDashboard();
   else if (state.gameTab === "overall") renderOverallDashboard();
   else if (state.gameTab === "handshake") renderHandshakeDashboard();
+  else if (state.gameTab === "golf") renderGolfDashboard();
   else renderDashboard();
 }
 
@@ -1258,7 +1271,7 @@ function openHandshakeModal() {
   const others = state.members.filter((m) => m.id !== state.status?.viewer?.id);
   const categoryOptions = () => state.handshakeCategories.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><label class="field" for="hb-category">Category (optional)</label><select id="hb-category" class="input"><option value="">No category</option>${categoryOptions()}<option value="__new__">+ Add new category…</option></select><div id="hb-category-new-wrap" class="field-row" hidden><input id="hb-category-new" class="input" maxlength="40" placeholder="e.g. Bowling"><button type="button" class="btn" id="hb-category-new-add">Add</button></div><label class="check-row"><input id="hb-settle-now" type="checkbox"> Settle this bet now</label><div id="hb-winner-wrap" hidden><label class="field" for="hb-winner-now">Winner</label><select id="hb-winner-now" class="input"></select></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`;
+  body.innerHTML = `<label class="field" for="hb-description">What is the bet?</label><input id="hb-description" class="input" maxlength="200" placeholder="Losing team buys dinner"><label class="field" for="hb-amount">Amount</label><input id="hb-amount" class="input money" inputmode="decimal" placeholder="$25.00"><label class="field" for="hb-opponent">Other bettor</label><select id="hb-opponent" class="input">${others.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><button type="button" class="linkish linkish-small" id="hb-golf-toggle" aria-expanded="false" aria-controls="hb-golf-wrap">+ Suggest a golf betting line</button><div id="hb-golf-wrap" class="stack" hidden><label class="field" for="hb-golf-course">Course</label><select id="hb-golf-course" class="input">${GOLF_COURSES.map((c) => `<option value="${c}">${esc(GOLF_COURSE_NAMES[c])}</option>`).join("")}</select><div id="hb-golf-result" class="golf-line-result"></div><button type="button" class="btn btn-small" id="hb-golf-use" hidden>Use this in the description</button></div><label class="field" for="hb-category">Category (optional)</label><select id="hb-category" class="input"><option value="">No category</option>${categoryOptions()}<option value="__new__">+ Add new category…</option></select><div id="hb-category-new-wrap" class="field-row" hidden><input id="hb-category-new" class="input" maxlength="40" placeholder="e.g. Bowling"><button type="button" class="btn" id="hb-category-new-add">Add</button></div><label class="check-row"><input id="hb-settle-now" type="checkbox"> Settle this bet now</label><div id="hb-winner-wrap" hidden><label class="field" for="hb-winner-now">Winner</label><select id="hb-winner-now" class="input"></select></div><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-submit">Save bet</button></div>`;
   openModal({ title: "Add handshake bet", body });
   const opponent = /** @type {HTMLSelectElement} */ (q(body, "#hb-opponent"));
   const winner = /** @type {HTMLSelectElement} */ (q(body, "#hb-winner-now"));
@@ -1267,7 +1280,54 @@ function openHandshakeModal() {
   const categoryNewInput = /** @type {HTMLInputElement} */ (q(body, "#hb-category-new"));
   const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); };
   syncWinnerChoices();
-  opponent.addEventListener("change", syncWinnerChoices);
+
+  const golfToggle = /** @type {HTMLButtonElement} */ (q(body, "#hb-golf-toggle"));
+  const golfWrap = /** @type {HTMLElement} */ (q(body, "#hb-golf-wrap"));
+  const golfCourse = /** @type {HTMLSelectElement} */ (q(body, "#hb-golf-course"));
+  const golfResult = /** @type {HTMLElement} */ (q(body, "#hb-golf-result"));
+  const golfUseBtn = /** @type {HTMLButtonElement} */ (q(body, "#hb-golf-use"));
+  /** @type {{strokes: number, receiver: "a"|"b"}|null} */
+  let golfLine = null;
+  let golfGiverName = "";
+  let golfReceiverName = "";
+  async function refreshGolfLine() {
+    if (!opponent.value) return;
+    golfUseBtn.hidden = true;
+    golfResult.innerHTML = `<div class="skel skel-row"></div>`;
+    try {
+      const data = await api(`/golf/line?course=${encodeURIComponent(golfCourse.value)}&a=${encodeURIComponent(state.status.viewer.id)}&b=${encodeURIComponent(opponent.value)}`);
+      if (!data.line) {
+        golfLine = null;
+        golfResult.innerHTML = `<p class="form-hint">Need at least one logged round for both players at ${esc(GOLF_COURSE_NAMES[golfCourse.value])}.</p>`;
+        return;
+      }
+      golfLine = data.line;
+      const giver = data.line.receiver === "a" ? data.b : data.a;
+      const receiver = data.line.receiver === "a" ? data.a : data.b;
+      golfGiverName = giver.name; golfReceiverName = receiver.name;
+      golfResult.innerHTML = `<p class="golf-line-headline"><strong>${esc(giver.name)}</strong> gives <strong>${esc(receiver.name)}</strong> ${esc(String(data.line.strokes))} strokes</p>`;
+      golfUseBtn.hidden = false;
+    } catch (e) {
+      golfLine = null;
+      golfResult.innerHTML = `<p class="form-error">${esc(friendlyMessage(/** @type {ApiError} */ (e), "Couldn't calculate a line."))}</p>`;
+    }
+  }
+  golfToggle.addEventListener("click", () => {
+    const show = golfWrap.hidden;
+    golfWrap.hidden = !show;
+    golfToggle.setAttribute("aria-expanded", String(show));
+    golfToggle.hidden = show;
+    if (show) void refreshGolfLine();
+  });
+  golfCourse.addEventListener("change", refreshGolfLine);
+  golfUseBtn.addEventListener("click", () => {
+    if (!golfLine) return;
+    field("hb-description").value = `${GOLF_COURSE_NAMES[golfCourse.value]}: ${golfGiverName} gives ${golfReceiverName} ${golfLine.strokes} strokes`;
+  });
+  opponent.addEventListener("change", () => {
+    syncWinnerChoices();
+    if (!golfWrap.hidden) void refreshGolfLine();
+  });
   const settleNow = /** @type {HTMLInputElement} */ (q(body, "#hb-settle-now"));
   settleNow.addEventListener("change", () => { q(body, "#hb-winner-wrap").hidden = !settleNow.checked; });
   category.addEventListener("change", () => {
@@ -1307,6 +1367,234 @@ function openHandshakeModal() {
       await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]);
     } catch (e) {
       showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the bet.") });
+    }
+  });
+}
+
+/* ── Golf ──────────────────────────────────────────────────── */
+
+/** Format a weighted "strokes vs. par" value: "E" for even, "+3.2" over, "-1.4" under par. */
+function formatToPar(value) {
+  if (value == null) return "—";
+  const rounded = Math.round(value * 10) / 10;
+  if (rounded === 0) return "E";
+  return rounded > 0 ? `+${rounded.toFixed(1)}` : rounded.toFixed(1);
+}
+
+async function renderGolfDashboard() {
+  showView("golf");
+  el("golf-heading").textContent = GOLF_COURSE_NAMES[state.golfCourse];
+  el("golf-course-switch").querySelectorAll("[data-course]").forEach((n) => n.classList.toggle("is-active", n.getAttribute("data-course") === state.golfCourse));
+  el("golf-leaderboard-body").innerHTML = `<div class="skel skel-row"></div>`;
+  el("golf-rounds-body").innerHTML = `<div class="skel skel-row"></div>`;
+  await loadGolfCourseData();
+}
+
+async function loadGolfCourseData() {
+  try {
+    const [roundsData, boardData] = await Promise.all([
+      api(`/golf/rounds?course=${encodeURIComponent(state.golfCourse)}`),
+      api(`/golf/leaderboard?course=${encodeURIComponent(state.golfCourse)}`),
+    ]);
+    state.golfRounds = roundsData.rounds ?? [];
+    state.golfLeaderboard = boardData.rows ?? [];
+    renderGolfScreen();
+    void loadGolfLine();
+  } catch (e) {
+    renderErrorBox(el("golf-leaderboard-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load golf data."), () => {
+      el("golf-leaderboard-body").innerHTML = `<div class="skel skel-row"></div>`;
+      loadGolfCourseData();
+    });
+  }
+}
+
+function renderGolfScreen() {
+  const board = el("golf-leaderboard-body");
+  if (!state.golfLeaderboard.length) {
+    board.innerHTML = `<p class="empty-state">No rounds logged at ${esc(GOLF_COURSE_NAMES[state.golfCourse])} yet.</p>`;
+  } else {
+    const head = `<div class="golf-board-head"><span>Player</span><span class="num">Vs. par</span><span class="num">Rounds</span></div>`;
+    const rows = state.golfLeaderboard
+      .map((r) => `<div class="golf-board-row"><span>${esc(r.name)}</span><span class="num money ${moneyClass(-(r.stat.value ?? 0))}">${esc(formatToPar(r.stat.value))}</span><span class="num muted-inline">${r.stat.roundsCount}</span></div>`)
+      .join("");
+    board.innerHTML = head + rows;
+  }
+
+  const roundsBody = el("golf-rounds-body");
+  if (!state.golfRounds.length) {
+    roundsBody.innerHTML = `<p class="empty-state">No rounds logged yet.</p>`;
+  } else {
+    const head = `<div class="bet-table-head golf-rounds-head"><span>Date</span><span>Player</span><span class="num">Score</span></div>`;
+    const rows = state.golfRounds
+      .map((r) => `<button type="button" class="bet-table-row golf-round-row" data-round-id="${esc(r.id)}"><span class="sr-date">${esc(formatRecentDate(r.playedAt))}</span><span class="sr-title">${esc(r.name)}</span><span class="num money">${r.strokes} (${esc(formatToPar(r.toPar))})</span></button>`)
+      .join("");
+    roundsBody.innerHTML = head + rows;
+    roundsBody.querySelectorAll("[data-round-id]").forEach((node) => node.addEventListener("click", () => {
+      const round = state.golfRounds.find((r) => r.id === node.getAttribute("data-round-id"));
+      if (round) openGolfRoundDetailModal(round);
+    }));
+  }
+
+  renderGolfLineSelects();
+}
+
+/** Rebuilds the two line-calculator <select>s from active members, preserving a still-valid prior selection. */
+function renderGolfLineSelects() {
+  const selA = /** @type {HTMLSelectElement} */ (el("golf-line-a"));
+  const selB = /** @type {HTMLSelectElement} */ (el("golf-line-b"));
+  const activeIds = new Set(state.members.map((m) => m.id));
+  if (!state.golfLineMembers.a || !activeIds.has(state.golfLineMembers.a)) {
+    state.golfLineMembers.a = state.members[0]?.id ?? null;
+  }
+  if (!state.golfLineMembers.b || !activeIds.has(state.golfLineMembers.b) || state.golfLineMembers.b === state.golfLineMembers.a) {
+    state.golfLineMembers.b = state.members.find((m) => m.id !== state.golfLineMembers.a)?.id ?? null;
+  }
+  const options = () => state.members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+  selA.innerHTML = options();
+  selB.innerHTML = options();
+  selA.value = state.golfLineMembers.a ?? "";
+  selB.value = state.golfLineMembers.b ?? "";
+}
+
+async function loadGolfLine() {
+  const { a, b } = state.golfLineMembers;
+  if (!a || !b || a === b) {
+    state.golfLine = null;
+    renderGolfLineResult();
+    return;
+  }
+  el("golf-line-result").innerHTML = `<div class="skel skel-row"></div>`;
+  try {
+    const data = await api(`/golf/line?course=${encodeURIComponent(state.golfCourse)}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+    state.golfLine = data;
+    renderGolfLineResult();
+  } catch (e) {
+    el("golf-line-result").innerHTML = `<p class="form-error">${esc(friendlyMessage(/** @type {ApiError} */ (e), "Couldn't calculate a line."))}</p>`;
+  }
+}
+
+function renderGolfLineResult() {
+  const box = el("golf-line-result");
+  const data = state.golfLine;
+  if (!data) {
+    box.innerHTML = `<p class="form-hint">Pick two different players.</p>`;
+    return;
+  }
+  if (!data.line) {
+    box.innerHTML = `<p class="form-hint">Need at least one logged round for both players at ${esc(GOLF_COURSE_NAMES[state.golfCourse])}.</p>`;
+    return;
+  }
+  const giver = data.line.receiver === "a" ? data.b : data.a;
+  const receiver = data.line.receiver === "a" ? data.a : data.b;
+  box.innerHTML = `<p class="golf-line-headline"><strong>${esc(giver.name)}</strong> gives <strong>${esc(receiver.name)}</strong> ${esc(String(data.line.strokes))} strokes</p>
+    <p class="form-hint">Weighted vs. par &mdash; ${esc(data.a.name)}: ${esc(formatToPar(data.a.stat.value))} (${data.a.stat.roundsCount} rounds) · ${esc(data.b.name)}: ${esc(formatToPar(data.b.stat.value))} (${data.b.stat.roundsCount} rounds)</p>`;
+}
+
+function openLogGolfRoundModal() {
+  if (!state.members.length) { showBanner({ kind: "info", message: "Add a member first." }); return; }
+  const body = document.createElement("div"); body.className = "stack";
+  const defaultPlayer = state.status?.viewer?.id ?? state.members[0].id;
+  body.innerHTML = `<label class="field" for="golf-new-player">Player</label><select id="golf-new-player" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === defaultPlayer ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+    <label class="field" for="golf-new-course">Course</label><select id="golf-new-course" class="input">${GOLF_COURSES.map((c) => `<option value="${c}"${c === state.golfCourse ? " selected" : ""}>${esc(GOLF_COURSE_NAMES[c])}</option>`).join("")}</select>
+    <label class="field" for="golf-new-date">Date</label><input id="golf-new-date" class="input" type="date" value="${new Date().toISOString().slice(0, 10)}">
+    <div class="form-grid"><div><label class="field" for="golf-new-strokes">Strokes</label><input id="golf-new-strokes" class="input" type="number" inputmode="numeric" min="1" max="300" placeholder="e.g. 52"></div><div><label class="field" for="golf-new-par">Par</label><input id="golf-new-par" class="input" type="number" inputmode="numeric" min="1" max="200" placeholder="e.g. 45"></div></div>
+    <p id="golf-new-error" class="form-error" role="alert" hidden></p>
+    <div class="modal-actions"><button type="button" class="btn btn-ghost" id="golf-new-cancel">Cancel</button><button type="button" class="btn btn-primary" id="golf-new-submit">Log round</button></div>`;
+  openModal({ title: "Log a golf round", body });
+  q(body, "#golf-new-cancel").addEventListener("click", closeModal);
+  const submitBtn = /** @type {HTMLButtonElement} */ (q(body, "#golf-new-submit"));
+  const errorEl = /** @type {HTMLElement} */ (q(body, "#golf-new-error"));
+  submitBtn.addEventListener("click", async () => {
+    const strokes = Number(field("golf-new-strokes").value);
+    const par = Number(field("golf-new-par").value);
+    const date = field("golf-new-date").value;
+    errorEl.hidden = true;
+    if (!Number.isInteger(strokes) || strokes < 1 || strokes > 300 || !Number.isInteger(par) || par < 1 || par > 200) {
+      errorEl.textContent = "Enter whole-number strokes and par.";
+      errorEl.hidden = false;
+      return;
+    }
+    if (!date) {
+      errorEl.textContent = "Pick a date.";
+      errorEl.hidden = false;
+      return;
+    }
+    const course = field("golf-new-course").value;
+    submitBtn.disabled = true;
+    try {
+      await api("/golf/rounds", {
+        method: "POST",
+        body: {
+          memberId: field("golf-new-player").value,
+          course,
+          strokes,
+          par,
+          playedAt: new Date(`${date}T12:00:00`).toISOString(),
+        },
+      });
+      // Read every field before closing the modal — closeModal() empties
+      // #modal-root, so field("golf-new-course") etc. would throw after it.
+      closeModal();
+      showBanner({ kind: "info", message: "Round logged." });
+      if (course === state.golfCourse) await loadGolfCourseData();
+    } catch (e) {
+      errorEl.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn't log the round.");
+      errorEl.hidden = false;
+      submitBtn.disabled = false;
+    }
+  });
+}
+
+/** Read-only round details, plus (for whoever logged it, or an admin) a confirm-to-delete action. */
+function openGolfRoundDetailModal(round) {
+  const canDelete = Boolean(state.status?.admin || (round.recordedByMemberId && round.recordedByMemberId === state.status?.viewer?.id));
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<div class="detail-results">
+      <div class="detail-result"><span>Player</span><strong>${esc(round.name)}</strong></div>
+      <div class="detail-result"><span>Course</span><span>${esc(GOLF_COURSE_NAMES[round.course] ?? round.course)}</span></div>
+      <div class="detail-result"><span>Date</span><span>${esc(formatDate(round.playedAt))}</span></div>
+      <div class="detail-result"><span>Score</span><span class="money">${round.strokes} (par ${round.par}, ${esc(formatToPar(round.toPar))})</span></div>
+    </div>
+    <p id="golf-round-error" class="form-error" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="golf-round-close">Close</button>
+      ${canDelete ? `<button type="button" class="btn btn-danger" id="golf-round-delete">Delete round</button>` : ""}
+    </div>`;
+  openModal({ title: "Round details", body });
+  q(body, "#golf-round-close").addEventListener("click", closeModal);
+  if (!canDelete) return;
+  const deleteBtn = /** @type {HTMLButtonElement} */ (q(body, "#golf-round-delete"));
+  const errorEl = /** @type {HTMLElement} */ (q(body, "#golf-round-error"));
+  let armed = false;
+  let armTimer = 0;
+  deleteBtn.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      deleteBtn.textContent = "Click again to confirm delete";
+      deleteBtn.classList.add("btn-danger-solid");
+      armTimer = window.setTimeout(() => {
+        armed = false;
+        deleteBtn.textContent = "Delete round";
+        deleteBtn.classList.remove("btn-danger-solid");
+      }, 4000);
+      return;
+    }
+    window.clearTimeout(armTimer);
+    errorEl.hidden = true;
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = "Deleting…";
+    try {
+      await api(`/golf/rounds/${encodeURIComponent(round.id)}`, { method: "DELETE" });
+      closeModal();
+      await loadGolfCourseData();
+      showBanner({ kind: "info", message: "Round deleted." });
+    } catch (e) {
+      errorEl.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn't delete the round.");
+      errorEl.hidden = false;
+      armed = false;
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = "Delete round";
+      deleteBtn.classList.remove("btn-danger-solid");
     }
   });
 }
@@ -3138,6 +3426,26 @@ function wireStatic() {
   el("tab-overall").addEventListener("click", () => goToTab("overall"));
   el("add-handshake-btn").addEventListener("click", openHandshakeModal);
   el("tab-handshake").addEventListener("click", () => goToTab("handshake"));
+  el("tab-golf").addEventListener("click", () => goToTab("golf"));
+  el("add-golf-round-btn").addEventListener("click", openLogGolfRoundModal);
+  el("golf-course-switch").addEventListener("click", (e) => {
+    const btn = /** @type {HTMLElement} */ (e.target).closest("[data-course]");
+    if (!btn) return;
+    const course = btn.getAttribute("data-course");
+    if (!course || course === state.golfCourse) return;
+    state.golfCourse = /** @type {"butler"|"hancock"} */ (course);
+    el("golf-course-switch").querySelectorAll("[data-course]").forEach((n) => n.classList.toggle("is-active", n === btn));
+    el("golf-heading").textContent = GOLF_COURSE_NAMES[state.golfCourse];
+    void loadGolfCourseData();
+  });
+  el("golf-line-a").addEventListener("change", () => {
+    state.golfLineMembers.a = field("golf-line-a").value || null;
+    void loadGolfLine();
+  });
+  el("golf-line-b").addEventListener("change", () => {
+    state.golfLineMembers.b = field("golf-line-b").value || null;
+    void loadGolfLine();
+  });
   /** @type {HTMLButtonElement} */ (el("badge-requests")).addEventListener("click", openRequestsPanel);
   /** @type {HTMLButtonElement} */ (el("badge-disputes")).addEventListener("click", openDisputesPanel);
   /** @type {HTMLButtonElement} */ (el("badge-members")).addEventListener("click", openMembersPanel);
@@ -3171,7 +3479,7 @@ function goToTab(tab) {
 }
 
 function updateGameTabs() {
-  for (const tab of ["overall", "poker", "handshake", "blackjack"]) {
+  for (const tab of ["overall", "poker", "handshake", "blackjack", "golf"]) {
     const active = state.gameTab === tab;
     const node = el(`tab-${tab}`);
     node.classList.toggle("is-active", active);

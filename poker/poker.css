@@ -963,7 +963,10 @@ textarea.input { resize: vertical; min-height: 88px; }
   font-weight: 600;
   cursor: pointer;
 }
-.chip-btn.is-active.chip-all { border-color: var(--felt); background: var(--felt); color: #FFFFFF; }
+/* Generic active look for a chip-btn group with no color-coded variant
+   (e.g. the golf course switch below) — more specific .chip-all/etc. rules
+   above still win where they apply. */
+.chip-btn.is-active { border-color: var(--felt); background: var(--felt); color: #FFFFFF; }
 .chip-btn.is-active.chip-btn-disputed { border-color: #E2CD9B; background: #FBF3E1; color: #5C4B15; }
 .chip-btn.is-active.chip-btn-voided { border-color: #C9C3B6; background: #F0EEE7; color: #55503F; }
 
@@ -1075,7 +1078,7 @@ textarea.input { resize: vertical; min-height: 88px; }
   cursor: pointer;
 }
 .bet-table-row:hover { background: rgba(222, 237, 226, 0.34); }
-#handshake-settled-body .bet-table-row:last-of-type { border-bottom: none; }
+.bet-table-row:last-of-type { border-bottom: none; }
 .bet-table-row-voided { opacity: 0.68; }
 /* The bet's title cell stacks description then chips on their own line
    (rather than letting a category/voided chip wrap awkwardly mid-sentence
@@ -1117,12 +1120,43 @@ textarea.input { resize: vertical; min-height: 88px; }
 .ledger-row-dealer { background: rgba(222, 237, 226, 0.34); border-radius: 12px; }
 .bj-footnote { margin: 12px 2px 0; }
 
+/* Golf */
+.golf-course-switch { display: flex; gap: 6px; }
+.dash-grid-golf { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.dash-golf-main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.golf-line-card { position: sticky; top: 20px; align-self: start; }
+.golf-board-head, .golf-board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px 70px;
+  column-gap: 12px;
+  align-items: center;
+}
+.golf-board-head {
+  padding: 0 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.golf-board-row { padding: 11px 6px; border-bottom: 1px solid var(--row-line); }
+.golf-board-row:last-of-type { border-bottom: none; }
+/* Overrides the shared .bet-table-head/.bet-table-row 5-column grid (see
+   Handshake bets above) with golf's own 3 columns — same interactive row
+   look (hover, padding, button reset), different layout. */
+.golf-rounds-head, .golf-round-row { grid-template-columns: 90px minmax(0, 1fr) 110px; }
+.golf-line-result { margin-top: 14px; }
+.golf-line-headline { font-weight: 650; margin: 0 0 4px; }
+
 /* ── Redesign responsive ───────────────────────────────────── */
 @media (max-width: 880px) {
   .dash-poker-grid { grid-template-columns: minmax(0, 1fr); }
   .dash-grid-blackjack { grid-template-columns: minmax(0, 1fr); }
   .dash-grid-handshake { grid-template-columns: minmax(0, 1fr); }
   .dash-grid-handshake .settled-balances-card { position: static; }
+  .dash-grid-golf { grid-template-columns: minmax(0, 1fr); }
+  .golf-line-card { position: static; }
 }
 /* The session list's own row layout responds to the sessions card's
    rendered width (see container-type on .dash-poker-main above), not the

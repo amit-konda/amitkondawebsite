@@ -21,6 +21,7 @@
     <button class="game-tab" id="tab-poker" type="button" aria-selected="false">Poker</button>
     <button class="game-tab" id="tab-handshake" type="button" aria-selected="false">Handshake bets</button>
     <button class="game-tab" id="tab-blackjack" type="button" aria-selected="false">Blackjack</button>
+    <button class="game-tab" id="tab-golf" type="button" aria-selected="false">Golf</button>
   </nav>
   <span class="topbar-controls" id="topbar-controls" hidden>
     <button id="logout-btn" class="btn btn-ghost" type="button">Log out</button>
@@ -174,6 +175,44 @@
         <div class="settled-balances-card">
           <div class="overall-eyebrow">Settled balances</div>
           <div id="handshake-balances-body"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-golf" class="view" hidden>
+    <div class="dash">
+      <div class="handshake-headline">
+        <div class="handshake-headline-text">
+          <div class="overall-eyebrow">Golf</div>
+          <h1 id="golf-heading">Butler Pitch &amp; Putt</h1>
+        </div>
+        <div class="golf-course-switch" id="golf-course-switch">
+          <button type="button" class="chip-btn is-active" data-course="butler">Butler</button>
+          <button type="button" class="chip-btn" data-course="hancock">Hancock</button>
+        </div>
+        <button id="add-golf-round-btn" class="btn btn-primary" type="button">+ Log a round</button>
+      </div>
+      <div class="dash-grid dash-grid-golf">
+        <div class="dash-golf-main">
+          <div class="card">
+            <h2 class="card-heading">Leaderboard</h2>
+            <p class="form-hint">Weighted average vs. par &mdash; the last 3 rounds count 80%, older rounds 20%.</p>
+            <div id="golf-leaderboard-body"></div>
+          </div>
+          <div class="card">
+            <h2 class="card-heading">Recent rounds</h2>
+            <div id="golf-rounds-body"></div>
+          </div>
+        </div>
+        <div class="card golf-line-card">
+          <h2 class="card-heading">Betting line</h2>
+          <p class="form-hint">Pick two players to see a fair stroke line for a handshake bet &mdash; always a half-stroke, so it can never push.</p>
+          <label class="field" for="golf-line-a">Player A</label>
+          <select id="golf-line-a" class="input"></select>
+          <label class="field" for="golf-line-b">Player B</label>
+          <select id="golf-line-b" class="input"></select>
+          <div id="golf-line-result" class="golf-line-result"></div>
         </div>
       </div>
     </div>

@@ -1049,7 +1049,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 .settled-balances-row:last-of-type { border-bottom: none; }
 .bet-table-head, .bet-table-row {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr) 190px 140px 100px;
+  grid-template-columns: 90px minmax(0, 1.3fr) minmax(0, 1fr) 130px 100px;
   column-gap: 16px;
   align-items: center;
 }
@@ -1062,8 +1062,26 @@ textarea.input { resize: vertical; min-height: 88px; }
   text-transform: uppercase;
   color: var(--muted);
 }
-.bet-table-row { padding: 13px 6px; border-bottom: 1px solid var(--row-line); }
-.bet-table-row:last-of-type { border-bottom: none; }
+.bet-table-row {
+  width: 100%;
+  padding: 13px 6px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--row-line);
+  border-radius: 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bet-table-row:hover { background: rgba(222, 237, 226, 0.34); }
+#handshake-settled-body .bet-table-row:last-of-type { border-bottom: none; }
+.bet-table-row-voided { opacity: 0.68; }
+/* The bet's title cell stacks description then chips on their own line
+   (rather than letting a category/voided chip wrap awkwardly mid-sentence
+   when the column is narrow) — see .sr-title above for the base wrap rule. */
+.bet-desc { display: block; }
+.bet-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 /* Blackjack dealer banner */
 .dealer-banner {

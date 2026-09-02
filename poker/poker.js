@@ -1552,7 +1552,10 @@ function openLiveModal() {
       if (savedEl) { savedEl.textContent = "Saved"; window.setTimeout(() => { savedEl.textContent = ""; }, 1500); }
       return true;
     } catch (e) {
-      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") });
+      // Shown inline (not via showBanner): the page-level banner renders
+      // behind this modal's overlay while it's open, so a banner here would
+      // be invisible until the user closed the modal.
+      showRemainder(friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out."), false);
       return false;
     }
   }
@@ -1571,8 +1574,9 @@ function openLiveModal() {
   q(body, "#live-close").addEventListener("click", closeModal);
   q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(state.live.session.id, state.live.participants.map((p) => p.memberId)));
   q(body, "#live-undo").addEventListener("click", async () => {
+    // Shown inline, not via showBanner — see the comment in saveCashout above.
     try { await api(`/live/${encodeURIComponent(state.live.session.id)}/undo`, { method: "POST", body: {} }); await loadLive(); await openLiveModal(); }
-    catch (e) { const err = /** @type {ApiError} */ (e); if (err?.code === "nothing_to_undo") showBanner({ kind: "info", message: "Nothing to undo." }); else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't undo the last change.") }); }
+    catch (e) { const err = /** @type {ApiError} */ (e); if (err?.code === "nothing_to_undo") showRemainder("Nothing to undo.", true); else showRemainder(friendlyMessage(err, "Couldn't undo the last change."), false); }
   });
   q(body, "#live-end").addEventListener("click", async () => {
     endBtn.disabled = true;
@@ -1585,9 +1589,10 @@ function openLiveModal() {
       await api(`/live/${encodeURIComponent(state.live.session.id)}/end`, { method: "POST", body: {} });
       closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." });
     } catch (e) {
+      // Shown inline, not via showBanner — see the comment in saveCashout above.
       const err = /** @type {ApiError} */ (e);
       if (err?.code === "unbalanced" || err?.code === "cashouts_required" || err?.code === "not_enough_players") showRemainder(err.message, false);
-      else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't end the live session.") });
+      else showRemainder(friendlyMessage(err, "Couldn't end the live session."), false);
       endBtn.disabled = false;
     }
   });

@@ -513,6 +513,11 @@ function showBanner(opts) {
   root.appendChild(item);
 }
 
+/** Dismisses any banners currently showing — used when navigating to a different tab, so a message from one tab (e.g. "Live session ended") doesn't linger once you've moved on. */
+function clearBanners() {
+  el("banner-root").innerHTML = "";
+}
+
 /** Remove an active banner with the exact message, if present. */
 function dismissBanner(message) {
   for (const item of el("banner-root").querySelectorAll(".banner")) {
@@ -1056,15 +1061,11 @@ function openOverallSettleModal() {
   const list = transfers.length
     ? transfers.map((t) => `<div class="settle-row"><span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span><span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span></div>`).join("")
     : `<p class="empty-state">Everyone is settled up.</p>`;
-  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button><button type="button" class="btn btn-ghost" id="overall-settle-email">Email the group</button></div>`;
+  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button></div>`;
   openModal({ title: "Settle up", body });
   q(body, "#overall-settle-copy").addEventListener("click", async () => {
     const ok = await copyTextToClipboard(settleUpAsText(transfers, "Settle up — Overall"));
     showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
-  });
-  q(body, "#overall-settle-email").addEventListener("click", () => {
-    const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(settleUpAsText(transfers, "Settle up — Overall"))}`;
-    window.location.href = url;
   });
 }
 function ledgerActivityDetails(memberId, kind) {
@@ -1397,12 +1398,6 @@ function renderSettleUp() {
 async function onSettleCopy() {
   const ok = await copyTextToClipboard(settleUpAsText(state.settleTransfers ?? [], "Settle up — Poker Ledger"));
   showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
-}
-
-function onSettleEmail() {
-  const text = settleUpAsText(state.settleTransfers ?? [], "Settle up — Poker Ledger");
-  const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(text)}`;
-  window.location.href = url;
 }
 
 /**
@@ -2988,7 +2983,7 @@ async function maybeShowNamePrompt() {
 /* ── Init ──────────────────────────────────────────────────── */
 
 function wireStatic() {
-  window.addEventListener("popstate", () => route());
+  window.addEventListener("popstate", () => { clearBanners(); route(); });
   el("gate-form").addEventListener("submit", onGateUnlock);
   el("gate-request-form").addEventListener("submit", onRequestSubmit);
   el("gate-admin-form").addEventListener("submit", onAdminUnlock);
@@ -3023,7 +3018,6 @@ function wireStatic() {
     renderSessions();
   });
   el("settle-copy").addEventListener("click", onSettleCopy);
-  el("settle-email").addEventListener("click", onSettleEmail);
   el("overall-settle-btn").addEventListener("click", openOverallSettleModal);
 }
 
@@ -3034,6 +3028,7 @@ function wireStatic() {
  * @param {string} tab
  */
 function goToTab(tab) {
+  clearBanners();
   state.gameTab = tab;
   pushAppUrl({ tab });
   route();

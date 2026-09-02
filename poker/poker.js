@@ -513,6 +513,11 @@ function showBanner(opts) {
   root.appendChild(item);
 }
 
+/** Dismisses any banners currently showing — used when navigating to a different tab, so a message from one tab (e.g. "Live session ended") doesn't linger once you've moved on. */
+function clearBanners() {
+  el("banner-root").innerHTML = "";
+}
+
 /** Remove an active banner with the exact message, if present. */
 function dismissBanner(message) {
   for (const item of el("banner-root").querySelectorAll(".banner")) {
@@ -1056,15 +1061,11 @@ function openOverallSettleModal() {
   const list = transfers.length
     ? transfers.map((t) => `<div class="settle-row"><span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span><span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span></div>`).join("")
     : `<p class="empty-state">Everyone is settled up.</p>`;
-  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button><button type="button" class="btn btn-ghost" id="overall-settle-email">Email the group</button></div>`;
+  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button></div>`;
   openModal({ title: "Settle up", body });
   q(body, "#overall-settle-copy").addEventListener("click", async () => {
     const ok = await copyTextToClipboard(settleUpAsText(transfers, "Settle up — Overall"));
     showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
-  });
-  q(body, "#overall-settle-email").addEventListener("click", () => {
-    const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(settleUpAsText(transfers, "Settle up — Overall"))}`;
-    window.location.href = url;
   });
 }
 function ledgerActivityDetails(memberId, kind) {
@@ -1399,12 +1400,6 @@ async function onSettleCopy() {
   showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
 }
 
-function onSettleEmail() {
-  const text = settleUpAsText(state.settleTransfers ?? [], "Settle up — Poker Ledger");
-  const url = `mailto:?subject=${encodeURIComponent("Poker Ledger — settle up")}&body=${encodeURIComponent(text)}`;
-  window.location.href = url;
-}
-
 /**
  * @param {boolean} reset
  * @returns {Promise<void>}
@@ -1483,12 +1478,40 @@ function openStartLiveModal() {
 
 function openRebuyChooser(sessionId, participant) {
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<p class="form-hint">Choose a common buy-in amount for ${esc(participant.name)}.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary rebuy-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost rebuy-custom">Custom</button></div><div id="rebuy-custom-wrap" class="stack" hidden><label class="field" for="rebuy-custom-amount">Custom amount</label><div class="field-row"><input id="rebuy-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="rebuy-custom-submit">Add</button></div><p id="rebuy-custom-error" class="form-error" role="alert" hidden></p></div><div class="modal-actions"><button type="button" class="btn btn-ghost rebuy-cancel">Cancel</button></div>`;
+  body.innerHTML = `<p class="form-hint">Choose a common buy-in amount for ${esc(participant.name)}.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary rebuy-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost rebuy-custom">Custom</button></div><div id="rebuy-custom-wrap" class="stack" hidden><label class="field" for="rebuy-custom-amount">Custom amount</label><div class="field-row"><input id="rebuy-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="rebuy-custom-submit">Add</button></div><p id="rebuy-custom-error" class="form-error" role="alert" hidden></p></div><p id="rebuy-error" class="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="btn btn-ghost rebuy-cancel">Cancel</button></div>`;
   openModal({ title: "Add buy-in", body });
-  q(body, ".rebuy-cancel").addEventListener("click", closeModal);
+  const cancelBtn = /** @type {HTMLButtonElement} */ (q(body, ".rebuy-cancel"));
+  cancelBtn.addEventListener("click", closeModal);
   const customWrap = /** @type {HTMLElement} */ (q(body, "#rebuy-custom-wrap"));
   const customInput = /** @type {HTMLInputElement} */ (q(body, "#rebuy-custom-amount"));
   const customError = /** @type {HTMLElement} */ (q(body, "#rebuy-custom-error"));
+  const rebuyError = /** @type {HTMLElement} */ (q(body, "#rebuy-error"));
+  const customSubmitBtn = /** @type {HTMLButtonElement} */ (q(body, "#rebuy-custom-submit"));
+  const choiceButtons = /** @type {HTMLButtonElement[]} */ (Array.from(body.querySelectorAll(".rebuy-choice")));
+
+  function setBusy(busy) {
+    for (const b of choiceButtons) b.disabled = busy;
+    customSubmitBtn.disabled = busy;
+    cancelBtn.disabled = busy;
+  }
+
+  // Deliberately doesn't close this chooser before the save resolves: on
+  // success, saveRebuy reopens the live session modal directly (openModal
+  // closes whatever's open first), so the user goes straight from this
+  // chooser back to the live modal without ever seeing the dashboard flash
+  // underneath. On failure the chooser just stays open with an inline error.
+  async function submit(cents) {
+    rebuyError.hidden = true;
+    setBusy(true);
+    try {
+      await saveRebuy(sessionId, participant.memberId, cents);
+    } catch (e) {
+      rebuyError.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.");
+      rebuyError.hidden = false;
+      setBusy(false);
+    }
+  }
+
   q(body, ".rebuy-custom").addEventListener("click", () => {
     customWrap.hidden = false;
     customInput.focus();
@@ -1502,8 +1525,7 @@ function openRebuyChooser(sessionId, participant) {
       return;
     }
     customError.hidden = true;
-    closeModal();
-    saveRebuy(sessionId, participant.memberId, cents);
+    void submit(cents);
   };
   q(body, "#rebuy-custom-submit").addEventListener("click", submitCustom);
   customInput.addEventListener("keydown", (ev) => {
@@ -1512,12 +1534,14 @@ function openRebuyChooser(sessionId, participant) {
       submitCustom();
     }
   });
-  body.querySelectorAll(".rebuy-choice").forEach((button) => button.addEventListener("click", () => { const cents = Number(button.getAttribute("data-amount")) * 100; closeModal(); saveRebuy(sessionId, participant.memberId, cents); }));
+  choiceButtons.forEach((button) => button.addEventListener("click", () => void submit(Number(button.getAttribute("data-amount")) * 100)));
 }
 
+/** Throws on failure — callers decide how to surface the error (see openRebuyChooser/openLiveAddPlayerChooser). */
 async function saveRebuy(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
-  catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); }
+  await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } });
+  await loadLive();
+  await openLiveModal();
 }
 
 function openLiveModal() {
@@ -1602,14 +1626,40 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
   const available = state.members.filter((m) => !existingIds.includes(m.id));
   if (!available.length) { showBanner({ kind: "info", message: "Everyone is already in this live session." }); return; }
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<label class="field" for="live-new-player">Player</label><select id="live-new-player" class="input">${available.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><p class="form-hint">Choose their starting buy-in.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary live-add-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost live-add-custom">Custom</button></div><div id="live-add-custom-wrap" class="stack" hidden><label class="field" for="live-add-custom-amount">Custom amount</label><div class="field-row"><input id="live-add-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="live-add-custom-submit">Add</button></div><p id="live-add-custom-error" class="form-error" role="alert" hidden></p></div><div class="modal-actions"><button type="button" class="btn btn-ghost live-add-cancel">Cancel</button></div>`;
+  body.innerHTML = `<label class="field" for="live-new-player">Player</label><select id="live-new-player" class="input">${available.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><p class="form-hint">Choose their starting buy-in.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary live-add-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost live-add-custom">Custom</button></div><div id="live-add-custom-wrap" class="stack" hidden><label class="field" for="live-add-custom-amount">Custom amount</label><div class="field-row"><input id="live-add-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="live-add-custom-submit">Add</button></div><p id="live-add-custom-error" class="form-error" role="alert" hidden></p></div><p id="live-add-error" class="form-error" role="alert" hidden></p><div class="modal-actions"><button type="button" class="btn btn-ghost live-add-cancel">Cancel</button></div>`;
   openModal({ title: "Add player to live session", body });
-  q(body, ".live-add-cancel").addEventListener("click", closeModal);
-  const save = (cents) => { const memberId = field("live-new-player").value; closeModal(); void saveLivePlayer(sessionId, memberId, cents); };
-  body.querySelectorAll(".live-add-choice").forEach((button) => button.addEventListener("click", () => save(Number(button.getAttribute("data-amount")) * 100)));
+  const cancelBtn = /** @type {HTMLButtonElement} */ (q(body, ".live-add-cancel"));
+  cancelBtn.addEventListener("click", closeModal);
+  const select = /** @type {HTMLSelectElement} */ (q(body, "#live-new-player"));
   const customWrap = /** @type {HTMLElement} */ (q(body, "#live-add-custom-wrap"));
   const customInput = /** @type {HTMLInputElement} */ (q(body, "#live-add-custom-amount"));
   const customError = /** @type {HTMLElement} */ (q(body, "#live-add-custom-error"));
+  const addError = /** @type {HTMLElement} */ (q(body, "#live-add-error"));
+  const customSubmitBtn = /** @type {HTMLButtonElement} */ (q(body, "#live-add-custom-submit"));
+  const choiceButtons = /** @type {HTMLButtonElement[]} */ (Array.from(body.querySelectorAll(".live-add-choice")));
+
+  function setBusy(busy) {
+    for (const b of choiceButtons) b.disabled = busy;
+    customSubmitBtn.disabled = busy;
+    cancelBtn.disabled = busy;
+    select.disabled = busy;
+  }
+
+  // Deliberately doesn't close this chooser before the save resolves — see
+  // the matching comment in openRebuyChooser for why.
+  async function submit(cents) {
+    addError.hidden = true;
+    setBusy(true);
+    try {
+      await saveLivePlayer(sessionId, select.value, cents);
+    } catch (e) {
+      addError.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.");
+      addError.hidden = false;
+      setBusy(false);
+    }
+  }
+
+  choiceButtons.forEach((button) => button.addEventListener("click", () => void submit(Number(button.getAttribute("data-amount")) * 100)));
   q(body, ".live-add-custom").addEventListener("click", () => {
     customWrap.hidden = false;
     customInput.focus();
@@ -1623,7 +1673,7 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
       return;
     }
     customError.hidden = true;
-    save(cents);
+    void submit(cents);
   };
   q(body, "#live-add-custom-submit").addEventListener("click", submitCustom);
   customInput.addEventListener("keydown", (ev) => {
@@ -1634,9 +1684,11 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
   });
 }
 
+/** Throws on failure — callers decide how to surface the error (see openLiveAddPlayerChooser). */
 async function saveLivePlayer(sessionId, memberId, amountCents) {
-  try { await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } }); await loadLive(); await openLiveModal(); }
-  catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the player.") }); }
+  await api(`/live/${encodeURIComponent(sessionId)}/buyins`, { method: "POST", body: { memberId, amountCents } });
+  await loadLive();
+  await openLiveModal();
 }
 
 /**
@@ -2988,7 +3040,7 @@ async function maybeShowNamePrompt() {
 /* ── Init ──────────────────────────────────────────────────── */
 
 function wireStatic() {
-  window.addEventListener("popstate", () => route());
+  window.addEventListener("popstate", () => { clearBanners(); route(); });
   el("gate-form").addEventListener("submit", onGateUnlock);
   el("gate-request-form").addEventListener("submit", onRequestSubmit);
   el("gate-admin-form").addEventListener("submit", onAdminUnlock);
@@ -3023,7 +3075,6 @@ function wireStatic() {
     renderSessions();
   });
   el("settle-copy").addEventListener("click", onSettleCopy);
-  el("settle-email").addEventListener("click", onSettleEmail);
   el("overall-settle-btn").addEventListener("click", openOverallSettleModal);
 }
 
@@ -3034,6 +3085,7 @@ function wireStatic() {
  * @param {string} tab
  */
 function goToTab(tab) {
+  clearBanners();
   state.gameTab = tab;
   pushAppUrl({ tab });
   route();

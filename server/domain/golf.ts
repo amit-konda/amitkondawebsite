@@ -13,6 +13,16 @@
  * handshake bet built from it can never push.
  */
 
+export const GOLF_COURSES = ["butler", "hancock"] as const;
+export type GolfCourse = (typeof GOLF_COURSES)[number];
+
+/**
+ * Fixed par per course. Both are short courses (not full 18-hole rounds),
+ * so for now every round played there is assumed to be the whole course at
+ * this par — no per-round par entry.
+ */
+export const COURSE_PAR: Record<GolfCourse, number> = { butler: 27, hancock: 35 };
+
 export interface GolfRoundInput {
   strokes: number;
   par: number;

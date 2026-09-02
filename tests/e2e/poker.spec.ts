@@ -676,19 +676,20 @@ test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke
   await page.locator('#golf-course-switch [data-course="hancock"]').click();
   await expect(page.locator("#golf-heading")).toHaveText("Hancock");
 
-  async function logRound(playerName: string, strokes: string, par: string) {
+  async function logRound(playerName: string, strokes: string) {
     await page.getByRole("button", { name: "+ Log a round" }).click();
     await page.locator("#golf-new-player").selectOption({ label: playerName });
     await page.locator("#golf-new-course").selectOption({ label: "Hancock" });
+    // Par is fixed per course (no per-round par entry).
+    await expect(page.locator("#golf-new-par-hint")).toHaveText("Par 35 at Hancock.");
     await page.locator("#golf-new-strokes").fill(strokes);
-    await page.locator("#golf-new-par").fill(par);
     await page.getByRole("button", { name: "Log round" }).click();
     await expect(page.getByText("Round logged.")).toBeVisible({ timeout: 10_000 });
   }
 
-  // Wes: 85 strokes, par 70 -> +15. Xia: 75 strokes, par 70 -> +5 (better).
-  await logRound("Wes", "85", "70");
-  await logRound("Xia", "75", "70");
+  // Wes: 50 strokes, par 35 -> +15. Xia: 40 strokes, par 35 -> +5 (better).
+  await logRound("Wes", "50");
+  await logRound("Xia", "40");
 
   const board = page.locator(".golf-board-row");
   await expect(board).toHaveCount(2);

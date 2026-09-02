@@ -86,31 +86,37 @@ afterAll(async () => {
   await tdb?.end();
 });
 
-function logRound(memberId: string, course: string, strokes: number, par: number, playedAt: string, group: string) {
-  return postJson("/api/poker/golf/rounds", { memberId, course, strokes, par, playedAt }, group);
+// Fixed course pars (mirrors server/domain/golf.ts's COURSE_PAR) — the
+// server now derives par from the course itself, a round no longer carries
+// its own par.
+const COURSE_PAR: Record<"butler" | "hancock", number> = { butler: 27, hancock: 35 };
+
+function logRound(memberId: string, course: string, strokes: number, playedAt: string, group: string) {
+  return postJson("/api/poker/golf/rounds", { memberId, course, strokes, playedAt }, group);
 }
 
 describe("golf rounds", () => {
   it("requires group access to list rounds, and a viewer to log one", async () => {
     const list = await req("/api/poker/golf/rounds");
     expect(list.status).toBe(401);
-    const create = await logRound(amit.id, "butler", 50, 45, "2026-08-01T12:00:00Z", groupCookie(null));
+    const create = await logRound(amit.id, "butler", 50, "2026-08-01T12:00:00Z", groupCookie(null));
     expect(create.status).toBe(401);
   });
 
-  it("logs a round for another member and lists it with toPar computed", async () => {
-    const res = await logRound(kyle.id, "butler", 52, 45, "2026-08-01T12:00:00Z", groupCookie(amit.id));
+  it("logs a round for another member and lists it with toPar computed from the course's fixed par", async () => {
+    const res = await logRound(kyle.id, "butler", COURSE_PAR.butler + 7, "2026-08-01T12:00:00Z", groupCookie(amit.id));
     expect(res.status).toBe(200);
     expect(res.json.created).toBe(true);
 
     const list = await req("/api/poker/golf/rounds?course=butler", { group: groupCookie(null) });
     const round = (list.json.rounds as RoundApi[]).find((r) => r.id === res.json.id);
     expect(round?.name).toBe("Kyle");
+    expect(round?.par).toBe(COURSE_PAR.butler);
     expect(round?.toPar).toBe(7);
   });
 
   it("rejects an inactive/unknown member id", async () => {
-    const res = await logRound("00000000-0000-0000-0000-000000000000", "butler", 50, 45, "2026-08-01T12:00:00Z", groupCookie(amit.id));
+    const res = await logRound("00000000-0000-0000-0000-000000000000", "butler", 50, "2026-08-01T12:00:00Z", groupCookie(amit.id));
     expect(res.status).toBe(400);
     expect(res.json.error?.code).toBe("invalid_member");
   });
@@ -118,14 +124,14 @@ describe("golf rounds", () => {
   it("rejects an unknown course", async () => {
     const res = await postJson(
       "/api/poker/golf/rounds",
-      { memberId: amit.id, course: "pebble_beach", strokes: 80, par: 72, playedAt: "2026-08-01T12:00:00Z" },
+      { memberId: amit.id, course: "pebble_beach", strokes: 80, playedAt: "2026-08-01T12:00:00Z" },
       groupCookie(amit.id)
     );
     expect(res.status).toBe(400);
   });
 
   it("lets the recording member delete their own round, but not another viewer", async () => {
-    const created = await logRound(amit.id, "hancock", 90, 72, "2026-08-02T12:00:00Z", groupCookie(kyle.id));
+    const created = await logRound(amit.id, "hancock", 45, "2026-08-02T12:00:00Z", groupCookie(kyle.id));
     expect(created.status).toBe(200);
 
     const deniedDelete = await req(`/api/poker/golf/rounds/${created.json.id}`, { method: "DELETE", group: groupCookie(amit.id) });
@@ -137,7 +143,7 @@ describe("golf rounds", () => {
   });
 
   it("lets an admin delete any round", async () => {
-    const created = await logRound(amit.id, "hancock", 88, 72, "2026-08-03T12:00:00Z", groupCookie(amit.id));
+    const created = await logRound(amit.id, "hancock", 44, "2026-08-03T12:00:00Z", groupCookie(amit.id));
     const res = await req(`/api/poker/golf/rounds/${created.json.id}`, { method: "DELETE", group: groupCookie(kyle.id), admin: true });
     expect(res.status).toBe(200);
   });
@@ -145,16 +151,16 @@ describe("golf rounds", () => {
 
 describe("golf leaderboard and stroke line", () => {
   it("weights the most recent 3 rounds 80% and older rounds 20% per course", async () => {
-    // Amit at Hancock: 5 rounds, relative to par [+15, +13, +14, +10, +20]
+    // Amit at Hancock (fixed par 35): 5 rounds, relative to par [+15, +13, +14, +10, +20]
     // (dates chosen so this exact order sorts most-recent-first).
-    await logRound(amit.id, "hancock", 90, 70, "2026-01-01T12:00:00Z", groupCookie(amit.id)); // +20 (oldest)
-    await logRound(amit.id, "hancock", 80, 70, "2026-02-01T12:00:00Z", groupCookie(amit.id)); // +10
-    await logRound(amit.id, "hancock", 84, 70, "2026-08-01T12:00:00Z", groupCookie(amit.id)); // +14
-    await logRound(amit.id, "hancock", 83, 70, "2026-08-15T12:00:00Z", groupCookie(amit.id)); // +13
-    await logRound(amit.id, "hancock", 85, 70, "2026-09-01T12:00:00Z", groupCookie(amit.id)); // +15 (most recent)
+    await logRound(amit.id, "hancock", COURSE_PAR.hancock + 20, "2026-01-01T12:00:00Z", groupCookie(amit.id)); // +20 (oldest)
+    await logRound(amit.id, "hancock", COURSE_PAR.hancock + 10, "2026-02-01T12:00:00Z", groupCookie(amit.id)); // +10
+    await logRound(amit.id, "hancock", COURSE_PAR.hancock + 14, "2026-08-01T12:00:00Z", groupCookie(amit.id)); // +14
+    await logRound(amit.id, "hancock", COURSE_PAR.hancock + 13, "2026-08-15T12:00:00Z", groupCookie(amit.id)); // +13
+    await logRound(amit.id, "hancock", COURSE_PAR.hancock + 15, "2026-09-01T12:00:00Z", groupCookie(amit.id)); // +15 (most recent)
     // recent 3 = [15,13,14] avg 14; historical = [10,20] avg 15; weighted = 0.8*14+0.2*15 = 14.2
 
-    await logRound(kyle.id, "hancock", 78, 70, "2026-08-20T12:00:00Z", groupCookie(kyle.id)); // +8, single round
+    await logRound(kyle.id, "hancock", COURSE_PAR.hancock + 8, "2026-08-20T12:00:00Z", groupCookie(kyle.id)); // +8, single round
 
     const board = await req("/api/poker/golf/leaderboard?course=hancock", { group: groupCookie(null) });
     expect(board.status).toBe(200);

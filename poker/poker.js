@@ -102,6 +102,8 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const VALID_TABS = new Set(["poker", "blackjack", "handshake", "overall", "golf"]);
 const GOLF_COURSES = ["butler", "hancock"];
 const GOLF_COURSE_NAMES = { butler: "Butler Pitch & Putt", hancock: "Hancock" };
+/** Fixed par per course — both are short courses, so a round is always the whole course at this par. */
+const COURSE_PAR = { butler: 27, hancock: 35 };
 
 /* ── State ─────────────────────────────────────────────────── */
 
@@ -1497,20 +1499,25 @@ function openLogGolfRoundModal() {
   body.innerHTML = `<label class="field" for="golf-new-player">Player</label><select id="golf-new-player" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === defaultPlayer ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
     <label class="field" for="golf-new-course">Course</label><select id="golf-new-course" class="input">${GOLF_COURSES.map((c) => `<option value="${c}"${c === state.golfCourse ? " selected" : ""}>${esc(GOLF_COURSE_NAMES[c])}</option>`).join("")}</select>
     <label class="field" for="golf-new-date">Date</label><input id="golf-new-date" class="input" type="date" value="${new Date().toISOString().slice(0, 10)}">
-    <div class="form-grid"><div><label class="field" for="golf-new-strokes">Strokes</label><input id="golf-new-strokes" class="input" type="number" inputmode="numeric" min="1" max="300" placeholder="e.g. 52"></div><div><label class="field" for="golf-new-par">Par</label><input id="golf-new-par" class="input" type="number" inputmode="numeric" min="1" max="200" placeholder="e.g. 45"></div></div>
+    <label class="field" for="golf-new-strokes">Strokes</label><input id="golf-new-strokes" class="input" type="number" inputmode="numeric" min="1" max="300" placeholder="e.g. 34">
+    <p id="golf-new-par-hint" class="form-hint">Par ${COURSE_PAR[state.golfCourse]} at ${esc(GOLF_COURSE_NAMES[state.golfCourse])}.</p>
     <p id="golf-new-error" class="form-error" role="alert" hidden></p>
     <div class="modal-actions"><button type="button" class="btn btn-ghost" id="golf-new-cancel">Cancel</button><button type="button" class="btn btn-primary" id="golf-new-submit">Log round</button></div>`;
   openModal({ title: "Log a golf round", body });
   q(body, "#golf-new-cancel").addEventListener("click", closeModal);
+  const courseSelect = /** @type {HTMLSelectElement} */ (q(body, "#golf-new-course"));
+  const parHint = /** @type {HTMLElement} */ (q(body, "#golf-new-par-hint"));
+  courseSelect.addEventListener("change", () => {
+    parHint.textContent = `Par ${COURSE_PAR[courseSelect.value]} at ${GOLF_COURSE_NAMES[courseSelect.value]}.`;
+  });
   const submitBtn = /** @type {HTMLButtonElement} */ (q(body, "#golf-new-submit"));
   const errorEl = /** @type {HTMLElement} */ (q(body, "#golf-new-error"));
   submitBtn.addEventListener("click", async () => {
     const strokes = Number(field("golf-new-strokes").value);
-    const par = Number(field("golf-new-par").value);
     const date = field("golf-new-date").value;
     errorEl.hidden = true;
-    if (!Number.isInteger(strokes) || strokes < 1 || strokes > 300 || !Number.isInteger(par) || par < 1 || par > 200) {
-      errorEl.textContent = "Enter whole-number strokes and par.";
+    if (!Number.isInteger(strokes) || strokes < 1 || strokes > 300) {
+      errorEl.textContent = "Enter a whole-number score.";
       errorEl.hidden = false;
       return;
     }
@@ -1528,7 +1535,6 @@ function openLogGolfRoundModal() {
           memberId: field("golf-new-player").value,
           course,
           strokes,
-          par,
           playedAt: new Date(`${date}T12:00:00`).toISOString(),
         },
       });

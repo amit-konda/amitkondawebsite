@@ -4,24 +4,22 @@ import { z } from "zod";
 import { requireGroup, requireViewer, verifyAdmin } from "../auth.js";
 import { db } from "../db/client.js";
 import { golfRounds, members } from "../db/schema.js";
-import { suggestStrokeLine, weightedGolfStat } from "../domain/golf.js";
-import type { GolfRoundInput, WeightedGolfStat } from "../domain/golf.js";
+import { COURSE_PAR, GOLF_COURSES, suggestStrokeLine, weightedGolfStat } from "../domain/golf.js";
+import type { GolfCourse, GolfRoundInput, WeightedGolfStat } from "../domain/golf.js";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import type { Ctx, Router } from "../router.js";
 import { writeAudit } from "../domain/audit.js";
 
-const COURSES = ["butler", "hancock"] as const;
-const courseSchema = z.enum(COURSES);
+const courseSchema = z.enum(GOLF_COURSES);
 
 const createSchema = z.object({
   memberId: z.string().uuid(),
   course: courseSchema,
   strokes: z.number().int().min(1).max(300),
-  par: z.number().int().min(1).max(200),
   playedAt: z.string().datetime()
 });
 
-async function loadCourseRounds(course: (typeof COURSES)[number]) {
+async function loadCourseRounds(course: GolfCourse) {
   return db
     .select({
       id: golfRounds.id,
@@ -35,7 +33,7 @@ async function loadCourseRounds(course: (typeof COURSES)[number]) {
 }
 
 /** Groups rounds by memberId and runs the weighted-average calc for each active member. */
-async function courseLeaderboard(course: (typeof COURSES)[number]) {
+async function courseLeaderboard(course: GolfCourse) {
   const [rows, active] = await Promise.all([
     loadCourseRounds(course),
     db.select({ id: members.id, name: members.displayName }).from(members).where(eq(members.status, "active"))
@@ -95,12 +93,13 @@ export function registerGolfRoutes(router: Router): void {
     const member = (await db.select({ id: members.id }).from(members).where(and(eq(members.id, body.memberId), eq(members.status, "active"))).limit(1))[0];
     if (!member) throw badRequest("invalid_member", "Choose an active member.");
     const id = randomUUID();
+    const par = COURSE_PAR[body.course];
     await db.insert(golfRounds).values({
       id,
       memberId: body.memberId,
       course: body.course,
       strokes: body.strokes,
-      par: body.par,
+      par,
       playedAt: new Date(body.playedAt),
       recordedByMemberId: claims.mid
     });
@@ -109,7 +108,7 @@ export function registerGolfRoutes(router: Router): void {
       action: "golf_round.create",
       entityType: "golf_round",
       entityId: id,
-      afterJson: { memberId: body.memberId, course: body.course, strokes: body.strokes, par: body.par }
+      afterJson: { memberId: body.memberId, course: body.course, strokes: body.strokes, par }
     });
     return { created: true, id };
   });

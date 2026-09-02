@@ -1300,7 +1300,7 @@ function openHandshakeModal() {
       const data = await api(`/golf/line?course=${encodeURIComponent(golfCourse.value)}&a=${encodeURIComponent(state.status.viewer.id)}&b=${encodeURIComponent(opponent.value)}`);
       if (!data.line) {
         golfLine = null;
-        golfResult.innerHTML = `<p class="form-hint">Need at least one logged round for both players at ${esc(GOLF_COURSE_NAMES[golfCourse.value])}.</p>`;
+        golfResult.innerHTML = "";
         return;
       }
       golfLine = data.line;
@@ -1483,7 +1483,7 @@ function renderGolfLineResult() {
     return;
   }
   if (!data.line) {
-    box.innerHTML = `<p class="form-hint">Need at least one logged round for both players at ${esc(GOLF_COURSE_NAMES[state.golfCourse])}.</p>`;
+    box.innerHTML = "";
     return;
   }
   const giver = data.line.receiver === "a" ? data.b : data.a;

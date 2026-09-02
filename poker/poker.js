@@ -1162,16 +1162,95 @@ function renderHandshakeScreen() {
     : `<p class="empty-state">No settled bets yet.</p>`;
 
   const settledBody = el("handshake-settled-body");
-  if (!settledBets.length) {
+  // Voided bets stay in this history table (dimmed, tagged "Voided") rather
+  // than disappearing — same transparency as voided poker sessions — but
+  // they're excluded from settledBets/the heading count above since the
+  // ledger query only sums status === "settled".
+  const voidedBets = bets.filter((b) => b.status === "voided");
+  const historyBets = [...settledBets, ...voidedBets];
+  if (!historyBets.length) {
     settledBody.innerHTML = `<p class="empty-state">No settled bets yet.</p>`;
   } else {
     const head = `<div class="bet-table-head"><span>Date</span><span>Bet</span><span>Bettors</span><span>Winner</span><span class="num">Amount</span></div>`;
-    const rowsHtml = [...settledBets]
+    const rowsHtml = [...historyBets]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((b) => `<div class="bet-table-row"><span class="sr-date">${esc(formatDate(b.createdAt))}</span><span class="sr-title">${esc(b.description)}${b.category ? ` <span class="chip chip-category">${esc(b.category.name)}</span>` : ""}</span><span class="sr-players">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)}</span><span>${esc(b.winnerMember?.name ?? "Unknown")}</span><span class="num money">${esc(formatPlainCents(b.amountCents))}</span></div>`)
+      .map((b) => {
+        const voided = b.status === "voided";
+        const chips = [b.category ? `<span class="chip chip-category">${esc(b.category.name)}</span>` : "", voided ? `<span class="chip chip-voided">Voided</span>` : ""].filter(Boolean).join("");
+        return `<button type="button" class="bet-table-row${voided ? " bet-table-row-voided" : ""}" data-bet-id="${esc(b.id)}">
+          <span class="sr-date">${esc(formatDate(b.createdAt))}</span>
+          <span class="sr-title"><span class="bet-desc">${esc(b.description)}</span>${chips ? `<span class="bet-chips">${chips}</span>` : ""}</span>
+          <span class="sr-players">${esc(b.firstMember.name)} vs ${esc(b.secondMember.name)}</span>
+          <span>${esc(b.winnerMember?.name ?? "Unknown")}</span>
+          <span class="num money">${esc(formatPlainCents(b.amountCents))}</span>
+        </button>`;
+      })
       .join("");
     settledBody.innerHTML = head + rowsHtml;
+    settledBody.querySelectorAll("[data-bet-id]").forEach((node) => node.addEventListener("click", () => {
+      const bet = historyBets.find((b) => b.id === node.getAttribute("data-bet-id"));
+      if (bet) openHandshakeBetDetailModal(bet);
+    }));
   }
+}
+
+/** Read-only bet details, plus (for a still-settled bet) a confirm-to-void action that reverses its effect on settled balances. */
+function openHandshakeBetDetailModal(bet) {
+  const voided = bet.status === "voided";
+  const body = document.createElement("div"); body.className = "stack";
+  body.innerHTML = `<div class="detail-results">
+      <div class="detail-result"><span>Bet</span><strong>${esc(bet.description)}</strong></div>
+      ${bet.category ? `<div class="detail-result"><span>Category</span><span class="chip chip-category">${esc(bet.category.name)}</span></div>` : ""}
+      <div class="detail-result"><span>Bettors</span><span>${esc(bet.firstMember.name)} vs ${esc(bet.secondMember.name)}</span></div>
+      <div class="detail-result"><span>Winner</span><span>${esc(bet.winnerMember?.name ?? "Unknown")}</span></div>
+      <div class="detail-result"><span>Amount</span><span class="money">${esc(formatPlainCents(bet.amountCents))}</span></div>
+      <div class="detail-result"><span>Date</span><span>${esc(formatDate(bet.createdAt))}</span></div>
+    </div>
+    ${voided ? `<p class="detail-note">This bet was voided and isn't included in settled balances.</p>` : ""}
+    <p id="hb-void-error" class="form-error" role="alert" hidden></p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="hb-detail-close">Close</button>
+      ${voided ? "" : `<button type="button" class="btn btn-danger" id="hb-void">Void bet</button>`}
+    </div>`;
+  openModal({ title: "Bet details", body });
+  q(body, "#hb-detail-close").addEventListener("click", closeModal);
+  if (voided) return;
+  const voidBtn = /** @type {HTMLButtonElement} */ (q(body, "#hb-void"));
+  const voidError = /** @type {HTMLElement} */ (q(body, "#hb-void-error"));
+  let armed = false;
+  let armTimer = 0;
+  voidBtn.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      voidBtn.textContent = "Click again to confirm void";
+      voidBtn.classList.add("btn-danger-solid");
+      armTimer = window.setTimeout(() => {
+        armed = false;
+        voidBtn.textContent = "Void bet";
+        voidBtn.classList.remove("btn-danger-solid");
+      }, 4000);
+      return;
+    }
+    window.clearTimeout(armTimer);
+    voidError.hidden = true;
+    voidBtn.disabled = true;
+    voidBtn.textContent = "Voiding…";
+    try {
+      await api(`/handshake/bets/${encodeURIComponent(bet.id)}/void`, { method: "POST", body: {} });
+      closeModal();
+      await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]);
+      showBanner({ kind: "info", message: "Bet voided and removed from settled balances." });
+    } catch (e) {
+      // Shown inline, not via showBanner — the page-level banner renders
+      // behind this modal's overlay while it's still open.
+      voidError.textContent = friendlyMessage(/** @type {ApiError} */ (e), "Couldn't void the bet.");
+      voidError.hidden = false;
+      armed = false;
+      voidBtn.disabled = false;
+      voidBtn.textContent = "Void bet";
+      voidBtn.classList.remove("btn-danger-solid");
+    }
+  });
 }
 function openHandshakeSettleModal(bet) { const body = document.createElement("div"); body.className = "stack"; body.innerHTML = `<p class="form-hint">Choose the winner to settle this bet.</p><fieldset class="choice-fieldset"><legend class="field">Winner</legend><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.firstMember.id)}" checked> ${esc(bet.firstMember.name)}</label><label class="choice-row"><input type="radio" name="hb-winner" value="${esc(bet.secondMember.id)}"> ${esc(bet.secondMember.name)}</label></fieldset><div class="modal-actions"><button class="btn btn-ghost" type="button" id="hb-settle-cancel">Cancel</button><button class="btn btn-primary" type="button" id="hb-settle-submit">Settle bet</button></div>`; openModal({ title: "Settle handshake bet", body }); q(body, "#hb-settle-cancel").addEventListener("click", closeModal); q(body, "#hb-settle-submit").addEventListener("click", async () => { const winnerId = /** @type {HTMLInputElement|null} */ (body.querySelector("input[name=hb-winner]:checked"))?.value; if (!winnerId) return; try { await api(`/handshake/bets/${encodeURIComponent(bet.id)}/settle`, { method: "POST", body: { winnerMemberId: winnerId } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't settle the bet.") }); } }); }
 function openHandshakeModal() {

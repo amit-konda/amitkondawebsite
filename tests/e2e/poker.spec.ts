@@ -630,6 +630,36 @@ test("handshake bets: add a new category on the fly and see it on the bet card",
   await expect(page.locator("#hb-category").getByRole("option", { name: "Bowling" })).toHaveCount(1);
   await page.locator("#hb-cancel").click();
 
+  // Settle the bet in Fay's favor and confirm it lands in both the settled
+  // balances sidebar and the settled-bets history table.
+  await card.getByRole("button", { name: "Settle bet" }).click();
+  await page.getByRole("radio", { name: "Fay" }).check();
+  await page.locator("#hb-settle-submit").click();
+  await expect(card).toBeHidden({ timeout: 10_000 });
+
+  const fayBalance = page.locator(".settled-balances-row", { hasText: "Fay" });
+  const gusBalance = page.locator(".settled-balances-row", { hasText: "Gus" });
+  await expect(fayBalance.locator(".money")).toHaveText("+$20.00", { timeout: 10_000 });
+  await expect(gusBalance.locator(".money")).toHaveText("-$20.00");
+
+  const historyRow = page.locator(".bet-table-row", { hasText: "18 holes, loser buys drinks" });
+  await expect(historyRow).toBeVisible();
+  await expect(historyRow.locator(".chip-voided")).toHaveCount(0);
+
+  // Void it: the settled balances revert to zero and the row is flagged
+  // "Voided" but stays visible in the history table.
+  await historyRow.click();
+  await expect(page.getByRole("heading", { name: "Bet details" })).toBeVisible();
+  const voidBtn = page.locator("#hb-void");
+  await voidBtn.click();
+  await expect(voidBtn).toHaveText("Click again to confirm void");
+  await voidBtn.click();
+  await expect(page.locator(".banner")).toContainText("Bet voided and removed from settled balances.", { timeout: 10_000 });
+
+  await expect(fayBalance.locator(".money")).toHaveText("$0.00", { timeout: 10_000 });
+  await expect(gusBalance.locator(".money")).toHaveText("$0.00");
+  await expect(historyRow.locator(".chip-voided")).toHaveText("Voided");
+
   expect(gus.id).toBeTruthy();
 });
 

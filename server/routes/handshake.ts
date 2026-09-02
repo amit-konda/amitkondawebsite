@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireGroup, requireViewer } from "../auth.js";
 import { db } from "../db/client.js";
 import { handshakeBetCategories, handshakeBets, members } from "../db/schema.js";
+import { writeAudit } from "../domain/audit.js";
 import { MAX_AMOUNT_CENTS } from "../domain/money.js";
 import { badRequest, notFound } from "../errors.js";
 import type { Router } from "../router.js";
@@ -64,6 +65,27 @@ export function registerHandshakeRoutes(router: Router): void {
     if (!bet) throw notFound(); if (bet.status !== "open") throw badRequest("already_settled", "This bet is already settled.");
     if (![bet.firstMemberId, bet.secondMemberId].includes(body.winnerMemberId)) throw badRequest("invalid_winner", "Winner must be one of the two bettors.");
     await db.update(handshakeBets).set({ winnerMemberId: body.winnerMemberId, status: "settled", settledAt: new Date() }).where(eq(handshakeBets.id, bet.id));
+    return { ok: true };
+  });
+  // POST /api/poker/handshake/bets/:id/void — idempotent void. Voiding drops
+  // the bet's status out of "settled", which is all the ledger/balances
+  // query keys off — so the effect on settled balances reverses immediately
+  // without any separate reversal bookkeeping.
+  router.post("/api/poker/handshake/bets/:id/void", async (ctx) => {
+    const claims = requireViewer(ctx);
+    const betId = ctx.params.id!;
+    const existing = (await db.select().from(handshakeBets).where(eq(handshakeBets.id, betId)).limit(1))[0];
+    if (!existing) throw notFound();
+    if (existing.status === "voided") return { ok: true };
+    await db.update(handshakeBets).set({ status: "voided" }).where(and(eq(handshakeBets.id, betId), ne(handshakeBets.status, "voided")));
+    await writeAudit(db, {
+      actorLabel: `member:${claims.mid}`,
+      action: "handshake_bet.void",
+      entityType: "handshake_bet",
+      entityId: betId,
+      beforeJson: { status: existing.status },
+      afterJson: { status: "voided" }
+    });
     return { ok: true };
   });
 }

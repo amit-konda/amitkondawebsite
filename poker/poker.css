@@ -921,7 +921,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 
 .dash-poker-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr);
   gap: 20px;
   align-items: start;
 }
@@ -970,7 +970,7 @@ textarea.input { resize: vertical; min-height: 88px; }
 /* Session list (grid rows) */
 .session-head, .session-row {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr) 150px 110px 100px 20px;
+  grid-template-columns: 90px minmax(0, 1fr) 130px 95px 100px 20px;
   column-gap: 14px;
   align-items: center;
 }
@@ -998,12 +998,14 @@ textarea.input { resize: vertical; min-height: 88px; }
 .session-row:hover { background: rgba(222, 237, 226, 0.34); }
 .session-list .session-row:last-of-type { border-bottom: none; }
 .sr-date, .sr-players { color: var(--muted); font-size: 0.88rem; }
-.sr-date, .sr-players, .sr-title {
+.sr-date, .sr-players {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sr-title { font-weight: 650; }
+/* The session name is the one field that must always read in full — let it
+   wrap onto a second line rather than truncating with an ellipsis. */
+.sr-title { font-weight: 650; overflow-wrap: break-word; white-space: normal; }
 .sr-status { justify-self: start; }
 .sr-result { text-align: right; }
 .sr-chev { color: var(--muted); font-size: 1.1rem; text-align: right; }
@@ -1108,9 +1110,10 @@ textarea.input { resize: vertical; min-height: 88px; }
    rendered width (see container-type on .dash-poker-main above), not the
    viewport: the card can be narrow well before the whole page is, once it's
    sharing a row with the settle-up sidebar. Above this threshold rows stay
-   a single truncated horizontal line (see .sr-title/.sr-players ellipsis
-   above); below it the five fixed-width columns (~540px including gaps)
-   no longer fit at all, so rows switch to a stacked layout instead. */
+   a single horizontal line (the session name wraps rather than truncating —
+   see .sr-title above — while .sr-date/.sr-players still ellipsize); below
+   it the five fixed-width columns (~500px including gaps) no longer fit at
+   all, so rows switch to a stacked layout instead. */
 @container (max-width: 680px) {
   .session-head { display: none; }
   .session-row {

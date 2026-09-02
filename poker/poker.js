@@ -1035,7 +1035,7 @@ function renderOverallLedger() {
   }
   if (!rows.length) { body.innerHTML = `<p class="empty-state">No members yet.</p>`; return; }
   const activity = new Map(rows.map((r) => [r.memberId, []]));
-  for (const s of state.sessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
+  for (const s of state.sessions) if (s.status !== "voided") for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
   for (const s of state.blackjackSessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
   for (const b of state.handshakeBets) { const settled = b.status === "settled" && b.winnerMemberId; const firstAmount = settled ? (b.winnerMemberId === b.firstMemberId ? b.amountCents : -b.amountCents) : 0; const secondAmount = -firstAmount; activity.get(b.firstMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: firstAmount, open: !settled }); activity.get(b.secondMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: secondAmount, open: !settled }); }
   const cell = (cents, bold) => `<td class="num money ${moneyClass(cents)}${bold ? " overall-net-cell" : ""}">${esc(formatCents(cents))}</td>`;
@@ -1520,27 +1520,10 @@ async function saveRebuy(sessionId, memberId, amountCents) {
   catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't add the rebuy.") }); }
 }
 
-/**
- * Sum of (cash-out − buy-in) across the live session's participants, using
- * each row's currently-typed cash-out value (not just what's been saved to
- * the server yet) so the balance reads live as the user types. A blank or
- * unparseable field counts as 0 — money not yet accounted for — same as it
- * would if nobody had touched that field.
- */
-function liveBalanceDiffCents(participants, cashInputs) {
-  let sum = 0;
-  for (const p of participants) {
-    const raw = cashInputs.get(p.memberId)?.value ?? "";
-    const cents = raw.trim() === "" ? 0 : parseDollarsToCents(raw);
-    sum += (cents ?? 0) - p.buyInCents;
-  }
-  return sum;
-}
-
 function openLiveModal() {
   if (!state.live) return;
   const body = document.createElement("div"); body.className = "stack live-panel";
-  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-modal-actions"><button type="button" class="btn btn-ghost btn-small" id="live-undo" title="Undo the most recent change">↶ Undo</button><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div></div><div class="live-player-list"></div><p class="remainder" id="live-remainder" aria-live="polite"></p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end" disabled>End session</button></div>`;
+  body.innerHTML = `<div class="live-modal-tools"><p class="form-hint">Update a player’s cash-out when they leave. Rebuys are added to the same player.</p><div class="live-modal-actions"><button type="button" class="btn btn-ghost btn-small" id="live-undo" title="Undo the most recent change">↶ Undo</button><button type="button" class="btn btn-live btn-small" id="live-add-player">+ Add player</button></div></div><div class="live-player-list"></div><p class="remainder" id="live-remainder" aria-live="polite" hidden></p><div class="modal-actions"><button type="button" class="btn btn-ghost" id="live-close">Close</button><button type="button" class="btn btn-primary" id="live-end">End session</button></div>`;
   openModal({ title: state.live.session.title || "Live session", body, wide: true });
 
   const list = q(body, ".live-player-list");
@@ -1548,23 +1531,29 @@ function openLiveModal() {
   const endBtn = /** @type {HTMLButtonElement} */ (q(body, "#live-end"));
   /** @type {Map<string, HTMLInputElement>} */
   const cashInputs = new Map();
+  /** @type {Map<string, string>} */
+  const savedValues = new Map();
 
-  function recomputeBalance() {
-    const participants = state.live.participants;
-    const diff = liveBalanceDiffCents(participants, cashInputs);
-    const complete = participants.every((p) => {
-      const raw = cashInputs.get(p.memberId)?.value ?? "";
-      return raw.trim() !== "" && parseDollarsToCents(raw) !== null;
-    });
-    if (complete && diff === 0) {
-      remainderEl.textContent = "Cash-outs balance at $0.00 — ready to end the session.";
-      remainderEl.className = "remainder remainder-ok";
-      endBtn.disabled = false;
-    } else {
-      const missing = participants.length - participants.filter((p) => { const raw = cashInputs.get(p.memberId)?.value ?? ""; return raw.trim() !== "" && parseDollarsToCents(raw) !== null; }).length;
-      remainderEl.textContent = `Off by ${formatCents(diff)}${missing ? ` · ${missing} cash-out${missing === 1 ? "" : "s"} not entered yet` : ""} — must balance to $0.00 before ending.`;
-      remainderEl.className = "remainder remainder-off";
-      endBtn.disabled = true;
+  function showRemainder(message, ok) {
+    remainderEl.textContent = message;
+    remainderEl.className = ok ? "remainder remainder-ok" : "remainder remainder-off";
+    remainderEl.hidden = false;
+  }
+
+  /** Saves one player's cash-out to the server if the field has changed since it was last saved. */
+  async function saveCashout(memberId, cash, savedEl) {
+    const raw = cash.value.trim();
+    if (raw === savedValues.get(memberId)) return true;
+    const cents = parseDollarsToCents(cash.value);
+    if (cents == null || cents < 0) return true; // unparseable/blank: leave unsaved, caught by the end-session balance check
+    try {
+      await api(`/live/${encodeURIComponent(state.live.session.id)}/cashouts`, { method: "PATCH", body: { memberId, amountCents: cents } });
+      savedValues.set(memberId, raw);
+      if (savedEl) { savedEl.textContent = "Saved"; window.setTimeout(() => { savedEl.textContent = ""; }, 1500); }
+      return true;
+    } catch (e) {
+      showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") });
+      return false;
     }
   }
 
@@ -1573,12 +1562,11 @@ function openLiveModal() {
     row.innerHTML = `<div class="live-player-main"><strong>${esc(p.name)}</strong><span class="form-hint">Bought in ${esc(formatCents(p.buyInCents))}</span></div><div class="live-player-actions"><button type="button" class="btn btn-ghost btn-small live-rebuy">+ Rebuy</button><input class="input live-cashout" type="text" inputmode="decimal" placeholder="Cash-out" value="${esc(moneyInputValue(p.cashOutCents))}"><span class="live-saved" aria-live="polite"></span></div>`;
     const cash = /** @type {HTMLInputElement} */ (q(row, ".live-cashout"));
     cashInputs.set(p.memberId, cash);
+    savedValues.set(p.memberId, cash.value.trim());
     q(row, ".live-rebuy").addEventListener("click", () => openRebuyChooser(state.live.session.id, p));
-    cash.addEventListener("input", recomputeBalance);
-    cash.addEventListener("change", async () => { const cents = parseDollarsToCents(cash.value); if (cents == null || cents < 0) return; const saved = q(row, ".live-saved"); try { await api(`/live/${encodeURIComponent(state.live.session.id)}/cashouts`, { method: "PATCH", body: { memberId: p.memberId, amountCents: cents } }); saved.textContent = "Saved"; window.setTimeout(() => { saved.textContent = ""; }, 1500); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the cash-out.") }); } });
+    cash.addEventListener("change", () => { remainderEl.hidden = true; void saveCashout(p.memberId, cash, q(row, ".live-saved")); });
     list.appendChild(row);
   }
-  recomputeBalance();
 
   q(body, "#live-close").addEventListener("click", closeModal);
   q(body, "#live-add-player").addEventListener("click", () => openLiveAddPlayerChooser(state.live.session.id, state.live.participants.map((p) => p.memberId)));
@@ -1587,9 +1575,21 @@ function openLiveModal() {
     catch (e) { const err = /** @type {ApiError} */ (e); if (err?.code === "nothing_to_undo") showBanner({ kind: "info", message: "Nothing to undo." }); else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't undo the last change.") }); }
   });
   q(body, "#live-end").addEventListener("click", async () => {
-    if (endBtn.disabled) return;
-    try { await api(`/live/${encodeURIComponent(state.live.session.id)}/end`, { method: "POST", body: {} }); closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." }); }
-    catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't end the live session.") }); }
+    endBtn.disabled = true;
+    try {
+      // Make sure every field's latest value has actually reached the server
+      // before asking it to end the session — otherwise a value typed but
+      // not yet blurred/saved would look "missing" to the balance check.
+      const saves = await Promise.all(state.live.participants.map((p) => saveCashout(p.memberId, /** @type {HTMLInputElement} */ (cashInputs.get(p.memberId)), null)));
+      if (saves.some((ok) => !ok)) { endBtn.disabled = false; return; }
+      await api(`/live/${encodeURIComponent(state.live.session.id)}/end`, { method: "POST", body: {} });
+      closeModal(); await refreshStatus(); route(); showBanner({ kind: "info", message: "Live session ended and added to the ledger." });
+    } catch (e) {
+      const err = /** @type {ApiError} */ (e);
+      if (err?.code === "unbalanced" || err?.code === "cashouts_required" || err?.code === "not_enough_players") showRemainder(err.message, false);
+      else showBanner({ kind: "error", message: friendlyMessage(err, "Couldn't end the live session.") });
+      endBtn.disabled = false;
+    }
   });
 }
 
@@ -1597,12 +1597,36 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
   const available = state.members.filter((m) => !existingIds.includes(m.id));
   if (!available.length) { showBanner({ kind: "info", message: "Everyone is already in this live session." }); return; }
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<label class="field" for="live-new-player">Player</label><select id="live-new-player" class="input">${available.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><p class="form-hint">Choose their starting buy-in.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary live-add-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost live-add-custom">Custom</button></div><div class="modal-actions"><button type="button" class="btn btn-ghost live-add-cancel">Cancel</button></div>`;
+  body.innerHTML = `<label class="field" for="live-new-player">Player</label><select id="live-new-player" class="input">${available.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}</select><p class="form-hint">Choose their starting buy-in.</p><div class="choice-grid">${[20, 30, 40, 50].map((amount) => `<button type="button" class="btn btn-primary live-add-choice" data-amount="${amount}">$${amount}</button>`).join("")}<button type="button" class="btn btn-ghost live-add-custom">Custom</button></div><div id="live-add-custom-wrap" class="stack" hidden><label class="field" for="live-add-custom-amount">Custom amount</label><div class="field-row"><input id="live-add-custom-amount" class="input money" type="text" inputmode="decimal" placeholder="$0.00" autocomplete="off"><button type="button" class="btn btn-primary" id="live-add-custom-submit">Add</button></div><p id="live-add-custom-error" class="form-error" role="alert" hidden></p></div><div class="modal-actions"><button type="button" class="btn btn-ghost live-add-cancel">Cancel</button></div>`;
   openModal({ title: "Add player to live session", body });
   q(body, ".live-add-cancel").addEventListener("click", closeModal);
   const save = (cents) => { const memberId = field("live-new-player").value; closeModal(); void saveLivePlayer(sessionId, memberId, cents); };
   body.querySelectorAll(".live-add-choice").forEach((button) => button.addEventListener("click", () => save(Number(button.getAttribute("data-amount")) * 100)));
-  q(body, ".live-add-custom").addEventListener("click", () => { const raw = prompt("Starting buy-in", ""); const cents = raw == null ? null : parseDollarsToCents(raw); if (cents && cents > 0) save(cents); });
+  const customWrap = /** @type {HTMLElement} */ (q(body, "#live-add-custom-wrap"));
+  const customInput = /** @type {HTMLInputElement} */ (q(body, "#live-add-custom-amount"));
+  const customError = /** @type {HTMLElement} */ (q(body, "#live-add-custom-error"));
+  q(body, ".live-add-custom").addEventListener("click", () => {
+    customWrap.hidden = false;
+    customInput.focus();
+  });
+  const submitCustom = () => {
+    const cents = parseDollarsToCents(customInput.value);
+    if (cents == null || cents <= 0) {
+      customError.textContent = "Enter an amount like 20 or 20.00.";
+      customError.hidden = false;
+      customInput.focus();
+      return;
+    }
+    customError.hidden = true;
+    save(cents);
+  };
+  q(body, "#live-add-custom-submit").addEventListener("click", submitCustom);
+  customInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      submitCustom();
+    }
+  });
 }
 
 async function saveLivePlayer(sessionId, memberId, amountCents) {

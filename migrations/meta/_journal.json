@@ -50,6 +50,13 @@
       "when": 1788294000000,
       "tag": "0006_handshake_bet_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788377542535,
+      "tag": "0007_golf_rounds",
+      "breakpoints": true
     }
   ]
 }

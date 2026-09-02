@@ -665,6 +665,66 @@ test("handshake bets: add a new category on the fly and see it on the bet card",
 
 // ---------------------------------------------------------------------------
 
+test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke line", async ({ page }) => {
+  const wes = await seedMember(tdb, "Wes", "wes+e2e@example.com");
+  const xia = await seedMember(tdb, "Xia", "xia+e2e@example.com");
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Wes");
+  await page.getByRole("button", { name: "Golf", exact: true }).click();
+  await expect(page.locator(".dash-grid-golf")).toBeVisible({ timeout: 10_000 });
+  await page.locator('#golf-course-switch [data-course="hancock"]').click();
+  await expect(page.locator("#golf-heading")).toHaveText("Hancock");
+
+  async function logRound(playerName: string, strokes: string, par: string) {
+    await page.getByRole("button", { name: "+ Log a round" }).click();
+    await page.locator("#golf-new-player").selectOption({ label: playerName });
+    await page.locator("#golf-new-course").selectOption({ label: "Hancock" });
+    await page.locator("#golf-new-strokes").fill(strokes);
+    await page.locator("#golf-new-par").fill(par);
+    await page.getByRole("button", { name: "Log round" }).click();
+    await expect(page.getByText("Round logged.")).toBeVisible({ timeout: 10_000 });
+  }
+
+  // Wes: 85 strokes, par 70 -> +15. Xia: 75 strokes, par 70 -> +5 (better).
+  await logRound("Wes", "85", "70");
+  await logRound("Xia", "75", "70");
+
+  const board = page.locator(".golf-board-row");
+  await expect(board).toHaveCount(2);
+  // Xia (better, lower vs-par) ranks above Wes on the leaderboard.
+  await expect(board.nth(0)).toContainText("Xia");
+  await expect(board.nth(1)).toContainText("Wes");
+
+  // The suite is append-only, so other active members from earlier tests may
+  // exist too — pick Wes/Xia explicitly rather than relying on the default
+  // pre-selected pair.
+  await page.locator("#golf-line-a").selectOption({ label: "Wes" });
+  await page.locator("#golf-line-b").selectOption({ label: "Xia" });
+
+  // Betting line: |15 - 5| = 10 -> floor(10) + 0.5 = 10.5, given to the weaker player (Wes).
+  const lineResult = page.locator("#golf-line-result");
+  await expect(lineResult).toContainText("10.5 strokes", { timeout: 10_000 });
+  await expect(lineResult).toContainText("Xia");
+  await expect(lineResult).toContainText("gives");
+  await expect(lineResult).toContainText("Wes");
+
+  // The same suggested line is offered inline when starting a handshake bet.
+  await page.getByRole("button", { name: "Handshake bets", exact: true }).click();
+  await page.getByRole("button", { name: "+ Add handshake bet" }).click();
+  await page.locator("#hb-opponent").selectOption({ label: "Xia" });
+  await page.getByRole("button", { name: "Suggest a golf betting line" }).click();
+  await page.locator("#hb-golf-course").selectOption({ label: "Hancock" });
+  await expect(page.locator("#hb-golf-result")).toContainText("10.5 strokes", { timeout: 10_000 });
+  await page.getByRole("button", { name: "Use this in the description" }).click();
+  await expect(page.locator("#hb-description")).toHaveValue(/Xia gives Wes 10\.5 strokes/);
+  await page.locator("#hb-cancel").click();
+
+  expect(xia.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
 // Sanity: the seeded dispute-token helper hashes exactly like the server.
 test("token hash round-trips the production hasher", () => {
   expect(hashToken("e2e-token-abc")).toMatch(/^[0-9a-f]{64}$/);

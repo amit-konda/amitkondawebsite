@@ -25,6 +25,7 @@ export const joinRequestStatus = pgEnum("join_request_status", ["pending", "appr
 export const sessionStatus = pgEnum("session_status", ["active", "live", "disputed", "resolved", "voided"]);
 export const gameType = pgEnum("game_type", ["poker", "blackjack"]);
 export const handshakeBetStatus = pgEnum("handshake_bet_status", ["open", "settled", "voided"]);
+export const golfCourse = pgEnum("golf_course", ["butler", "hancock"]);
 export const liveSessionEventKind = pgEnum("live_session_event_kind", ["buy_in", "cash_out"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const emailStatus = pgEnum("email_status", [
@@ -166,6 +167,35 @@ export const handshakeBets = pgTable(
     index("handshake_bets_status_idx").on(t.status),
     index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId),
     index("handshake_bets_category_idx").on(t.categoryId)
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// golf_rounds — one row per player per round played (Butler Pitch & Putt or
+// Hancock). Feeds the weighted-average betting-line calculator in
+// server/domain/golf.ts: each player's last 3 rounds at a course are
+// weighted 80%, everything older 20%, to suggest a fair stroke line for
+// handshake bets. Unlike poker/blackjack sessions this isn't a shared
+// multi-player entity with amounts that net to zero — it's just one
+// player's score for one round, so a group outing is simply several rows
+// sharing a date rather than one linked session.
+// ---------------------------------------------------------------------------
+export const golfRounds = pgTable(
+  "golf_rounds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    memberId: uuid("member_id").notNull().references(() => members.id),
+    course: golfCourse("course").notNull(),
+    strokes: integer("strokes").notNull(),
+    par: integer("par").notNull(),
+    playedAt: ts("played_at").notNull(),
+    recordedByMemberId: uuid("recorded_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [
+    check("golf_rounds_strokes_range", sql`${t.strokes} between 1 and 300`),
+    check("golf_rounds_par_range", sql`${t.par} between 1 and 200`),
+    index("golf_rounds_member_course_idx").on(t.memberId, t.course, t.playedAt)
   ]
 );
 
@@ -415,6 +445,7 @@ export type MemberRow = typeof members.$inferSelect;
 export type NewMemberRow = typeof members.$inferInsert;
 export type JoinRequestRow = typeof joinRequests.$inferSelect;
 export type PokerSessionRow = typeof pokerSessions.$inferSelect;
+export type GolfRoundRow = typeof golfRounds.$inferSelect;
 export type SessionResultRow = typeof sessionResults.$inferSelect;
 export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;

@@ -697,6 +697,18 @@ test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke
   await expect(board.nth(0)).toContainText("Xia");
   await expect(board.nth(1)).toContainText("Wes");
 
+  // Recent rounds can be filtered down to one player's score log.
+  const roundRows = page.locator(".golf-round-row");
+  await expect(roundRows).toHaveCount(2);
+  await page.locator("#golf-rounds-player-filter").selectOption({ label: "Wes" });
+  await expect(roundRows).toHaveCount(1);
+  await expect(roundRows.first()).toContainText("Wes");
+  await page.locator("#golf-rounds-player-filter").selectOption({ label: "Xia" });
+  await expect(roundRows).toHaveCount(1);
+  await expect(roundRows.first()).toContainText("Xia");
+  await page.locator("#golf-rounds-player-filter").selectOption({ label: "All players" });
+  await expect(roundRows).toHaveCount(2);
+
   // The suite is append-only, so other active members from earlier tests may
   // exist too — pick Wes/Xia explicitly rather than relying on the default
   // pre-selected pair.

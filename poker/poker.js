@@ -132,6 +132,7 @@ const COURSE_PAR = { butler: 27, hancock: 35 };
  *   golfCourse: "butler"|"hancock",
  *   golfRounds: any[],
  *   golfLeaderboard: any[],
+ *   golfRoundsFilter: "all"|string,
  *   golfLineMembers: {a: string|null, b: string|null},
  *   golfLine: any|null,
  * }}
@@ -160,6 +161,7 @@ const state = {
   golfCourse: "butler",
   golfRounds: [],
   golfLeaderboard: [],
+  golfRoundsFilter: "all",
   golfLineMembers: { a: null, b: null },
   golfLine: null,
 };
@@ -1422,12 +1424,17 @@ function renderGolfScreen() {
     board.innerHTML = head + rows;
   }
 
+  renderGolfRoundsFilter();
+  const filteredRounds = state.golfRoundsFilter === "all"
+    ? state.golfRounds
+    : state.golfRounds.filter((r) => r.memberId === state.golfRoundsFilter);
+
   const roundsBody = el("golf-rounds-body");
-  if (!state.golfRounds.length) {
-    roundsBody.innerHTML = `<p class="empty-state">No rounds logged yet.</p>`;
+  if (!filteredRounds.length) {
+    roundsBody.innerHTML = `<p class="empty-state">${state.golfRoundsFilter === "all" ? "No rounds logged yet." : "No rounds logged for this player yet."}</p>`;
   } else {
     const head = `<div class="bet-table-head golf-rounds-head"><span>Date</span><span>Player</span><span class="num">Score</span></div>`;
-    const rows = state.golfRounds
+    const rows = filteredRounds
       .map((r) => `<button type="button" class="bet-table-row golf-round-row" data-round-id="${esc(r.id)}"><span class="sr-date">${esc(formatRecentDate(r.playedAt))}</span><span class="sr-title">${esc(r.name)}</span><span class="num money">${r.strokes} (${esc(formatToPar(r.toPar))})</span></button>`)
       .join("");
     roundsBody.innerHTML = head + rows;
@@ -1438,6 +1445,17 @@ function renderGolfScreen() {
   }
 
   renderGolfLineSelects();
+}
+
+/** Rebuilds the "Recent rounds" player filter from active members, preserving a still-valid prior selection. */
+function renderGolfRoundsFilter() {
+  const sel = /** @type {HTMLSelectElement} */ (el("golf-rounds-player-filter"));
+  const activeIds = new Set(state.members.map((m) => m.id));
+  if (state.golfRoundsFilter !== "all" && !activeIds.has(state.golfRoundsFilter)) {
+    state.golfRoundsFilter = "all";
+  }
+  sel.innerHTML = `<option value="all">All players</option>${state.members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}`;
+  sel.value = state.golfRoundsFilter;
 }
 
 /** Rebuilds the two line-calculator <select>s from active members, preserving a still-valid prior selection. */
@@ -3443,6 +3461,10 @@ function wireStatic() {
     el("golf-course-switch").querySelectorAll("[data-course]").forEach((n) => n.classList.toggle("is-active", n === btn));
     el("golf-heading").textContent = GOLF_COURSE_NAMES[state.golfCourse];
     void loadGolfCourseData();
+  });
+  el("golf-rounds-player-filter").addEventListener("change", () => {
+    state.golfRoundsFilter = field("golf-rounds-player-filter").value || "all";
+    renderGolfScreen();
   });
   el("golf-line-a").addEventListener("change", () => {
     state.golfLineMembers.a = field("golf-line-a").value || null;

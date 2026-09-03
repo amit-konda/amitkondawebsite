@@ -1146,6 +1146,7 @@ textarea.input { resize: vertical; min-height: 88px; }
    Handshake bets above) with golf's own 3 columns — same interactive row
    look (hover, padding, button reset), different layout. */
 .golf-rounds-head, .golf-round-row { grid-template-columns: 90px minmax(0, 1fr) 110px; }
+.golf-rounds-player-select { margin-left: auto; max-width: 200px; }
 .golf-line-result { margin-top: 14px; }
 .golf-line-headline { font-weight: 650; margin: 0 0 4px; }
 

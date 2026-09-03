@@ -697,17 +697,19 @@ test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke
   await expect(board.nth(0)).toContainText("Xia");
   await expect(board.nth(1)).toContainText("Wes");
 
-  // Recent rounds can be filtered down to one player's score log.
+  // Recent rounds defaults to the logged-in viewer's own score log (no "all
+  // players" option), and the date includes the year.
   const roundRows = page.locator(".golf-round-row");
-  await expect(roundRows).toHaveCount(2);
-  await page.locator("#golf-rounds-player-filter").selectOption({ label: "Wes" });
+  await expect(page.locator("#golf-rounds-player-filter")).toHaveValue(wes.id);
   await expect(roundRows).toHaveCount(1);
   await expect(roundRows.first()).toContainText("Wes");
+  await expect(roundRows.first()).toContainText(String(new Date().getFullYear()));
+  await expect(page.locator("#golf-rounds-player-filter option", { hasText: "All players" })).toHaveCount(0);
+
+  // Switching the filter shows another player's log instead.
   await page.locator("#golf-rounds-player-filter").selectOption({ label: "Xia" });
   await expect(roundRows).toHaveCount(1);
   await expect(roundRows.first()).toContainText("Xia");
-  await page.locator("#golf-rounds-player-filter").selectOption({ label: "All players" });
-  await expect(roundRows).toHaveCount(2);
 
   // The suite is append-only, so other active members from earlier tests may
   // exist too — pick Wes/Xia explicitly rather than relying on the default

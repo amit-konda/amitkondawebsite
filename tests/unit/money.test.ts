@@ -83,12 +83,13 @@ describe("validateSessionResults", () => {
     expect(none.ok).toBe(false);
   });
 
-  it("rejects zero amounts", () => {
+  it("allows zero amounts", () => {
     const r = validateSessionResults([
-      { memberId: "a", amountCents: 0 },
-      { memberId: "b", amountCents: 0 }
+      { memberId: "a", amountCents: 100 },
+      { memberId: "b", amountCents: -100 },
+      { memberId: "c", amountCents: 0 }
     ]);
-    expect(r.ok).toBe(false);
+    expect(r.ok).toBe(true);
   });
 });
 

@@ -63,9 +63,7 @@ const resolveSchema = z.object({
     .array(
       z.object({
         memberId: z.uuid(),
-        amountCents: z.number().int().refine((v) => v !== 0, {
-          message: "Amount must be non-zero."
-        })
+        amountCents: z.number().int()
       })
     )
     .nullable()

@@ -36,7 +36,6 @@ const resultSchema = z.object({
     .int()
     .min(-MAX_AMOUNT_CENTS)
     .max(MAX_AMOUNT_CENTS)
-    .refine((v) => v !== 0, "Amount must be non-zero")
 });
 
 const resultsSchema = z.array(resultSchema).min(2);

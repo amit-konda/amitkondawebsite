@@ -37,7 +37,7 @@ export interface ResultInput {
 
 /**
  * Validate a full set of session results:
- * >=2 participants, no duplicates, non-zero amounts within limits, exact zero sum.
+ * >=2 participants, no duplicates, amounts within limits, exact zero sum.
  */
 export function validateSessionResults(
   results: ResultInput[]
@@ -61,10 +61,6 @@ export function validateSessionResults(
     const cents = r.amountCents;
     if (!Number.isSafeInteger(cents)) {
       errors.push("Amounts must be whole cents.");
-      continue;
-    }
-    if (cents === 0) {
-      errors.push("Every participant amount must be non-zero.");
       continue;
     }
     if (Math.abs(cents) > MAX_AMOUNT_CENTS) {

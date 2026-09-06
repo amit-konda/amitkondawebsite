@@ -353,7 +353,8 @@ describe("session lifecycle", () => {
     expect(res.json.error?.fieldErrors?.results?.join()).toContain("sum");
     expect(await count(pokerSessions)).toBe(before);
 
-    // Zod-level rejection: zero amount.
+    // Zero passes the amount schema; this request is rejected only because it
+    // does not balance, rather than because one participant is at break-even.
     const zero = await postJson(
       "/api/poker/sessions",
       {
@@ -367,7 +368,7 @@ describe("session lifecycle", () => {
       { group }
     );
     expect(zero.status).toBe(400);
-    expect(JSON.stringify(zero.json.error?.fieldErrors)).toContain("non-zero");
+    expect(zero.json.error?.fieldErrors?.results?.join()).toContain("sum");
     expect(await count(pokerSessions)).toBe(before);
   });
 

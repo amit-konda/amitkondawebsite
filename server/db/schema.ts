@@ -28,6 +28,7 @@ export const handshakeBetStatus = pgEnum("handshake_bet_status", ["open", "settl
 export const golfCourse = pgEnum("golf_course", ["butler", "hancock"]);
 export const liveSessionEventKind = pgEnum("live_session_event_kind", ["buy_in", "cash_out"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
+export const settlementStatus = pgEnum("settlement_status", ["pending", "confirmed", "voided"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
   "sent",
@@ -50,6 +51,11 @@ export const members = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     displayName: text("display_name").notNull(),
     emailNormalized: text("email_normalized").notNull().unique(),
+    // Venmo handle (no leading "@"), shown to other members so a settle-up
+    // payment link can be prefilled with the right recipient. Optional —
+    // nothing breaks if it's unset, the payer just has to pick the person
+    // themselves inside Venmo.
+    venmoUsername: text("venmo_username"),
     status: memberStatus("status").notNull().default("active"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())
@@ -57,6 +63,10 @@ export const members = pgTable(
   (t) => [
     check("members_display_name_len", sql`char_length(${t.displayName}) between 1 and 80`),
     check("members_email_len", sql`char_length(${t.emailNormalized}) between 3 and 320`),
+    check(
+      "members_venmo_username_len",
+      sql`${t.venmoUsername} is null or char_length(${t.venmoUsername}) between 1 and 30`
+    ),
     index("members_status_idx").on(t.status)
   ]
 );
@@ -340,6 +350,48 @@ export const disputes = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// settlements — a self-attested "I paid this outside the app" record used to
+// settle up real balances. The app never moves money itself (Venmo has no
+// API for that, and most processors won't touch poker/gambling money
+// movement anyway) — a settlement just records that a Venmo (or other)
+// payment happened, starting "pending" and becoming "confirmed" once
+// someone taps confirm, at which point it nets against the ledger exactly
+// like a settled handshake bet does.
+// ---------------------------------------------------------------------------
+export const settlements = pgTable(
+  "settlements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromMemberId: uuid("from_member_id").notNull().references(() => members.id),
+    toMemberId: uuid("to_member_id").notNull().references(() => members.id),
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+    // e.g. "venmo" — free text rather than an enum since it's just a label
+    // for the payment link/UI, not something the app validates or acts on.
+    method: text("method").notNull().default("venmo"),
+    note: text("note"),
+    status: settlementStatus("status").notNull().default("pending"),
+    // Idempotency key — prevents double submission (mirrors poker_sessions).
+    requestKey: text("request_key").notNull().unique(),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id),
+    confirmedByMemberId: uuid("confirmed_by_member_id").references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    confirmedAt: ts("confirmed_at"),
+    voidedAt: ts("voided_at")
+  },
+  (t) => [
+    check("settlements_amount_positive", sql`${t.amountCents} > 0`),
+    check("settlements_amount_limit", sql`${t.amountCents} <= 100000000`),
+    check("settlements_distinct_members", sql`${t.fromMemberId} <> ${t.toMemberId}`),
+    check("settlements_method_len", sql`char_length(${t.method}) between 1 and 30`),
+    check("settlements_note_len", sql`${t.note} is null or char_length(${t.note}) <= 500`),
+    check("settlements_request_key_len", sql`char_length(${t.requestKey}) between 8 and 64`),
+    index("settlements_status_idx").on(t.status),
+    index("settlements_from_idx").on(t.fromMemberId),
+    index("settlements_to_idx").on(t.toMemberId)
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // email_deliveries — outbox + provider status tracking
 // ---------------------------------------------------------------------------
 export const emailDeliveries = pgTable(
@@ -449,6 +501,7 @@ export type GolfRoundRow = typeof golfRounds.$inferSelect;
 export type SessionResultRow = typeof sessionResults.$inferSelect;
 export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;
+export type SettlementRow = typeof settlements.$inferSelect;
 export type EmailDeliveryRow = typeof emailDeliveries.$inferSelect;
 export type AuditEventRow = typeof auditEvents.$inferSelect;
 export type WebhookEventRow = typeof webhookEvents.$inferSelect;

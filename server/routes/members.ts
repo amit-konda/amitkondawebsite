@@ -52,11 +52,22 @@ const createMemberSchema = z.object({
   welcomeEmail: z.boolean().optional()
 });
 
+// Raw input only — trimmed and stripped of a leading "@" (people paste it
+// out of habit) in the route handler, same place the empty-string-means-
+// clear-it convention for `email` is applied below.
+const venmoUsernameSchema = z.string().trim().max(31).optional().or(z.literal(""));
+
 const patchMemberSchema = z.object({
   displayName: displayNameSchema.optional(),
   email: emailSchema.optional().or(z.literal("")),
-  status: z.enum(["active", "inactive"]).optional()
+  status: z.enum(["active", "inactive"]).optional(),
+  venmoUsername: venmoUsernameSchema
 });
+
+const normalizeVenmoUsername = (s: string): string | null => {
+  const trimmed = s.trim().replace(/^@/, "");
+  return trimmed ? trimmed.slice(0, 30) : null;
+};
 
 const normalizeEmail = (s: string): string => s.trim().toLowerCase();
 
@@ -183,10 +194,13 @@ export function registerMembersRoutes(router: Router): void {
   });
 
   // GET /members — active members only, name asc. No emails, no counts.
+  // venmoUsername IS included: it's what a member shares to get paid, so
+  // there's no privacy reason to hide it from the rest of the group (needed
+  // client-side to prefill "Pay with Venmo" links on the settle-up screen).
   route(router, "get", "/members", async (ctx) => {
     requireGroup(ctx);
     const rows = await db
-      .select({ id: members.id, name: members.displayName })
+      .select({ id: members.id, name: members.displayName, venmoUsername: members.venmoUsername })
       .from(members)
       .where(eq(members.status, "active"))
       .orderBy(asc(members.displayName), asc(members.id));
@@ -195,7 +209,7 @@ export function registerMembersRoutes(router: Router): void {
 
   route(router, "get", "/admin/members", async (ctx) => {
     requireAdmin(ctx);
-    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, status: members.status }).from(members).orderBy(asc(members.displayName));
+    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, status: members.status, venmoUsername: members.venmoUsername }).from(members).orderBy(asc(members.displayName));
     return { members: rows };
   });
 
@@ -401,22 +415,24 @@ export function registerMembersRoutes(router: Router): void {
     const current = rows[0] ?? null;
     if (!current) throw notFound("Member not found.");
 
-    if (body.displayName === undefined && body.email === undefined && body.status === undefined) {
+    if (body.displayName === undefined && body.email === undefined && body.status === undefined && body.venmoUsername === undefined) {
       // Nothing to change — idempotent no-op.
       return {
         member: {
           id: current.id,
           name: current.displayName,
           email: current.emailNormalized,
-          status: current.status
+          status: current.status,
+          venmoUsername: current.venmoUsername
         }
       };
     }
 
-    const set: { displayName?: string; emailNormalized?: string; status?: "active" | "inactive" } = {};
+    const set: { displayName?: string; emailNormalized?: string; status?: "active" | "inactive"; venmoUsername?: string | null } = {};
     if (body.displayName !== undefined) set.displayName = body.displayName;
     if (body.email !== undefined) set.emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
     if (body.status !== undefined) set.status = body.status;
+    if (body.venmoUsername !== undefined) set.venmoUsername = normalizeVenmoUsername(body.venmoUsername);
 
     const updated = await db.transaction(async (tx) => {
       const result = await tx
@@ -427,7 +443,8 @@ export function registerMembersRoutes(router: Router): void {
           id: members.id,
           displayName: members.displayName,
           emailNormalized: members.emailNormalized,
-          status: members.status
+          status: members.status,
+          venmoUsername: members.venmoUsername
         });
       const row = result[0]!;
       await writeAudit(tx, {
@@ -435,8 +452,8 @@ export function registerMembersRoutes(router: Router): void {
         action: "member.update",
         entityType: "member",
         entityId: id,
-        beforeJson: { displayName: current.displayName, status: current.status },
-        afterJson: { displayName: row.displayName, status: row.status }
+        beforeJson: { displayName: current.displayName, status: current.status, venmoUsername: current.venmoUsername },
+        afterJson: { displayName: row.displayName, status: row.status, venmoUsername: row.venmoUsername }
       });
       return row;
     });
@@ -446,7 +463,8 @@ export function registerMembersRoutes(router: Router): void {
         id: updated.id,
         name: updated.displayName,
         email: updated.emailNormalized,
-        status: updated.status
+        status: updated.status,
+        venmoUsername: updated.venmoUsername
       }
     };
   });

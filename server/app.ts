@@ -15,6 +15,7 @@ import { registerLiveRoutes } from "./routes/live.js";
 import { registerBlackjackRoutes } from "./routes/blackjack.js";
 import { registerHandshakeRoutes } from "./routes/handshake.js";
 import { registerGolfRoutes } from "./routes/golf.js";
+import { registerSettlementRoutes } from "./routes/settlements.js";
 
 export function createAppRouter(): Router {
   const r = new Router();
@@ -29,6 +30,7 @@ export function createAppRouter(): Router {
   registerBlackjackRoutes(r);
   registerHandshakeRoutes(r);
   registerGolfRoutes(r);
+  registerSettlementRoutes(r);
   return r;
 }
 

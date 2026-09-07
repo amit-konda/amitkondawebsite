@@ -49,6 +49,7 @@ let base: string;
 interface MemberLite {
   id: string;
   name: string;
+  venmoUsername: string | null;
 }
 interface MembersListBody {
   members: MemberLite[];
@@ -239,7 +240,9 @@ describe("members + join requests API", () => {
     const body = (await res.json()) as MembersListBody;
     expect(body.members.map((m) => m.name)).toEqual(["Aaron", "Claire", "Existing"]);
     for (const m of body.members) {
-      expect(Object.keys(m).sort()).toEqual(["id", "name"]);
+      // No emails, no counts — venmoUsername is fine to expose (it's what a
+      // member shares to get paid) but nothing else private leaks through.
+      expect(Object.keys(m).sort()).toEqual(["id", "name", "venmoUsername"]);
     }
 
     const adminReq = await getJson("/admin/join-requests", { poker_session: group });
@@ -509,13 +512,14 @@ describe("members + join requests API", () => {
     const res = await patchJson(`/admin/members/${direct.id}`, { status: "inactive" }, admin);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      member: { id: string; name: string; email: string; status: string };
+      member: { id: string; name: string; email: string; status: string; venmoUsername: string | null };
     };
     expect(body.member).toEqual({
       id: direct.id,
       name: "Direct",
       email: "direct@example.com",
-      status: "inactive"
+      status: "inactive",
+      venmoUsername: null
     });
 
     // Inactive members disappear from the group-facing list.
@@ -530,8 +534,8 @@ describe("members + join requests API", () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.action, "member.update"), eq(auditEvents.entityId, direct.id)));
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active" });
-    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive" });
+    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active", venmoUsername: null });
+    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive", venmoUsername: null });
 
     // Unknown member id → 404.
     const nf = await patchJson(`/admin/members/${randomUUID()}`, { status: "inactive" }, admin);

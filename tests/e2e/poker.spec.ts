@@ -740,6 +740,111 @@ test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke
 
 // ---------------------------------------------------------------------------
 
+test("add past session: the +/- toggle sets a participant's sign without typing one", async ({ page }) => {
+  const deb = await seedMember(tdb, "Deb", "deb+e2e@example.com");
+  const eli = await seedMember(tdb, "Eli", "eli+e2e@example.com");
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Deb");
+  await openAddSession(page);
+
+  await checkParticipant(page, "Deb");
+  await checkParticipant(page, "Eli");
+
+  const rowFor = (name: string) => page.locator(".part-row").filter({ hasText: name });
+  const submit = page.getByRole("button", { name: /save session|submit|record session/i }).first();
+
+  // Both rows default to "+"; typing the same unsigned amount on each leaves
+  // them unbalanced (100 + 100, not 100 - 100).
+  await rowFor("Deb").locator(".part-amount").fill("100");
+  await rowFor("Eli").locator(".part-amount").fill("100");
+  await expect.poll(async () => remainderText(page)).not.toContain("$0.00");
+  await expect(submit).toBeDisabled();
+
+  // Tapping the minus toggle on Eli's row (no typed sign) balances the session.
+  await rowFor("Eli").locator(".sign-minus").click();
+  await expect(rowFor("Eli").locator(".sign-minus")).toHaveAttribute("aria-pressed", "true");
+  await expect(rowFor("Eli").locator(".sign-plus")).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(async () => remainderText(page)).toContain("$0.00");
+  await expect(submit).toBeEnabled();
+
+  await submit.click();
+
+  // Lands on the session detail view with Eli's result negative.
+  const table = page.locator(".results-table");
+  await expect(table).toBeVisible({ timeout: 15_000 });
+  await expect(table.getByText("Deb", { exact: true }).first()).toBeVisible();
+  await expect(table.getByText("Eli", { exact: true }).first()).toBeVisible();
+  await expect(table.getByText("-$100.00").first()).toBeVisible();
+
+  expect(deb.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
+test("overall settle up: pay with Venmo opens a prefilled link, then confirming updates the ledger", async ({ page }) => {
+  const finn = await seedMember(tdb, "Finn", "finn+e2e@example.com");
+  const grace = await seedMember(tdb, "Grace", "grace+e2e@example.com");
+  await seedSession(tdb, { participants: [{ memberId: finn.id, amountCents: -3000 }, { memberId: grace.id, amountCents: 3000 }] });
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Finn");
+  await page.getByRole("button", { name: "Overall", exact: true }).click();
+  await expect(page.locator(".overall-table")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator("#overall-heading")).toContainText("down 30.00");
+
+  await page.locator("#overall-settle-btn").click();
+  // Scoped to the modal — the (hidden) Poker-tab settle-up card renders its
+  // own .settle-row elements for the same imbalance and would otherwise
+  // double-match.
+  const modal = page.locator("#modal-root");
+  const transferRow = modal.locator(".settle-row").filter({ hasText: "Grace" });
+  await expect(transferRow).toContainText("Finn");
+  await expect(transferRow).toContainText("pays");
+  await expect(transferRow.locator(".settle-amount")).toHaveText("30.00");
+
+  // "Pay with Venmo" opens a prefilled Venmo link in a new tab and records a
+  // pending settlement — Venmo itself has no way to tell the app the money
+  // actually moved, so nothing on the ledger changes yet. Venmo's real
+  // servers aren't reachable from the test sandbox, so intercept that one
+  // request and fulfill it locally rather than asserting on a page that
+  // would otherwise land on a network-error screen.
+  await page.context().route("https://venmo.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>venmo</body></html>" })
+  );
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    transferRow.locator('button[data-action="pay"]').click(),
+  ]);
+  await popup.waitForLoadState();
+  expect(popup.url()).toContain("venmo.com");
+  expect(popup.url()).toContain("amount=30.00");
+  await popup.close();
+
+  const pendingRow = modal.locator(".settle-row-pending");
+  await expect(pendingRow).toBeVisible({ timeout: 10_000 });
+  await expect(pendingRow).toContainText("Finn");
+  await expect(pendingRow).toContainText("paid");
+  await expect(pendingRow).toContainText("Grace");
+  await expect(pendingRow).toContainText("Pending");
+
+  // Confirming moves real money off the ledger. The suite is append-only, so
+  // other members from earlier tests may still owe each other money —
+  // assert Finn/Grace specifically dropped out of the transfer list rather
+  // than assuming the whole modal is now empty.
+  await pendingRow.locator('button[data-action="confirm"]').click();
+  await expect(page.getByText("Payment confirmed — balances updated.")).toBeVisible({ timeout: 10_000 });
+  await expect(modal.locator(".settle-row-pending")).toHaveCount(0);
+  await expect(modal.locator(".settle-row").filter({ hasText: "Grace" })).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#overall-heading")).toHaveText("You're settled up across everything", { timeout: 10_000 });
+
+  expect(grace.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
 // Sanity: the seeded dispute-token helper hashes exactly like the server.
 test("token hash round-trips the production hasher", () => {
   expect(hashToken("e2e-token-abc")).toMatch(/^[0-9a-f]{64}$/);

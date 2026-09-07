@@ -126,6 +126,8 @@ const COURSE_PAR = { butler: 27, hancock: 35 };
  *   handshakeLedger: LedgerData|null,
  *   handshakeBets: any[],
  *   handshakeCategories: any[],
+ *   settlementLedger: LedgerData|null,
+ *   settlements: any[],
  *   sessionSearch: string,
  *   sessionFilter: "all"|"disputed"|"voided",
  *   settleTransfers: any[],
@@ -155,6 +157,8 @@ const state = {
   handshakeLedger: null,
   handshakeBets: [],
   handshakeCategories: [],
+  settlementLedger: null,
+  settlements: [],
   sessionSearch: "",
   sessionFilter: "all",
   settleTransfers: [],
@@ -309,6 +313,23 @@ function computeSettleUp(rows) {
     if (c.remaining <= 0) j++;
   }
   return transfers;
+}
+
+/**
+ * Builds a Venmo web link with the payment prefilled ("pay" mode, amount,
+ * and a note). Venmo has no API for a third-party app to confirm the money
+ * actually moved, so this is a UI convenience only — the app tracks whether
+ * it happened via its own pending -> confirmed settlement record, not by
+ * asking Venmo. When the recipient hasn't saved a Venmo username, the link
+ * still opens Venmo with the amount/note ready — the payer just has to pick
+ * the person themselves.
+ * @param {{recipientUsername?: string|null, amountCents: number, note: string}} opts
+ * @returns {string}
+ */
+function venmoPayLink(opts) {
+  const params = new URLSearchParams({ txn: "pay", amount: (opts.amountCents / 100).toFixed(2), note: opts.note });
+  if (opts.recipientUsername) params.set("recipients", opts.recipientUsername.replace(/^@/, ""));
+  return `https://venmo.com/?${params.toString()}`;
 }
 
 /**
@@ -1003,21 +1024,24 @@ async function renderOverallDashboard() {
   body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   const membersOk = await loadMembers();
   if (!membersOk) { showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
-  await Promise.allSettled([loadLedger(), loadSessions(true), loadBlackjackLedger(), loadBlackjackSessions(), loadHandshakeLedger(), loadHandshakeBets()]);
+  await Promise.allSettled([loadLedger(), loadSessions(true), loadBlackjackLedger(), loadBlackjackSessions(), loadHandshakeLedger(), loadHandshakeBets(), loadSettlementLedger(), loadSettlements()]);
   renderOverallLedger();
 }
 
 /**
- * Merge the three per-game ledgers into one row per member, keeping each
+ * Merge the four per-game ledgers into one row per member, keeping each
  * game's contribution separately so the overall table can show a column
- * per game alongside the combined net.
+ * per game alongside the combined net. Confirmed settlements count as a
+ * fourth "game" here — a payment doesn't belong to poker, blackjack, or
+ * handshake bets specifically, it just pays down whatever the combined net
+ * owed.
  */
 function buildOverallRows() {
   const byId = new Map();
   const ensure = (row) => {
     let cur = byId.get(row.memberId);
     if (!cur) {
-      cur = { memberId: row.memberId, name: row.name, isViewer: false, pokerCents: 0, blackjackCents: 0, handshakeCents: 0, sessionsPlayed: 0 };
+      cur = { memberId: row.memberId, name: row.name, isViewer: false, pokerCents: 0, blackjackCents: 0, handshakeCents: 0, settlementCents: 0, sessionsPlayed: 0 };
       byId.set(row.memberId, cur);
     }
     return cur;
@@ -1025,7 +1049,8 @@ function buildOverallRows() {
   for (const row of state.ledger?.rows ?? []) { const cur = ensure(row); cur.pokerCents += row.netCents; cur.sessionsPlayed += row.sessionsPlayed; cur.isViewer ||= row.isViewer; }
   for (const row of state.blackjackLedger?.rows ?? []) { const cur = ensure(row); cur.blackjackCents += row.netCents; cur.sessionsPlayed += row.sessionsPlayed; cur.isViewer ||= row.isViewer; }
   for (const row of state.handshakeLedger?.rows ?? []) { const cur = ensure(row); cur.handshakeCents += row.netCents; cur.isViewer ||= row.isViewer; }
-  const rows = [...byId.values()].map((r) => ({ ...r, netCents: r.pokerCents + r.blackjackCents + r.handshakeCents }));
+  for (const row of state.settlementLedger?.rows ?? []) { const cur = ensure(row); cur.settlementCents += row.netCents; cur.isViewer ||= row.isViewer; }
+  const rows = [...byId.values()].map((r) => ({ ...r, netCents: r.pokerCents + r.blackjackCents + r.handshakeCents + r.settlementCents }));
   rows.sort((a, b) => b.netCents - a.netCents || a.name.localeCompare(b.name));
   return rows;
 }
@@ -1049,6 +1074,7 @@ function renderOverallLedger() {
       { label: "Poker", value: viewerRow.pokerCents },
       { label: "Blackjack", value: viewerRow.blackjackCents },
       { label: "Bets", value: viewerRow.handshakeCents },
+      { label: "Settlements", value: viewerRow.settlementCents },
     ].map((s) => `<div class="overall-stat"><div class="overall-stat-label">${esc(s.label)}</div><div class="overall-stat-value ${moneyClass(s.value)}">${esc(formatCents(s.value))}</div></div>`).join("");
   } else {
     statsEl.hidden = true;
@@ -1059,30 +1085,122 @@ function renderOverallLedger() {
   for (const s of state.sessions) if (s.status !== "voided") for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Poker · ${s.title || "Session"}`, amount: p.amountCents });
   for (const s of state.blackjackSessions) for (const p of s.participants) activity.get(p.memberId)?.push({ date: s.playedAt, label: `Blackjack · ${s.title || "Session"}`, amount: p.amountCents });
   for (const b of state.handshakeBets) { const settled = b.status === "settled" && b.winnerMemberId; const firstAmount = settled ? (b.winnerMemberId === b.firstMemberId ? b.amountCents : -b.amountCents) : 0; const secondAmount = -firstAmount; activity.get(b.firstMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: firstAmount, open: !settled }); activity.get(b.secondMemberId)?.push({ date: b.createdAt, label: `Handshake · ${b.description}`, amount: secondAmount, open: !settled }); }
+  for (const s of state.settlements) if (s.status === "confirmed") { activity.get(s.fromMemberId)?.push({ date: s.createdAt, label: `Settlement · paid ${s.toName}`, amount: -s.amountCents }); activity.get(s.toMemberId)?.push({ date: s.createdAt, label: `Settlement · from ${s.fromName}`, amount: s.amountCents }); }
   const cell = (cents, bold) => `<td class="num money ${moneyClass(cents)}${bold ? " overall-net-cell" : ""}">${esc(formatCents(cents))}</td>`;
   const bodyRows = rows.map((r) => {
     const items = (activity.get(r.memberId) ?? []).sort((a, b) => b.date.localeCompare(a.date));
     const history = items.length ? `<details class="ledger-history"><summary>Recent activity</summary><div class="ledger-history-list">${items.slice(0, 8).map((item) => `<div class="ledger-history-row"><span>${esc(new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }))} · ${esc(item.label)}</span><strong class="${item.open ? "zero" : moneyClass(item.amount)}">${item.open ? "Open" : esc(formatCents(item.amount))}</strong></div>`).join("")}</div></details>` : "";
-    return `<tr class="${r.isViewer ? "row-you" : ""}"><td>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}${history}</td>${cell(r.pokerCents)}${cell(r.blackjackCents)}${cell(r.handshakeCents)}${cell(r.netCents, true)}</tr>`;
+    return `<tr class="${r.isViewer ? "row-you" : ""}"><td>${esc(r.name)}${r.isViewer ? '<span class="you-tag">you</span>' : ""}${history}</td>${cell(r.pokerCents)}${cell(r.blackjackCents)}${cell(r.handshakeCents)}${cell(r.settlementCents)}${cell(r.netCents, true)}</tr>`;
   }).join("");
-  const totals = rows.reduce((acc, r) => ({ poker: acc.poker + r.pokerCents, blackjack: acc.blackjack + r.blackjackCents, handshake: acc.handshake + r.handshakeCents, net: acc.net + r.netCents }), { poker: 0, blackjack: 0, handshake: 0, net: 0 });
-  body.innerHTML = `<table class="overall-table"><thead><tr><th>Player</th><th class="num">Poker</th><th class="num">Blackjack</th><th class="num">Handshake</th><th class="num">Overall net</th></tr></thead><tbody>${bodyRows}</tbody><tfoot><tr><td>Total</td><td class="num money">${esc(formatCents(totals.poker))}</td><td class="num money">${esc(formatCents(totals.blackjack))}</td><td class="num money">${esc(formatCents(totals.handshake))}</td><td class="num money">${esc(formatCents(totals.net))}</td></tr></tfoot></table>`;
+  const totals = rows.reduce((acc, r) => ({ poker: acc.poker + r.pokerCents, blackjack: acc.blackjack + r.blackjackCents, handshake: acc.handshake + r.handshakeCents, settlement: acc.settlement + r.settlementCents, net: acc.net + r.netCents }), { poker: 0, blackjack: 0, handshake: 0, settlement: 0, net: 0 });
+  body.innerHTML = `<table class="overall-table"><thead><tr><th>Player</th><th class="num">Poker</th><th class="num">Blackjack</th><th class="num">Handshake</th><th class="num">Settlements</th><th class="num">Overall net</th></tr></thead><tbody>${bodyRows}</tbody><tfoot><tr><td>Total</td><td class="num money">${esc(formatCents(totals.poker))}</td><td class="num money">${esc(formatCents(totals.blackjack))}</td><td class="num money">${esc(formatCents(totals.handshake))}</td><td class="num money">${esc(formatCents(totals.settlement))}</td><td class="num money">${esc(formatCents(totals.net))}</td></tr></tfoot></table>`;
 }
 
+/**
+ * Settle up modal: shows the fewest-transfers suggestion (as before, still
+ * copyable as text) plus a "Pay with Venmo" button per transfer. Venmo
+ * itself has no way to tell the app a payment landed, so clicking it opens
+ * a prefilled Venmo link AND records a "pending" settlement — a separate
+ * "Awaiting confirmation" section lists those until someone (usually the
+ * recipient, but anyone in the group can) taps "Mark received", at which
+ * point it becomes a real ledger entry and the balances above update.
+ */
 function openOverallSettleModal() {
-  const rows = buildOverallRows();
-  const transfers = computeSettleUp(rows);
+  let transfers = computeSettleUp(buildOverallRows());
+  const memberById = new Map(state.members.map((m) => [m.id, m]));
   const body = document.createElement("div");
   body.className = "stack";
-  const list = transfers.length
-    ? transfers.map((t) => `<div class="settle-row"><span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span><span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span></div>`).join("")
-    : `<p class="empty-state">Everyone is settled up.</p>`;
-  body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, and handshake bets.</p>${list}<div class="settle-actions"><button type="button" class="btn" id="overall-settle-copy">Copy as text</button></div>`;
   openModal({ title: "Settle up", body });
-  q(body, "#overall-settle-copy").addEventListener("click", async () => {
-    const ok = await copyTextToClipboard(settleUpAsText(transfers, "Settle up — Overall"));
-    showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
-  });
+  render();
+
+  function render() {
+    const pending = (state.settlements ?? []).filter((s) => s.status === "pending");
+    const pendingHtml = pending.length
+      ? `<div class="settle-pending-section"><p class="form-hint">Awaiting confirmation</p>${pending.map(pendingRowHtml).join("")}</div>`
+      : "";
+    const transferHtml = transfers.length
+      ? transfers.map(transferRowHtml).join("")
+      : `<p class="empty-state">Everyone is settled up.</p>`;
+    body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, handshake bets, and settlements. We mainly use Venmo.</p>${pendingHtml}${transferHtml}<div class="settle-actions"><button type="button" class="btn" data-action="copy">Copy as text</button></div>`;
+    wire();
+  }
+
+  function transferRowHtml(t) {
+    return `<div class="settle-row" data-from="${esc(t.fromId)}" data-to="${esc(t.toId)}" data-amount="${t.amountCents}">
+      <span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span>
+      <span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span>
+      <button type="button" class="btn btn-small" data-action="pay">Pay with Venmo</button>
+    </div>`;
+  }
+
+  function pendingRowHtml(s) {
+    return `<div class="settle-row settle-row-pending" data-id="${esc(s.id)}">
+      <span class="settle-parties"><strong>${esc(s.fromName)}</strong> <span class="muted-inline">paid</span> <strong>${esc(s.toName)}</strong> <span class="chip chip-pending">Pending</span></span>
+      <span class="settle-amount money">${esc(formatPlainCents(s.amountCents))}</span>
+      <span class="settle-pending-actions">
+        <button type="button" class="btn btn-small" data-action="confirm">Mark received</button>
+        <button type="button" class="btn btn-ghost btn-small" data-action="void">Cancel</button>
+      </span>
+    </div>`;
+  }
+
+  function wire() {
+    body.querySelectorAll("button[data-action]").forEach((btn) => btn.addEventListener("click", () => onAction(/** @type {HTMLButtonElement} */ (btn))));
+  }
+
+  async function onAction(btn) {
+    const action = btn.dataset.action;
+    if (action === "copy") {
+      const ok = await copyTextToClipboard(settleUpAsText(transfers, "Settle up — Overall"));
+      showBanner({ kind: ok ? "info" : "error", message: ok ? "Copied settle-up instructions to your clipboard." : "Couldn't copy — try selecting the text manually." });
+      return;
+    }
+    const row = /** @type {HTMLElement} */ (btn.closest(".settle-row"));
+    if (action === "pay") {
+      const fromMemberId = row.dataset.from;
+      const toMemberId = row.dataset.to;
+      const amountCents = Number(row.dataset.amount);
+      const toMember = memberById.get(toMemberId);
+      window.open(venmoPayLink({ recipientUsername: toMember?.venmoUsername, amountCents, note: "Poker Ledger settle up" }), "_blank", "noopener");
+      btn.disabled = true;
+      btn.textContent = "Recording…";
+      try {
+        await api("/settlements", { method: "POST", body: { requestKey: crypto.randomUUID(), fromMemberId, toMemberId, amountCents, method: "venmo" } });
+        await loadSettlements();
+        render();
+      } catch (e) {
+        showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Opened Venmo, but couldn't record the payment here — try again.") });
+        btn.disabled = false;
+        btn.textContent = "Pay with Venmo";
+      }
+      return;
+    }
+    const id = row.dataset.id;
+    if (action === "confirm") {
+      btn.disabled = true;
+      try {
+        await api(`/settlements/${encodeURIComponent(id)}/confirm`, { method: "POST" });
+        await Promise.all([loadSettlements(), loadSettlementLedger(), loadLedger(), loadBlackjackLedger(), loadHandshakeLedger()]);
+        transfers = computeSettleUp(buildOverallRows());
+        renderOverallLedger();
+        render();
+        showBanner({ kind: "info", message: "Payment confirmed — balances updated." });
+      } catch (e) {
+        showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't confirm the payment.") });
+        btn.disabled = false;
+      }
+    } else if (action === "void") {
+      btn.disabled = true;
+      try {
+        await api(`/settlements/${encodeURIComponent(id)}/void`, { method: "POST" });
+        await loadSettlements();
+        render();
+      } catch (e) {
+        showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't cancel.") });
+        btn.disabled = false;
+      }
+    }
+  }
 }
 function ledgerActivityDetails(memberId, kind) {
   const items = [];
@@ -1129,6 +1247,27 @@ async function loadHandshakeBets() {
     if (state.gameTab === "handshake" || state.gameTab === "overall") await loadHandshakeLedger();
   } catch (e) {
     renderErrorBox(el("handshake-settled-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake bets."), loadHandshakeBets);
+  }
+}
+
+/** Confirmed-settlements-only net per member — see server/routes/settlements.ts. */
+async function loadSettlementLedger() {
+  try {
+    const d = await api("/settlements/ledger");
+    state.settlementLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] };
+  } catch {
+    // Non-fatal: the overall ledger just renders without the settlements
+    // column contributing anything until this succeeds on retry.
+  }
+}
+
+/** Recent settlements of every status (pending/confirmed/voided), newest first. */
+async function loadSettlements() {
+  try {
+    const d = await api("/settlements");
+    state.settlements = d.settlements ?? [];
+  } catch {
+    // Non-fatal — the settle-up modal falls back to "no pending payments".
   }
 }
 
@@ -2214,7 +2353,7 @@ function openSessionModal(opts) {
 
   playedAtEl.value = editing ? toLocalInputValue(new Date(editing.playedAt)) : toLocalInputValue(new Date());
 
-  /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement}[]} */
+  /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement, sign: "+"|"-"}[]} */
   const rows = [];
   const resultByMember = new Map((editing?.participants ?? []).map((p) => [p.memberId, p.amountCents]));
   const entries = [];
@@ -2234,22 +2373,57 @@ function openSessionModal(opts) {
     row.innerHTML = `
       <input type="checkbox" class="part-check" id="${esc(checkId)}">
       <label for="${esc(checkId)}" class="part-name">${esc(e.name)}${e.active ? "" : ' <span class="part-inactive">(inactive)</span>'}</label>
-      <input type="text" inputmode="text" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="+0.00 or -0.00" autocomplete="off" hidden>`;
+      <div class="part-sign" role="group" aria-label="Up or down for ${esc(e.name)}" hidden>
+        <button type="button" class="sign-btn sign-plus is-active" data-sign="+" aria-pressed="true">+</button>
+        <button type="button" class="sign-btn sign-minus" data-sign="-" aria-pressed="false">&minus;</button>
+      </div>
+      <input type="text" inputmode="decimal" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="0.00" autocomplete="off" hidden>`;
     const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
     const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
+    const signWrap = /** @type {HTMLElement} */ (q(row, ".part-sign"));
+    const signPlusBtn = /** @type {HTMLButtonElement} */ (q(row, ".sign-plus"));
+    const signMinusBtn = /** @type {HTMLButtonElement} */ (q(row, ".sign-minus"));
+    /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement, sign: "+"|"-"}} */
+    const rowState = { id: e.id, row, check, amount, sign: "+" };
+    function setSign(sign) {
+      rowState.sign = sign;
+      signPlusBtn.classList.toggle("is-active", sign === "+");
+      signPlusBtn.setAttribute("aria-pressed", String(sign === "+"));
+      signMinusBtn.classList.toggle("is-active", sign === "-");
+      signMinusBtn.setAttribute("aria-pressed", String(sign === "-"));
+    }
     if (resultByMember.has(e.id)) {
       check.checked = true;
-      amount.value = toDollarsInput(/** @type {number} */ (resultByMember.get(e.id)));
+      const cents = /** @type {number} */ (resultByMember.get(e.id));
+      setSign(cents < 0 ? "-" : "+");
+      amount.value = formatPlainCents(cents);
       amount.hidden = false;
+      signWrap.hidden = false;
     }
     check.addEventListener("change", () => {
       amount.hidden = !check.checked;
+      signWrap.hidden = !check.checked;
       if (check.checked) amount.focus();
       recompute();
     });
+    signPlusBtn.addEventListener("click", () => { setSign("+"); recompute(); });
+    signMinusBtn.addEventListener("click", () => { setSign("-"); recompute(); });
     amount.addEventListener("input", recompute);
     membersEl.appendChild(row);
-    rows.push({ id: e.id, row, check, amount });
+    rows.push(rowState);
+  }
+
+  /**
+   * Combines a row's amount input with its +/- toggle into cents, or null if
+   * empty/invalid. An explicit +/- typed into the field wins (so pasting or
+   * typing a signed amount still works); otherwise the tap toggle supplies
+   * the sign for a plain unsigned amount.
+   */
+  function rowCents(r) {
+    const raw = r.amount.value.trim();
+    if (raw === "") return null;
+    if (/^[+-]/.test(raw)) return parseDollarsToCents(raw);
+    return parseDollarsToCents((r.sign === "-" ? "-" : "") + raw);
   }
 
   function recompute() {
@@ -2260,7 +2434,7 @@ function openSessionModal(opts) {
     for (const r of rows) {
       if (!r.check.checked) continue;
       checkedCount += 1;
-      const v = parseDollarsToCents(r.amount.value);
+      const v = rowCents(r);
       if (v === null) {
         r.row.classList.add("is-invalid");
         if (r.amount.value.trim() === "") missing += 1;
@@ -2273,7 +2447,7 @@ function openSessionModal(opts) {
     const reasons = [];
     if (checkedCount < 2) reasons.push("Select at least two participants.");
     if (missing > 0) reasons.push("Enter an amount for every selected participant.");
-    if (invalid > 0) reasons.push("Amounts must look like +12.50, -5 or 10000 (two decimals max).");
+    if (invalid > 0) reasons.push("Amounts must look like 12.50 or 10000 (two decimals max).");
     if (reasons.length === 0 && sum !== 0) reasons.push("The amounts must balance to exactly $0.00.");
     remainderEl.textContent = "Remaining to balance: " + formatCents(-sum).replace(/^\+/, "");
     remainderEl.classList.toggle("remainder-ok", sum === 0);
@@ -2290,7 +2464,7 @@ function openSessionModal(opts) {
     const results = [];
     for (const r of rows) {
       if (!r.check.checked) continue;
-      const v = parseDollarsToCents(r.amount.value);
+      const v = rowCents(r);
       if (v === null) return; // safely unreachable while submit is enabled
       results.push({ memberId: r.id, amountCents: v });
     }
@@ -2901,8 +3075,8 @@ function buildMemberRow(m, refresh) {
   edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
   edit.addEventListener("click", () => {
     const body = document.createElement("form"); body.className = "stack";
-    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
-    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
+    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
+    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, venmoUsername: v } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
     openModal({ title: "Edit member", body });
   });
   row.appendChild(edit);

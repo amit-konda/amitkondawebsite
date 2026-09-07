@@ -567,7 +567,32 @@ textarea.input { resize: vertical; min-height: 88px; }
 .part-name { flex: 1; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
 .part-inactive { color: var(--muted); font-size: 0.82rem; font-style: italic; }
 
-.part-amount { width: 140px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+/* Up/down toggle beside the amount field — lets a participant's result be
+   flagged +/- with a tap instead of typing a sign on a mobile keyboard. */
+.part-sign {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid rgba(30, 55, 43, 0.13);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sign-btn {
+  width: 34px;
+  height: 44px;
+  border: none;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.sign-btn + .sign-btn { border-left: 1px solid rgba(30, 55, 43, 0.13); }
+.sign-btn.is-active.sign-plus { background: var(--pos); color: #FFFFFF; }
+.sign-btn.is-active.sign-minus { background: var(--neg); color: #FFFFFF; }
+.sign-btn:focus-visible { outline: 2px solid var(--felt); outline-offset: -2px; }
+
+.part-amount { width: 110px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
 .part-row.is-invalid .part-amount { border-color: var(--neg); outline: none; box-shadow: 0 0 0 1px var(--neg); }
 
 .remainder { font-weight: 700; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
@@ -774,8 +799,15 @@ textarea.input { resize: vertical; min-height: 88px; }
   .topbar { padding: 14px 16px 4px; gap: 10px; }
   .topbar-controls { width: 100%; margin-left: 0; }
   .viewer-select { min-width: 0; flex: 1; max-width: none; }
-  .game-tabs { order: 3; width: 100%; }
-  .game-tab { flex: 1; }
+  /* Five tabs (one two-word: "Handshake bets") don't fit an equal-width
+     squeeze on a phone without wrapping labels and overflowing the page —
+     scroll the strip horizontally instead, same as any mobile tab bar with
+     more tabs than fit. Tabs keep their natural width/whitespace so labels
+     never wrap; a tab left partially cut off at the edge is the hint that
+     there's more to swipe to. */
+  .game-tabs { order: 3; width: 100%; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .game-tabs::-webkit-scrollbar { display: none; }
+  .game-tab { flex: none; white-space: nowrap; }
 
   main { padding: 12px 14px 48px; }
 
@@ -793,7 +825,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   .sess-title { white-space: normal; }
   .sess-chev { margin-left: auto; }
 
-  .part-amount { width: 120px; }
+  .part-amount { width: 92px; }
+  .sign-btn { width: 30px; }
 }
 
 @media (max-width: 380px) {
@@ -906,6 +939,9 @@ textarea.input { resize: vertical; min-height: 88px; }
   .live-modal-actions .btn { flex: 1; }
   .live-player-actions { width: 100%; }
   .live-player-actions .live-cashout { flex: 1; width: auto; }
+  .settle-row { flex-wrap: wrap; }
+  .settle-row .btn, .settle-pending-actions { width: 100%; }
+  .settle-pending-actions .btn { flex: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -943,6 +979,12 @@ textarea.input { resize: vertical; min-height: 88px; }
 .muted-inline { color: var(--muted); }
 .settle-amount { font-weight: 700; }
 .settle-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+
+/* Settle up modal: pending (unconfirmed) payments awaiting a "Mark received" */
+.settle-pending-section { margin-bottom: 8px; }
+.settle-row-pending { background: rgba(226, 205, 155, 0.12); border-radius: 10px; padding-left: 10px; padding-right: 10px; }
+.settle-pending-actions { display: flex; gap: 8px; flex: none; }
+.chip-pending { background: #FBF3E1; border-color: #E2CD9B; color: #5C4B15; }
 
 /* Sessions toolbar + filters */
 .sessions-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }

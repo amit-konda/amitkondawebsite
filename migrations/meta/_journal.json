@@ -57,6 +57,13 @@
       "when": 1788377542535,
       "tag": "0007_golf_rounds",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788766561096,
+      "tag": "0008_normal_jack_flag",
+      "breakpoints": true
     }
   ]
 }

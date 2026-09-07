@@ -111,6 +111,7 @@ const COURSE_PAR = { butler: 27, hancock: 35 };
  * @type {{
  *   status: AuthStatus|null,
  *   members: Member[],
+ *   membersError: ApiError|null,
  *   ledger: LedgerData|null,
  *   sessions: SessionSummary[],
  *   nextCursor: string|null,
@@ -142,6 +143,7 @@ const COURSE_PAR = { butler: 27, hancock: 35 };
 const state = {
   status: null,
   members: [],
+  membersError: null,
   ledger: null,
   sessions: [],
   nextCursor: null,
@@ -506,6 +508,27 @@ function friendlyMessage(err, fallback) {
     return "The poker server isn't ready yet — it may still be starting up. Try again in a moment.";
   }
   return err.message || fallback;
+}
+
+/**
+ * Keep member-loading failures actionable without exposing server internals.
+ * The API error is retained by loadMembers so the dashboard can distinguish
+ * an expired login from a deployment/database failure.
+ * @returns {string}
+ */
+function memberLoadMessage() {
+  const err = /** @type {ApiError|undefined} */ (state.membersError);
+  if (!err) return "Couldn't load the member list. Try again.";
+  if (err.status === 401 || err.code === "unauthorized") {
+    return "Your login has expired. Please log in again, then retry.";
+  }
+  if (err.status === 404 || err.status === 405) {
+    return "The member API is unavailable in this deployment. Try again shortly.";
+  }
+  if (err.status >= 500) {
+    return "The member service is having trouble. Check the deployment/database and retry.";
+  }
+  return friendlyMessage(err, "Couldn't load the member list. Try again.");
 }
 
 /* ── Banners ───────────────────────────────────────────────── */
@@ -990,7 +1013,7 @@ async function renderDashboard() {
   if (!membersOk) {
     showBanner({
       kind: "error",
-      message: "Couldn't load the member list.",
+      message: memberLoadMessage(),
       retryLabel: "Retry",
       onRetry: renderDashboard,
     });
@@ -1008,7 +1031,7 @@ async function renderBlackjackDashboard() {
   ledgerBody.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   sessionsBody.innerHTML = `<div class="skel skel-block"></div>`;
   const membersOk = await loadMembers();
-  if (!membersOk) showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderBlackjackDashboard });
+  if (!membersOk) showBanner({ kind: "error", message: memberLoadMessage(), retryLabel: "Retry", onRetry: renderBlackjackDashboard });
   await Promise.allSettled([loadBlackjackLedger(), loadBlackjackSessions()]);
 }
 
@@ -1023,7 +1046,7 @@ async function renderOverallDashboard() {
   const body = el("overall-ledger-body");
   body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
   const membersOk = await loadMembers();
-  if (!membersOk) { showBanner({ kind: "error", message: "Couldn't load the member list.", retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
+  if (!membersOk) { showBanner({ kind: "error", message: memberLoadMessage(), retryLabel: "Retry", onRetry: renderOverallDashboard }); return; }
   await Promise.allSettled([loadLedger(), loadSessions(true), loadBlackjackLedger(), loadBlackjackSessions(), loadHandshakeLedger(), loadHandshakeBets(), loadSettlementLedger(), loadSettlements()]);
   renderOverallLedger();
 }
@@ -1819,9 +1842,14 @@ async function loadMembers() {
   try {
     const data = await api("/members");
     state.members = data.members ?? [];
+    state.membersError = null;
     fillViewerSelect();
     return true;
-  } catch {
+  } catch (err) {
+    // Preserve the structured API error so callers can show a useful,
+    // status-specific message instead of hiding every failure as the same
+    // generic member-list error.
+    state.membersError = err;
     return false;
   }
 }

@@ -982,7 +982,6 @@ async function renderDashboard() {
 async function renderBlackjackDashboard() {
   showView("blackjack");
   fillViewerSelect();
-  renderDealerBanner();
   const ledgerBody = el("blackjack-ledger-body");
   const sessionsBody = el("blackjack-sessions-body");
   ledgerBody.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
@@ -1630,19 +1629,7 @@ function renderBlackjackLedger() {
   const body = el("blackjack-ledger-body"); const ledger = state.blackjackLedger;
   const head = `<div class="ledger-head"><span>Player</span><span class="num lh-net">Net</span></div>`; const total = `<div class="ledger-total"><span>Total</span><span class="money">${formatCents(0)}</span></div>`;
   if (!ledger || ledger.rows.length === 0) { body.innerHTML = head + `<p class="empty-state">No blackjack sessions yet.</p>` + total; return; }
-  body.innerHTML = head + ledger.rows.map((r) => `<div class="ledger-row${r.isViewer ? " ledger-row-dealer" : ""}"><div class="lr-name">${esc(r.name)}${r.isViewer ? ' <span class="chip chip-resolved">dealer</span>' : ""}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"} · last played ${esc(r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never")}${ledgerActivityDetails(r.memberId, "blackjack")}</div></div>`).join("") + total;
-}
-
-/** Reflects the current viewer as "the dealer" in the Blackjack banner. */
-function renderDealerBanner() {
-  const viewer = state.status?.viewer ?? null;
-  const initials = viewer
-    ? viewer.name.split(/\s+/).filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase()
-    : "?";
-  el("dealer-avatar").textContent = initials || "?";
-  el("dealer-copy").textContent = viewer
-    ? `${viewer.name} · your result is calculated from the players'`
-    : "Pick your name when asked at sign-in — the selected profile becomes the dealer.";
+  body.innerHTML = head + ledger.rows.map((r) => `<div class="ledger-row"><div class="lr-name">${esc(r.name)}</div><div class="lr-net money ${moneyClass(r.netCents)}">${esc(formatCents(r.netCents))}</div><div class="lr-meta">${r.sessionsPlayed} ${r.sessionsPlayed === 1 ? "session" : "sessions"} · last played ${esc(r.lastPlayedAt ? formatDate(r.lastPlayedAt) : "never")}${ledgerActivityDetails(r.memberId, "blackjack")}</div></div>`).join("") + total;
 }
 
 async function loadBlackjackSessions() {
@@ -1655,15 +1642,13 @@ function renderBlackjackSessions() {
   if (!state.blackjackSessions.length) { body.innerHTML = `<p class="empty-state">No blackjack sessions yet.</p>`; return; }
   body.innerHTML = state.blackjackSessions.map((s) => {
     const date = new Date(s.playedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    const dealer = s.participants.find((p) => p.memberId === s.recordedBy);
-    const players = s.participants.filter((p) => p.memberId !== s.recordedBy).length;
-    const dealerFirstName = dealer ? dealer.name.split(" ")[0] : "Unknown";
-    const net = dealer ? dealer.amountCents : 0;
+    const players = s.participants.length;
+    const net = s.participants.reduce((sum, p) => sum + p.amountCents, 0);
     return `<button class="session-card" type="button" data-blackjack-id="${esc(s.id)}">
       <span class="sess-date">${esc(date)}</span>
       <span class="sess-summary">
         <span class="sess-title-strong">${esc(s.title || "Blackjack")}</span>
-        <span class="sess-title">${players} player${players === 1 ? "" : "s"} · dealer ${esc(dealerFirstName)}</span>
+        <span class="sess-title">${players} participant${players === 1 ? "" : "s"}</span>
       </span>
       <span class="money ${moneyClass(net)}">${esc(formatCents(net))}</span>
     </button>`;
@@ -1672,20 +1657,20 @@ function renderBlackjackSessions() {
 }
 
 function openBlackjackModal() {
-  if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first — the selected profile must be the dealer." }); return; }
-  const players = state.members.filter((m) => m.id !== state.status?.viewer?.id);
+  if (!state.status?.viewer) { showBanner({ kind: "info", message: "Select your name first so the session is marked as yours." }); return; }
+  const players = state.members;
   const body = document.createElement("div"); body.className = "stack";
-  body.innerHTML = `<div class="form-grid"><div><label class="field" for="bj-title">Session name (optional)</label><input id="bj-title" class="input" maxlength="120" placeholder="Friday blackjack"></div><div><label class="field" for="bj-date">Date</label><input id="bj-date" class="input" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div><fieldset class="part-fieldset"><legend class="field">Players and results</legend><p class="form-hint">Enter each player’s net result. Positive means the player won; negative means they lost. The dealer result is calculated automatically.</p><div id="bj-players"></div></fieldset><label class="check-row"><input id="bj-verify" type="checkbox"> I verify these results as the dealer.</label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="bj-cancel">Cancel</button><button type="button" class="btn btn-primary" id="bj-submit">Save blackjack session</button></div>`;
+  body.innerHTML = `<div class="form-grid"><div><label class="field" for="bj-title">Session name (optional)</label><input id="bj-title" class="input" maxlength="120" placeholder="Friday blackjack"></div><div><label class="field" for="bj-date">Date</label><input id="bj-date" class="input" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div><fieldset class="part-fieldset"><legend class="field">Players and results</legend><p class="form-hint">Add everyone who played, including the dealer. Enter each person’s net result: positive means they won, negative means they lost. Results must total $0.00.</p><div id="bj-players"></div></fieldset><div class="modal-actions"><button type="button" class="btn btn-ghost" id="bj-cancel">Cancel</button><button type="button" class="btn btn-primary" id="bj-submit">Save blackjack session</button></div>`;
   openModal({ title: "Add blackjack session", body, wide: true });
   const rows = players.map((m) => { const row = document.createElement("div"); row.className = "part-row"; row.innerHTML = `<span class="part-name">${esc(m.name)}</span><input class="input part-amount money" type="text" inputmode="decimal" placeholder="+$0.00 / -$0.00">`; q(body, "#bj-players").appendChild(row); return { memberId: m.id, amount: /** @type {HTMLInputElement} */ (q(row, ".part-amount")) }; });
   q(body, "#bj-cancel").addEventListener("click", closeModal);
-  q(body, "#bj-submit").addEventListener("click", async () => { const verify = /** @type {HTMLInputElement} */ (q(body, "#bj-verify")); const results = rows.map((r) => ({ memberId: r.memberId, amountCents: parseDollarsToCents(r.amount.value) })).filter((r) => r.amountCents !== null); if (!verify.checked) return showBanner({ kind: "error", message: "Confirm that you verified the results as the dealer." }); if (results.length === 0) return showBanner({ kind: "error", message: "Enter at least one player result." }); const submit = /** @type {HTMLButtonElement} */ (q(body, "#bj-submit")); submit.disabled = true; try { await api("/blackjack/sessions", { method: "POST", body: { requestKey: crypto.randomUUID(), playedAt: new Date(`${field("bj-date").value}T12:00:00`).toISOString(), title: field("bj-title").value.trim() || undefined, verifiedDealer: true, players: results } }); closeModal(); await Promise.all([loadBlackjackLedger(), loadBlackjackSessions()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the blackjack session.") }); submit.disabled = false; } });
+  q(body, "#bj-submit").addEventListener("click", async () => { const results = rows.map((r) => ({ memberId: r.memberId, amountCents: parseDollarsToCents(r.amount.value) })).filter((r) => r.amountCents !== null); if (results.length < 2) return showBanner({ kind: "error", message: "Enter results for at least two participants." }); const total = results.reduce((sum, r) => sum + r.amountCents, 0); if (total !== 0) return showBanner({ kind: "error", message: "Results must sum to exactly $0.00." }); if (results.every((r) => r.amountCents === 0)) return showBanner({ kind: "error", message: "Enter at least one non-zero participant result." }); const submit = /** @type {HTMLButtonElement} */ (q(body, "#bj-submit")); submit.disabled = true; try { await api("/blackjack/sessions", { method: "POST", body: { requestKey: crypto.randomUUID(), playedAt: new Date(`${field("bj-date").value}T12:00:00`).toISOString(), title: field("bj-title").value.trim() || undefined, players: results } }); closeModal(); await Promise.all([loadBlackjackLedger(), loadBlackjackSessions()]); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't save the blackjack session.") }); submit.disabled = false; } });
 }
 
 async function openBlackjackDetail(id, opts = {}) {
   if (!id) return;
   if (opts.push !== false) pushAppUrl({ tab: "blackjack", session: id });
-  try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><p class="detail-meta">Dealer: ${esc(s.participants.find((p) => p.memberId === s.dealerMemberId)?.name || "Unknown")}</p><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => { pushAppUrl({ tab: "blackjack" }); renderBlackjackDashboard(); }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
+  try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => { pushAppUrl({ tab: "blackjack" }); renderBlackjackDashboard(); }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
 }
 
 /**
@@ -3267,7 +3252,6 @@ async function onViewerChange() {
     }
     clearSkippedNamePrompt();
     fillViewerSelect();
-    renderDealerBanner();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
     dismissBanner("Pick your name in the top bar so the sessions you record are marked as yours.");

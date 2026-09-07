@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireGroup, requireViewer } from "../auth.js";
+import { requireAdmin, requireGroup, requireViewer } from "../auth.js";
 import { db } from "../db/client.js";
 import { handshakeBetCategories, handshakeBets, members } from "../db/schema.js";
 import { writeAudit } from "../domain/audit.js";
@@ -12,6 +12,15 @@ import type { Router } from "../router.js";
 const createSchema = z.object({ requestKey: z.string().min(8).max(64), description: z.string().min(1).max(200), amountCents: z.number().int().positive().max(MAX_AMOUNT_CENTS), firstMemberId: z.string().uuid(), secondMemberId: z.string().uuid(), categoryId: z.string().uuid().optional() });
 const settleSchema = z.object({ winnerMemberId: z.string().uuid() });
 const createCategorySchema = z.object({ name: z.string().trim().min(1).max(40) });
+const editSchema = z.object({
+  description: z.string().trim().min(1).max(200).optional(),
+  amountCents: z.number().int().positive().max(MAX_AMOUNT_CENTS).optional(),
+  firstMemberId: z.string().uuid().optional(),
+  secondMemberId: z.string().uuid().optional(),
+  categoryId: z.string().uuid().nullable().optional(),
+  winnerMemberId: z.string().uuid().nullable().optional(),
+  status: z.enum(["open", "settled"]).optional()
+});
 
 export function registerHandshakeRoutes(router: Router): void {
   router.get("/api/poker/handshake/ledger", async (ctx) => {
@@ -87,5 +96,41 @@ export function registerHandshakeRoutes(router: Router): void {
       afterJson: { status: "voided" }
     });
     return { ok: true };
+  });
+
+  router.patch("/api/poker/admin/handshake/bets/:id", async (ctx) => {
+    requireAdmin(ctx);
+    const id = ctx.params.id!;
+    const body = editSchema.parse(ctx.body);
+    const existing = (await db.select().from(handshakeBets).where(eq(handshakeBets.id, id)).limit(1))[0];
+    if (!existing) throw notFound();
+    if (existing.status === "voided") throw badRequest("voided_bet", "Voided bets cannot be edited.");
+    const first = body.firstMemberId ?? existing.firstMemberId;
+    const second = body.secondMemberId ?? existing.secondMemberId;
+    if (first === second) throw badRequest("same_member", "Choose two different members.");
+    const active = await db.select({ id: members.id }).from(members).where(and(eq(members.status, "active"), inArray(members.id, [first, second])));
+    if (active.length !== 2) throw badRequest("invalid_members", "Choose active members only.");
+    const winner = body.winnerMemberId !== undefined ? body.winnerMemberId : existing.winnerMemberId;
+    const status = body.status ?? existing.status;
+    if (winner && winner !== first && winner !== second) throw badRequest("invalid_winner", "Winner must be one of the two bettors.");
+    if (status === "settled" && !winner) throw badRequest("invalid_status", "A settled bet needs a winner.");
+    if (status === "open" && body.winnerMemberId === undefined && existing.status === "settled") throw badRequest("invalid_status", "Choose a winner or explicitly reopen the bet.");
+    if (body.categoryId) {
+      const category = (await db.select({ id: handshakeBetCategories.id }).from(handshakeBetCategories).where(eq(handshakeBetCategories.id, body.categoryId)).limit(1))[0];
+      if (!category) throw badRequest("invalid_category", "Choose a valid category.");
+    }
+    const updated = (await db.update(handshakeBets).set({
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      ...(body.amountCents !== undefined ? { amountCents: body.amountCents } : {}),
+      firstMemberId: first,
+      secondMemberId: second,
+      ...(body.categoryId !== undefined ? { categoryId: body.categoryId } : {}),
+      winnerMemberId: winner,
+      status,
+      settledAt: status === "settled" ? (existing.settledAt ?? new Date()) : null
+    }).where(eq(handshakeBets.id, id)).returning({ id: handshakeBets.id }))[0];
+    await writeAudit(db, { actorLabel: "admin", action: "handshake_bet.edit", entityType: "handshake_bet", entityId: id, beforeJson: { description: existing.description, amountCents: existing.amountCents, firstMemberId: existing.firstMemberId, secondMemberId: existing.secondMemberId, winnerMemberId: existing.winnerMemberId, status: existing.status }, afterJson: body });
+    if (!updated) throw new Error("Bet was not updated.");
+    return { ok: true, id: updated.id };
   });
 }

@@ -1372,7 +1372,22 @@ function renderHandshakeScreen() {
   }
 }
 
-/** Read-only bet details, plus (for a still-settled bet) a confirm-to-void action that reverses its effect on settled balances. */
+function openGameDisputeModal(entityType, entityId, onDone) {
+  const body = document.createElement("form"); body.className = "stack";
+  body.innerHTML = `<label class="field" for="game-dispute-reason">What is incorrect?<textarea id="game-dispute-reason" class="input" rows="4" maxlength="1000" required></textarea></label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="game-dispute-cancel">Cancel</button><button class="btn btn-primary" type="submit">Submit dispute</button></div>`;
+  openModal({ title: "Dispute record", body });
+  q(body, "#game-dispute-cancel").addEventListener("click", closeModal);
+  body.addEventListener("submit", async (ev) => { ev.preventDefault(); const reason = /** @type {HTMLTextAreaElement} */ (q(body, "textarea")).value.trim(); if (!reason) return; try { await api("/game-disputes", { method: "POST", body: { entityType, entityId, reason } }); closeModal(); showBanner({ kind: "info", message: "Dispute submitted for admin review." }); await onDone(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't submit the dispute.") }); } });
+}
+
+function openHandshakeEditModal(bet, onDone) {
+  const body = document.createElement("form"); body.className = "stack";
+  body.innerHTML = `<label class="field">Description<input id="hb-edit-description" class="input" maxlength="200" value="${esc(bet.description)}" required></label><label class="field">Amount<input id="hb-edit-amount" class="input money" inputmode="decimal" value="${esc(toDollarsInput(bet.amountCents))}" required></label><label class="field">First bettor<select id="hb-edit-first" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === bet.firstMember.id ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Second bettor<select id="hb-edit-second" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === bet.secondMember.id ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Winner<select id="hb-edit-winner" class="input"><option value="">Open</option><option value="${esc(bet.firstMember.id)}"${bet.winnerMember?.id === bet.firstMember.id ? " selected" : ""}>${esc(bet.firstMember.name)}</option><option value="${esc(bet.secondMember.id)}"${bet.winnerMember?.id === bet.secondMember.id ? " selected" : ""}>${esc(bet.secondMember.name)}</option></select></label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="hb-edit-cancel">Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>`;
+  openModal({ title: "Edit handshake bet", body }); q(body, "#hb-edit-cancel").addEventListener("click", closeModal);
+  body.addEventListener("submit", async (ev) => { ev.preventDefault(); const amount = parseDollarsToCents(field("hb-edit-amount").value); const first = field("hb-edit-first").value; const second = field("hb-edit-second").value; const winner = field("hb-edit-winner").value || null; if (amount == null || amount <= 0 || first === second) return showBanner({ kind: "error", message: "Enter a positive amount and two different bettors." }); try { await api(`/admin/handshake/bets/${encodeURIComponent(bet.id)}`, { method: "PATCH", body: { description: field("hb-edit-description").value.trim(), amountCents: amount, firstMemberId: first, secondMemberId: second, winnerMemberId: winner, status: winner ? "settled" : "open" } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); showBanner({ kind: "info", message: "Handshake bet updated." }); await onDone(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't update the bet.") }); } });
+}
+
+/** Bet details, dispute action, admin edit, and void action. */
 function openHandshakeBetDetailModal(bet) {
   const voided = bet.status === "voided";
   const body = document.createElement("div"); body.className = "stack";
@@ -1388,10 +1403,14 @@ function openHandshakeBetDetailModal(bet) {
     <p id="hb-void-error" class="form-error" role="alert" hidden></p>
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" id="hb-detail-close">Close</button>
+      ${state.status?.viewer && !voided ? `<button type="button" class="btn btn-danger" id="hb-dispute">Dispute bet</button>` : ""}
+      ${state.status?.admin && !voided ? `<button type="button" class="btn" id="hb-edit">Edit bet</button>` : ""}
       ${voided ? "" : `<button type="button" class="btn btn-danger" id="hb-void">Void bet</button>`}
     </div>`;
   openModal({ title: "Bet details", body });
   q(body, "#hb-detail-close").addEventListener("click", closeModal);
+  if (!voided && state.status?.viewer) q(body, "#hb-dispute").addEventListener("click", () => openGameDisputeModal("handshake_bet", bet.id, async () => { closeModal(); await loadHandshakeBets(); }));
+  if (!voided && state.status?.admin) q(body, "#hb-edit").addEventListener("click", () => openHandshakeEditModal(bet, async () => { closeModal(); }));
   if (voided) return;
   const voidBtn = /** @type {HTMLButtonElement} */ (q(body, "#hb-void"));
   const voidError = /** @type {HTMLElement} */ (q(body, "#hb-void-error"));
@@ -1733,7 +1752,14 @@ function openLogGolfRoundModal() {
   });
 }
 
-/** Read-only round details, plus (for whoever logged it, or an admin) a confirm-to-delete action. */
+function openGolfEditModal(round, onDone) {
+  const body = document.createElement("form"); body.className = "stack";
+  body.innerHTML = `<label class="field">Player<select id="golf-edit-player" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === round.memberId ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Course<select id="golf-edit-course" class="input">${GOLF_COURSES.map((c) => `<option value="${c}"${c === round.course ? " selected" : ""}>${esc(GOLF_COURSE_NAMES[c])}</option>`).join("")}</select></label><label class="field">Date<input id="golf-edit-date" class="input" type="date" value="${esc(round.playedAt.slice(0, 10))}" required></label><label class="field">Strokes<input id="golf-edit-strokes" class="input" type="number" min="1" max="300" value="${round.strokes}" required></label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="golf-edit-cancel">Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>`;
+  openModal({ title: "Edit golf round", body }); q(body, "#golf-edit-cancel").addEventListener("click", closeModal);
+  body.addEventListener("submit", async (ev) => { ev.preventDefault(); const strokes = Number(field("golf-edit-strokes").value); const date = field("golf-edit-date").value; if (!Number.isInteger(strokes) || strokes < 1 || strokes > 300 || !date) return showBanner({ kind: "error", message: "Enter a valid date and whole-number score." }); try { await api(`/admin/golf/rounds/${encodeURIComponent(round.id)}`, { method: "PATCH", body: { memberId: field("golf-edit-player").value, course: field("golf-edit-course").value, strokes, playedAt: new Date(`${date}T12:00:00`).toISOString() } }); closeModal(); await loadGolfCourseData(); showBanner({ kind: "info", message: "Golf round updated." }); await onDone(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't update the round.") }); } });
+}
+
+/** Round details with dispute, admin edit, and delete actions. */
 function openGolfRoundDetailModal(round) {
   const canDelete = Boolean(state.status?.admin || (round.recordedByMemberId && round.recordedByMemberId === state.status?.viewer?.id));
   const body = document.createElement("div"); body.className = "stack";
@@ -1746,10 +1772,14 @@ function openGolfRoundDetailModal(round) {
     <p id="golf-round-error" class="form-error" role="alert" hidden></p>
     <div class="modal-actions">
       <button type="button" class="btn btn-ghost" id="golf-round-close">Close</button>
+      ${state.status?.viewer ? `<button type="button" class="btn btn-danger" id="golf-round-dispute">Dispute round</button>` : ""}
+      ${state.status?.admin ? `<button type="button" class="btn" id="golf-round-edit">Edit round</button>` : ""}
       ${canDelete ? `<button type="button" class="btn btn-danger" id="golf-round-delete">Delete round</button>` : ""}
     </div>`;
   openModal({ title: "Round details", body });
   q(body, "#golf-round-close").addEventListener("click", closeModal);
+  if (state.status?.viewer) q(body, "#golf-round-dispute").addEventListener("click", () => openGameDisputeModal("golf_round", round.id, async () => { closeModal(); await loadGolfCourseData(); }));
+  if (state.status?.admin) q(body, "#golf-round-edit").addEventListener("click", () => openGolfEditModal(round, async () => { closeModal(); }));
   if (!canDelete) return;
   const deleteBtn = /** @type {HTMLButtonElement} */ (q(body, "#golf-round-delete"));
   const errorEl = /** @type {HTMLElement} */ (q(body, "#golf-round-error"));
@@ -1832,7 +1862,29 @@ function openBlackjackModal() {
 async function openBlackjackDetail(id, opts = {}) {
   if (!id) return;
   if (opts.push !== false) pushAppUrl({ tab: "blackjack", session: id });
-  try { const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`); const s = data.session; const body = document.createElement("div"); body.className = "card detailwrap"; body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div>`; showView("detail"); el("detail-body").innerHTML = ""; el("detail-body").appendChild(body); q(body, ".detail-back").addEventListener("click", () => { pushAppUrl({ tab: "blackjack" }); renderBlackjackDashboard(); }); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
+  try {
+    const data = await api(`/blackjack/sessions/${encodeURIComponent(id)}`);
+    const s = data.session;
+    const body = document.createElement("div");
+    body.className = "card detailwrap";
+    body.innerHTML = `<button class="detail-back" type="button">← Back to Blackjack</button><div class="detail-head"><h2>${esc(s.title || "Blackjack session")}</h2><span class="status-chip">${new Date(s.playedAt).toLocaleDateString()}</span></div><div class="detail-results">${s.participants.map((p) => `<div class="detail-result"><span>${esc(p.name)}</span><strong class="${p.amountCents > 0 ? "positive" : p.amountCents < 0 ? "negative" : "zero"}">${esc(formatCents(p.amountCents))}</strong></div>`).join("")}</div><div class="detail-admin-actions" data-actions></div>`;
+    showView("detail");
+    el("detail-body").innerHTML = "";
+    el("detail-body").appendChild(body);
+    q(body, ".detail-back").addEventListener("click", () => { pushAppUrl({ tab: "blackjack" }); renderBlackjackDashboard(); });
+    const actions = q(body, "[data-actions]");
+    if (state.status?.viewer && s.status !== "voided") {
+      const disputeBtn = document.createElement("button");
+      disputeBtn.type = "button"; disputeBtn.className = "btn btn-danger"; disputeBtn.textContent = "Dispute session";
+      disputeBtn.addEventListener("click", () => openDirectSessionDisputeModal(s.id, () => openBlackjackDetail(s.id, { push: false })));
+      actions.appendChild(disputeBtn);
+    }
+    if (state.status?.admin && s.status !== "voided") {
+      const editBtn = document.createElement("button"); editBtn.type = "button"; editBtn.className = "btn"; editBtn.textContent = "Edit session";
+      editBtn.addEventListener("click", () => openSessionModal({ editing: s, onSaved: () => openBlackjackDetail(s.id, { push: false }) }));
+      actions.appendChild(editBtn);
+    }
+  } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
 }
 
 /**
@@ -2318,9 +2370,11 @@ function renderSessions() {
 }
 
 async function loadBadgeCounts() {
-  const [r, d] = await Promise.allSettled([api("/admin/join-requests"), api("/admin/disputes")]);
+  const [r, d, g] = await Promise.allSettled([api("/admin/join-requests"), api("/admin/disputes"), api("/admin/game-disputes")]);
   state.adminRequests = r.status === "fulfilled" ? (r.value.requests ?? []) : null;
-  state.adminDisputes = d.status === "fulfilled" ? (d.value.disputes ?? []) : null;
+  state.adminDisputes = d.status === "fulfilled" || g.status === "fulfilled"
+    ? [...(d.status === "fulfilled" ? (d.value.disputes ?? []) : []), ...(g.status === "fulfilled" ? (g.value.disputes ?? []) : [])]
+    : null;
   updateBadges();
 }
 
@@ -2606,6 +2660,21 @@ async function loadSessionDetail(id) {
   }
 }
 
+/** Shared direct dispute dialog for poker/blackjack sessions. */
+function openDirectSessionDisputeModal(sessionId, onDone) {
+  const body = document.createElement("form");
+  body.className = "stack";
+  body.innerHTML = `<label class="field" for="direct-dispute-reason">What is incorrect?<textarea id="direct-dispute-reason" class="input" rows="4" maxlength="1000" required></textarea></label><button class="btn btn-primary" type="submit">Submit dispute</button>`;
+  body.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const reason = /** @type {HTMLTextAreaElement} */ (body.querySelector("textarea")).value.trim();
+    if (!reason) return;
+    try { await api("/disputes/direct", { method: "POST", body: { sessionId, reason } }); closeModal(); showBanner({ kind: "info", message: "Dispute submitted for admin review." }); await onDone(); }
+    catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't submit the dispute.") }); }
+  });
+  openModal({ title: "Dispute session", body });
+}
+
 /**
  * @param {SessionDetail} session
  */
@@ -2631,19 +2700,7 @@ function renderDetail(session) {
     disputeBtn.type = "button";
     disputeBtn.className = "btn btn-danger";
     disputeBtn.textContent = "Dispute session";
-    disputeBtn.addEventListener("click", () => {
-      const body = document.createElement("form");
-      body.className = "stack";
-      body.innerHTML = `<label class="field" for="direct-dispute-reason">What is incorrect?<textarea id="direct-dispute-reason" class="input" rows="4" maxlength="1000" required></textarea></label><button class="btn btn-primary" type="submit">Submit dispute</button>`;
-      body.addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        const reason = /** @type {HTMLTextAreaElement} */ (body.querySelector("textarea")).value.trim();
-        if (!reason) return;
-        try { await api("/disputes/direct", { method: "POST", body: { sessionId: session.id, reason } }); closeModal(); showBanner({ kind: "info", message: "Dispute submitted for admin review." }); await loadSessionDetail(session.id); }
-        catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't submit the dispute.") }); }
-      });
-      openModal({ title: "Dispute session", body });
-    });
+    disputeBtn.addEventListener("click", () => openDirectSessionDisputeModal(session.id, () => loadSessionDetail(session.id)));
     card.appendChild(disputeBtn);
   }
 
@@ -3173,8 +3230,8 @@ function openDisputesPanel() {
   refresh();
   async function refresh() {
     try {
-      const data = await api("/admin/disputes");
-      state.adminDisputes = data.disputes ?? [];
+      const [poker, games] = await Promise.all([api("/admin/disputes"), api("/admin/game-disputes")]);
+      state.adminDisputes = [...(poker.disputes ?? []), ...(games.disputes ?? [])];
       updateBadges();
       const list = state.adminDisputes ?? [];
       body.innerHTML = "";
@@ -3206,7 +3263,7 @@ function buildDisputeItem(d, refresh) {
       <strong>${esc(sessionTitle)}</strong>
       <span class="chip chip-${esc(d.status)}">${esc(disputeStatusLabel(d.status))}</span>
     </div>
-    <p class="dispute-meta">${esc(dateStr)} · disputed by ${esc(d.memberName)} · ${esc(formatDate(d.createdAt))}</p>
+    <p class="dispute-meta">${d.kind === "game" ? `${esc(d.entityType === "handshake_bet" ? "Handshake bet" : "Golf round")} · ` : ""}${esc(dateStr)} · disputed by ${esc(d.memberName)} · ${esc(formatDate(d.createdAt))}</p>
     <div class="dispute-reason">“${esc(d.reason)}”</div>
     ${d.resolutionNote ? `<p class="resolution-note">Note: ${esc(d.resolutionNote)}</p>` : ""}
     <div class="row-actions" data-actions></div>
@@ -3247,7 +3304,7 @@ function buildResolveForm(d, refresh) {
   wrap.innerHTML = `
     <label class="field" for="rd-note">Resolution note (optional)</label>
     <textarea id="rd-note" class="input" rows="2" maxlength="500"></textarea>
-    <label class="check-row"><input type="checkbox" id="rd-adjust"> Adjust the amounts (optional)</label>
+    <label class="check-row" ${d.kind === "game" ? "hidden" : ""}><input type="checkbox" id="rd-adjust"> Adjust the amounts (optional)</label>
     <div id="rd-corrections" hidden>
       <div class="loading-text">Loading current amounts…</div>
     </div>
@@ -3363,7 +3420,8 @@ function buildResolveForm(d, refresh) {
       }));
     }
     try {
-      await api(`/admin/disputes/${encodeURIComponent(d.id)}/resolve`, { method: "POST", body: payload });
+      const endpoint = d.kind === "game" ? `/admin/game-disputes/${encodeURIComponent(d.id)}/resolve` : `/admin/disputes/${encodeURIComponent(d.id)}/resolve`;
+      await api(endpoint, { method: "POST", body: payload });
       showBanner({ kind: "info", message: "Dispute resolved." });
       await loadBadgeCounts();
       await refresh();
@@ -3404,7 +3462,8 @@ function buildDismissForm(d, refresh) {
     const note = noteEl.value.trim();
     if (note) payload.note = note;
     try {
-      await api(`/admin/disputes/${encodeURIComponent(d.id)}/resolve`, { method: "POST", body: payload });
+      const endpoint = d.kind === "game" ? `/admin/game-disputes/${encodeURIComponent(d.id)}/resolve` : `/admin/disputes/${encodeURIComponent(d.id)}/resolve`;
+      await api(endpoint, { method: "POST", body: payload });
       showBanner({ kind: "info", message: "Dispute dismissed." });
       await loadBadgeCounts();
       await refresh();

@@ -58,6 +58,6 @@ export function registerBlackjackRoutes(router: Router): void {
     const s = (await db.select().from(pokerSessions).where(and(eq(pokerSessions.id, ctx.params.id!), eq(pokerSessions.gameType, "blackjack"))).limit(1))[0];
     if (!s) throw notFound();
     const rows = await db.select({ memberId: sessionResults.memberId, name: members.displayName, amountCents: sessionResults.amountCents }).from(sessionResults).innerJoin(members, eq(members.id, sessionResults.memberId)).where(eq(sessionResults.sessionId, s.id));
-    return { session: { id: s.id, playedAt: s.playedAt.toISOString(), title: s.title, notes: s.notes, status: s.status, dealerMemberId: s.recordedByMemberId, participants: rows.map((r) => ({ memberId: r.memberId, name: r.name, amountCents: Number(r.amountCents) })) } };
+    return { session: { id: s.id, playedAt: s.playedAt.toISOString(), title: s.title, notes: s.notes, status: s.status, version: s.version, dealerMemberId: s.recordedByMemberId, participants: rows.map((r) => ({ memberId: r.memberId, name: r.name, amountCents: Number(r.amountCents) })) } };
   });
 }

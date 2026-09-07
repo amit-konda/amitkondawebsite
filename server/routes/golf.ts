@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireGroup, requireViewer, verifyAdmin } from "../auth.js";
+import { requireAdmin, requireGroup, requireViewer, verifyAdmin } from "../auth.js";
 import { db } from "../db/client.js";
 import { golfRounds, members } from "../db/schema.js";
 import { COURSE_PAR, GOLF_COURSES, suggestStrokeLine, weightedGolfStat } from "../domain/golf.js";
@@ -17,6 +17,12 @@ const createSchema = z.object({
   course: courseSchema,
   strokes: z.number().int().min(1).max(300),
   playedAt: z.string().datetime()
+});
+const editSchema = z.object({
+  memberId: z.string().uuid().optional(),
+  course: courseSchema.optional(),
+  strokes: z.number().int().min(1).max(300).optional(),
+  playedAt: z.string().datetime().optional()
 });
 
 async function loadCourseRounds(course: GolfCourse) {
@@ -132,6 +138,28 @@ export function registerGolfRoutes(router: Router): void {
       beforeJson: { memberId: existing.memberId, course: existing.course, strokes: existing.strokes, par: existing.par }
     });
     return { ok: true };
+  });
+
+  router.patch("/api/poker/admin/golf/rounds/:id", async (ctx: Ctx) => {
+    requireAdmin(ctx);
+    const roundId = ctx.params.id!;
+    const body = editSchema.parse(ctx.body);
+    const existing = (await db.select().from(golfRounds).where(eq(golfRounds.id, roundId)).limit(1))[0];
+    if (!existing) throw notFound();
+    const memberId = body.memberId ?? existing.memberId;
+    const course = body.course ?? existing.course;
+    const member = (await db.select({ id: members.id }).from(members).where(and(eq(members.id, memberId), eq(members.status, "active"))).limit(1))[0];
+    if (!member) throw badRequest("invalid_member", "Choose an active member.");
+    const updated = (await db.update(golfRounds).set({
+      memberId,
+      course,
+      strokes: body.strokes ?? existing.strokes,
+      par: COURSE_PAR[course],
+      playedAt: body.playedAt ? new Date(body.playedAt) : existing.playedAt
+    }).where(eq(golfRounds.id, roundId)).returning({ id: golfRounds.id }))[0];
+    await writeAudit(db, { actorLabel: "admin", action: "golf_round.edit", entityType: "golf_round", entityId: roundId, beforeJson: { memberId: existing.memberId, course: existing.course, strokes: existing.strokes, par: existing.par, playedAt: existing.playedAt }, afterJson: { memberId, course, strokes: body.strokes ?? existing.strokes, par: COURSE_PAR[course], playedAt: body.playedAt ?? existing.playedAt } });
+    if (!updated) throw new Error("Round was not updated.");
+    return { ok: true, id: updated.id };
   });
 
   router.get("/api/poker/golf/leaderboard", async (ctx: Ctx) => {

@@ -28,6 +28,7 @@ export const handshakeBetStatus = pgEnum("handshake_bet_status", ["open", "settl
 export const golfCourse = pgEnum("golf_course", ["butler", "hancock"]);
 export const liveSessionEventKind = pgEnum("live_session_event_kind", ["buy_in", "cash_out"]);
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
+export const gameDisputeEntity = pgEnum("game_dispute_entity", ["handshake_bet", "golf_round"]);
 export const settlementStatus = pgEnum("settlement_status", ["pending", "confirmed", "voided"]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
@@ -349,6 +350,32 @@ export const disputes = pgTable(
   ]
 );
 
+// Disputes for non-session game records (handshake bets and golf rounds).
+// Poker and blackjack continue using `disputes` because they are backed by
+// poker_sessions and support the existing receipt/correction workflow.
+export const gameDisputes = pgTable(
+  "game_disputes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entityType: gameDisputeEntity("entity_type").notNull(),
+    entityId: uuid("entity_id").notNull(),
+    memberId: uuid("member_id").notNull().references(() => members.id),
+    reason: text("reason").notNull(),
+    status: disputeStatus("status").notNull().default("open"),
+    resolutionNote: text("resolution_note"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    resolvedAt: ts("resolved_at")
+  },
+  (t) => [
+    check("game_disputes_reason_len", sql`char_length(${t.reason}) between 1 and 1000`),
+    uniqueIndex("game_disputes_open_entity_member_uidx")
+      .on(t.entityType, t.entityId, t.memberId)
+      .where(sql`${t.status} = 'open'`),
+    index("game_disputes_status_idx").on(t.status),
+    index("game_disputes_entity_idx").on(t.entityType, t.entityId)
+  ]
+);
+
 // ---------------------------------------------------------------------------
 // settlements — a self-attested "I paid this outside the app" record used to
 // settle up real balances. The app never moves money itself (Venmo has no
@@ -501,6 +528,7 @@ export type GolfRoundRow = typeof golfRounds.$inferSelect;
 export type SessionResultRow = typeof sessionResults.$inferSelect;
 export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;
+export type GameDisputeRow = typeof gameDisputes.$inferSelect;
 export type SettlementRow = typeof settlements.$inferSelect;
 export type EmailDeliveryRow = typeof emailDeliveries.$inferSelect;
 export type AuditEventRow = typeof auditEvents.$inferSelect;

@@ -1883,6 +1883,25 @@ async function openBlackjackDetail(id, opts = {}) {
       const editBtn = document.createElement("button"); editBtn.type = "button"; editBtn.className = "btn"; editBtn.textContent = "Edit session";
       editBtn.addEventListener("click", () => openSessionModal({ editing: s, onSaved: () => openBlackjackDetail(s.id, { push: false }) }));
       actions.appendChild(editBtn);
+      const voidBtn = document.createElement("button"); voidBtn.type = "button"; voidBtn.className = "btn btn-danger"; voidBtn.textContent = "Void session";
+      let armed = false;
+      let timer = 0;
+      voidBtn.addEventListener("click", () => {
+        if (!armed) {
+          armed = true;
+          voidBtn.textContent = "Click again to confirm void";
+          voidBtn.classList.add("btn-danger-solid");
+          timer = window.setTimeout(() => { armed = false; voidBtn.textContent = "Void session"; voidBtn.classList.remove("btn-danger-solid"); }, 4000);
+          return;
+        }
+        window.clearTimeout(timer);
+        voidBtn.disabled = true;
+        voidBtn.textContent = "Voiding…";
+        api(`/admin/sessions/${encodeURIComponent(s.id)}/void`, { method: "POST" })
+          .then(async () => { showBanner({ kind: "info", message: "Blackjack session voided and excluded from the ledger." }); await openBlackjackDetail(s.id, { push: false }); })
+          .catch((e) => { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't void the blackjack session.") }); voidBtn.disabled = false; voidBtn.textContent = "Void session"; voidBtn.classList.remove("btn-danger-solid"); armed = false; });
+      });
+      actions.appendChild(voidBtn);
     }
   } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack session.") }); }
 }

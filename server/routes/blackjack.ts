@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireGroup, requireViewer } from "../auth.js";
 import { db } from "../db/client.js";
 import { members, pokerSessions, sessionResults } from "../db/schema.js";
-import { MAX_AMOUNT_CENTS } from "../domain/money.js";
+import { MAX_AMOUNT_CENTS, validateSessionResults } from "../domain/money.js";
 import { badRequest, notFound } from "../errors.js";
 import type { Router } from "../router.js";
 
@@ -13,8 +13,7 @@ const createSchema = z.object({
   playedAt: z.string().datetime(),
   title: z.string().max(120).optional(),
   notes: z.string().max(2000).optional(),
-  verifiedDealer: z.literal(true),
-  players: z.array(z.object({ memberId: z.string().uuid(), amountCents: z.number().int().min(-MAX_AMOUNT_CENTS).max(MAX_AMOUNT_CENTS) })).min(1)
+  players: z.array(z.object({ memberId: z.string().uuid(), amountCents: z.number().int().min(-MAX_AMOUNT_CENTS).max(MAX_AMOUNT_CENTS) })).min(2)
 });
 
 export function registerBlackjackRoutes(router: Router): void {
@@ -40,15 +39,16 @@ export function registerBlackjackRoutes(router: Router): void {
     const claims = requireViewer(ctx);
     const body = createSchema.parse(ctx.body);
     const ids = [...new Set(body.players.map((p) => p.memberId))];
-    if (ids.length !== body.players.length || ids.includes(claims.mid!)) throw badRequest("invalid_players", "Choose unique players; the dealer is added automatically.");
+    if (ids.length !== body.players.length) throw badRequest("invalid_players", "Choose unique participants.");
     const active = await db.select({ id: members.id }).from(members).where(and(eq(members.status, "active"), inArray(members.id, ids)));
     if (active.length !== ids.length) throw badRequest("invalid_players", "Choose active members only.");
-    const playerTotal = body.players.reduce((sum, p) => sum + p.amountCents, 0);
-    if (playerTotal === 0) throw badRequest("invalid_results", "Enter at least one non-zero player result.");
+    const validation = validateSessionResults(body.players);
+    if (!validation.ok) throw badRequest("invalid_results", validation.errors[0] ?? "Results must sum to exactly $0.00.");
+    if (body.players.every((p) => p.amountCents === 0)) throw badRequest("invalid_results", "Enter at least one non-zero participant result.");
     const id = randomUUID();
     await db.transaction(async (tx) => {
       await tx.insert(pokerSessions).values({ id, gameType: "blackjack", playedAt: new Date(body.playedAt), title: body.title ?? null, notes: body.notes ?? null, recordedByMemberId: claims.mid, status: "active", version: 1, requestKey: body.requestKey });
-      await tx.insert(sessionResults).values([{ sessionId: id, memberId: claims.mid!, amountCents: -playerTotal }, ...body.players.map((p) => ({ sessionId: id, memberId: p.memberId, amountCents: p.amountCents }))]);
+      await tx.insert(sessionResults).values(body.players.map((p) => ({ sessionId: id, memberId: p.memberId, amountCents: p.amountCents })));
     });
     return { created: true, sessionId: id };
   });

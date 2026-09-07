@@ -799,8 +799,15 @@ textarea.input { resize: vertical; min-height: 88px; }
   .topbar { padding: 14px 16px 4px; gap: 10px; }
   .topbar-controls { width: 100%; margin-left: 0; }
   .viewer-select { min-width: 0; flex: 1; max-width: none; }
-  .game-tabs { order: 3; width: 100%; }
-  .game-tab { flex: 1; }
+  /* Five tabs (one two-word: "Handshake bets") don't fit an equal-width
+     squeeze on a phone without wrapping labels and overflowing the page —
+     scroll the strip horizontally instead, same as any mobile tab bar with
+     more tabs than fit. Tabs keep their natural width/whitespace so labels
+     never wrap; a tab left partially cut off at the edge is the hint that
+     there's more to swipe to. */
+  .game-tabs { order: 3; width: 100%; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .game-tabs::-webkit-scrollbar { display: none; }
+  .game-tab { flex: none; white-space: nowrap; }
 
   main { padding: 12px 14px 48px; }
 

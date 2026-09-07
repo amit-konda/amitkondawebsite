@@ -740,6 +740,48 @@ test("golf: log rounds, see the weighted leaderboard, and get a suggested stroke
 
 // ---------------------------------------------------------------------------
 
+test("add past session: the +/- toggle sets a participant's sign without typing one", async ({ page }) => {
+  const deb = await seedMember(tdb, "Deb", "deb+e2e@example.com");
+  const eli = await seedMember(tdb, "Eli", "eli+e2e@example.com");
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Deb");
+  await openAddSession(page);
+
+  await checkParticipant(page, "Deb");
+  await checkParticipant(page, "Eli");
+
+  const rowFor = (name: string) => page.locator(".part-row").filter({ hasText: name });
+  const submit = page.getByRole("button", { name: /save session|submit|record session/i }).first();
+
+  // Both rows default to "+"; typing the same unsigned amount on each leaves
+  // them unbalanced (100 + 100, not 100 - 100).
+  await rowFor("Deb").locator(".part-amount").fill("100");
+  await rowFor("Eli").locator(".part-amount").fill("100");
+  await expect.poll(async () => remainderText(page)).not.toContain("$0.00");
+  await expect(submit).toBeDisabled();
+
+  // Tapping the minus toggle on Eli's row (no typed sign) balances the session.
+  await rowFor("Eli").locator(".sign-minus").click();
+  await expect(rowFor("Eli").locator(".sign-minus")).toHaveAttribute("aria-pressed", "true");
+  await expect(rowFor("Eli").locator(".sign-plus")).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(async () => remainderText(page)).toContain("$0.00");
+  await expect(submit).toBeEnabled();
+
+  await submit.click();
+
+  // Lands on the session detail view with Eli's result negative.
+  const table = page.locator(".results-table");
+  await expect(table).toBeVisible({ timeout: 15_000 });
+  await expect(table.getByText("Deb", { exact: true }).first()).toBeVisible();
+  await expect(table.getByText("Eli", { exact: true }).first()).toBeVisible();
+  await expect(table.getByText("-$100.00").first()).toBeVisible();
+
+  expect(deb.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
 // Sanity: the seeded dispute-token helper hashes exactly like the server.
 test("token hash round-trips the production hasher", () => {
   expect(hashToken("e2e-token-abc")).toMatch(/^[0-9a-f]{64}$/);

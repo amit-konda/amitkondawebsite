@@ -567,7 +567,32 @@ textarea.input { resize: vertical; min-height: 88px; }
 .part-name { flex: 1; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
 .part-inactive { color: var(--muted); font-size: 0.82rem; font-style: italic; }
 
-.part-amount { width: 140px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+/* Up/down toggle beside the amount field — lets a participant's result be
+   flagged +/- with a tap instead of typing a sign on a mobile keyboard. */
+.part-sign {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid rgba(30, 55, 43, 0.13);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sign-btn {
+  width: 34px;
+  height: 44px;
+  border: none;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.sign-btn + .sign-btn { border-left: 1px solid rgba(30, 55, 43, 0.13); }
+.sign-btn.is-active.sign-plus { background: var(--pos); color: #FFFFFF; }
+.sign-btn.is-active.sign-minus { background: var(--neg); color: #FFFFFF; }
+.sign-btn:focus-visible { outline: 2px solid var(--felt); outline-offset: -2px; }
+
+.part-amount { width: 110px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
 .part-row.is-invalid .part-amount { border-color: var(--neg); outline: none; box-shadow: 0 0 0 1px var(--neg); }
 
 .remainder { font-weight: 700; margin: 14px 0 4px; font-variant-numeric: tabular-nums; }
@@ -793,7 +818,8 @@ textarea.input { resize: vertical; min-height: 88px; }
   .sess-title { white-space: normal; }
   .sess-chev { margin-left: auto; }
 
-  .part-amount { width: 120px; }
+  .part-amount { width: 92px; }
+  .sign-btn { width: 30px; }
 }
 
 @media (max-width: 380px) {

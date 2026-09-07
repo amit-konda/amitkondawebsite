@@ -2229,7 +2229,7 @@ function openSessionModal(opts) {
 
   playedAtEl.value = editing ? toLocalInputValue(new Date(editing.playedAt)) : toLocalInputValue(new Date());
 
-  /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement}[]} */
+  /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement, sign: "+"|"-"}[]} */
   const rows = [];
   const resultByMember = new Map((editing?.participants ?? []).map((p) => [p.memberId, p.amountCents]));
   const entries = [];
@@ -2249,22 +2249,57 @@ function openSessionModal(opts) {
     row.innerHTML = `
       <input type="checkbox" class="part-check" id="${esc(checkId)}">
       <label for="${esc(checkId)}" class="part-name">${esc(e.name)}${e.active ? "" : ' <span class="part-inactive">(inactive)</span>'}</label>
-      <input type="text" inputmode="text" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="+0.00 or -0.00" autocomplete="off" hidden>`;
+      <div class="part-sign" role="group" aria-label="Up or down for ${esc(e.name)}" hidden>
+        <button type="button" class="sign-btn sign-plus is-active" data-sign="+" aria-pressed="true">+</button>
+        <button type="button" class="sign-btn sign-minus" data-sign="-" aria-pressed="false">&minus;</button>
+      </div>
+      <input type="text" inputmode="decimal" class="input part-amount money" data-id="${esc(e.id)}" aria-label="Amount for ${esc(e.name)}" placeholder="0.00" autocomplete="off" hidden>`;
     const check = /** @type {HTMLInputElement} */ (q(row, ".part-check"));
     const amount = /** @type {HTMLInputElement} */ (q(row, ".part-amount"));
+    const signWrap = /** @type {HTMLElement} */ (q(row, ".part-sign"));
+    const signPlusBtn = /** @type {HTMLButtonElement} */ (q(row, ".sign-plus"));
+    const signMinusBtn = /** @type {HTMLButtonElement} */ (q(row, ".sign-minus"));
+    /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement, sign: "+"|"-"}} */
+    const rowState = { id: e.id, row, check, amount, sign: "+" };
+    function setSign(sign) {
+      rowState.sign = sign;
+      signPlusBtn.classList.toggle("is-active", sign === "+");
+      signPlusBtn.setAttribute("aria-pressed", String(sign === "+"));
+      signMinusBtn.classList.toggle("is-active", sign === "-");
+      signMinusBtn.setAttribute("aria-pressed", String(sign === "-"));
+    }
     if (resultByMember.has(e.id)) {
       check.checked = true;
-      amount.value = toDollarsInput(/** @type {number} */ (resultByMember.get(e.id)));
+      const cents = /** @type {number} */ (resultByMember.get(e.id));
+      setSign(cents < 0 ? "-" : "+");
+      amount.value = formatPlainCents(cents);
       amount.hidden = false;
+      signWrap.hidden = false;
     }
     check.addEventListener("change", () => {
       amount.hidden = !check.checked;
+      signWrap.hidden = !check.checked;
       if (check.checked) amount.focus();
       recompute();
     });
+    signPlusBtn.addEventListener("click", () => { setSign("+"); recompute(); });
+    signMinusBtn.addEventListener("click", () => { setSign("-"); recompute(); });
     amount.addEventListener("input", recompute);
     membersEl.appendChild(row);
-    rows.push({ id: e.id, row, check, amount });
+    rows.push(rowState);
+  }
+
+  /**
+   * Combines a row's amount input with its +/- toggle into cents, or null if
+   * empty/invalid. An explicit +/- typed into the field wins (so pasting or
+   * typing a signed amount still works); otherwise the tap toggle supplies
+   * the sign for a plain unsigned amount.
+   */
+  function rowCents(r) {
+    const raw = r.amount.value.trim();
+    if (raw === "") return null;
+    if (/^[+-]/.test(raw)) return parseDollarsToCents(raw);
+    return parseDollarsToCents((r.sign === "-" ? "-" : "") + raw);
   }
 
   function recompute() {
@@ -2275,7 +2310,7 @@ function openSessionModal(opts) {
     for (const r of rows) {
       if (!r.check.checked) continue;
       checkedCount += 1;
-      const v = parseDollarsToCents(r.amount.value);
+      const v = rowCents(r);
       if (v === null) {
         r.row.classList.add("is-invalid");
         if (r.amount.value.trim() === "") missing += 1;
@@ -2288,7 +2323,7 @@ function openSessionModal(opts) {
     const reasons = [];
     if (checkedCount < 2) reasons.push("Select at least two participants.");
     if (missing > 0) reasons.push("Enter an amount for every selected participant.");
-    if (invalid > 0) reasons.push("Amounts must look like +12.50, -5 or 10000 (two decimals max).");
+    if (invalid > 0) reasons.push("Amounts must look like 12.50 or 10000 (two decimals max).");
     if (reasons.length === 0 && sum !== 0) reasons.push("The amounts must balance to exactly $0.00.");
     remainderEl.textContent = "Remaining to balance: " + formatCents(-sum).replace(/^\+/, "");
     remainderEl.classList.toggle("remainder-ok", sum === 0);
@@ -2305,7 +2340,7 @@ function openSessionModal(opts) {
     const results = [];
     for (const r of rows) {
       if (!r.check.checked) continue;
-      const v = parseDollarsToCents(r.amount.value);
+      const v = rowCents(r);
       if (v === null) return; // safely unreachable while submit is enabled
       results.push({ memberId: r.id, amountCents: v });
     }

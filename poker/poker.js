@@ -34,7 +34,7 @@
  */
 
 /**
- * @typedef {SessionSummary & {notes: string|null, totalCents: number}} SessionDetail
+ * @typedef {SessionSummary & {notes: string|null, totalCents: number, createdAt: string}} SessionDetail
  */
 
 /**
@@ -201,6 +201,31 @@ function q(root, selector) {
   const node = root.querySelector(selector);
   if (!node) throw new Error(`Missing element ${selector}`);
   return /** @type {HTMLElement} */ (node);
+}
+
+/** Add a small type-to-filter field to a member-name select. */
+function makeMemberSelectTypeable(select) {
+  if (!select || select.dataset.memberFilterReady === "true") return;
+  select.dataset.memberFilterReady = "true";
+  const filter = document.createElement("input");
+  filter.type = "search";
+  filter.className = "input select-filter";
+  filter.placeholder = "Type to filter names…";
+  filter.autocomplete = "off";
+  select.parentElement?.insertBefore(filter, select);
+  const apply = () => {
+    const needle = filter.value.trim().toLocaleLowerCase();
+    for (const option of Array.from(select.options)) {
+      option.hidden = Boolean(needle) && !option.textContent.toLocaleLowerCase().includes(needle);
+    }
+  };
+  filter.addEventListener("input", apply);
+  select.addEventListener("optionsupdated", apply);
+  apply();
+}
+
+function refreshMemberSelectFilter(select) {
+  select.dispatchEvent(new Event("optionsupdated"));
 }
 
 /**
@@ -408,6 +433,14 @@ function formatRecentDate(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Friendly editable default for a new Poker session. */
+function defaultPokerSessionTitle(date) {
+  const hour = date.getHours();
+  const period = hour < 5 ? "late night" : hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 22 ? "evening" : "late night";
+  const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `Poker · ${day} · ${period}`;
 }
 
 /**
@@ -1384,6 +1417,9 @@ function openHandshakeEditModal(bet, onDone) {
   const body = document.createElement("form"); body.className = "stack";
   body.innerHTML = `<label class="field">Description<input id="hb-edit-description" class="input" maxlength="200" value="${esc(bet.description)}" required></label><label class="field">Amount<input id="hb-edit-amount" class="input money" inputmode="decimal" value="${esc(toDollarsInput(bet.amountCents))}" required></label><label class="field">First bettor<select id="hb-edit-first" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === bet.firstMember.id ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Second bettor<select id="hb-edit-second" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === bet.secondMember.id ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Winner<select id="hb-edit-winner" class="input"><option value="">Open</option><option value="${esc(bet.firstMember.id)}"${bet.winnerMember?.id === bet.firstMember.id ? " selected" : ""}>${esc(bet.firstMember.name)}</option><option value="${esc(bet.secondMember.id)}"${bet.winnerMember?.id === bet.secondMember.id ? " selected" : ""}>${esc(bet.secondMember.name)}</option></select></label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="hb-edit-cancel">Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>`;
   openModal({ title: "Edit handshake bet", body }); q(body, "#hb-edit-cancel").addEventListener("click", closeModal);
+  makeMemberSelectTypeable(/** @type {HTMLSelectElement} */ (q(body, "#hb-edit-first")));
+  makeMemberSelectTypeable(/** @type {HTMLSelectElement} */ (q(body, "#hb-edit-second")));
+  makeMemberSelectTypeable(/** @type {HTMLSelectElement} */ (q(body, "#hb-edit-winner")));
   body.addEventListener("submit", async (ev) => { ev.preventDefault(); const amount = parseDollarsToCents(field("hb-edit-amount").value); const first = field("hb-edit-first").value; const second = field("hb-edit-second").value; const winner = field("hb-edit-winner").value || null; if (amount == null || amount <= 0 || first === second) return showBanner({ kind: "error", message: "Enter a positive amount and two different bettors." }); try { await api(`/admin/handshake/bets/${encodeURIComponent(bet.id)}`, { method: "PATCH", body: { description: field("hb-edit-description").value.trim(), amountCents: amount, firstMemberId: first, secondMemberId: second, winnerMemberId: winner, status: winner ? "settled" : "open" } }); closeModal(); await Promise.all([loadHandshakeLedger(), loadHandshakeBets()]); showBanner({ kind: "info", message: "Handshake bet updated." }); await onDone(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't update the bet.") }); } });
 }
 
@@ -1462,7 +1498,9 @@ function openHandshakeModal() {
   const category = /** @type {HTMLSelectElement} */ (q(body, "#hb-category"));
   const categoryNewWrap = q(body, "#hb-category-new-wrap");
   const categoryNewInput = /** @type {HTMLInputElement} */ (q(body, "#hb-category-new"));
-  const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); };
+  makeMemberSelectTypeable(opponent);
+  makeMemberSelectTypeable(winner);
+  const syncWinnerChoices = () => { winner.innerHTML = `<option value="${esc(state.status.viewer.id)}">${esc(state.status.viewer.name)}</option>` + (opponent.value ? `<option value="${esc(opponent.value)}">${esc(others.find((m) => m.id === opponent.value)?.name ?? "Opponent")}</option>` : ""); refreshMemberSelectFilter(winner); };
   syncWinnerChoices();
 
   const golfToggle = /** @type {HTMLButtonElement} */ (q(body, "#hb-golf-toggle"));
@@ -1639,6 +1677,8 @@ function renderGolfRoundsFilter() {
   }
   sel.innerHTML = state.members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
   sel.value = state.golfRoundsFilter ?? "";
+  makeMemberSelectTypeable(sel);
+  refreshMemberSelectFilter(sel);
 }
 
 /** Rebuilds the two line-calculator <select>s from active members, preserving a still-valid prior selection. */
@@ -1657,6 +1697,10 @@ function renderGolfLineSelects() {
   selB.innerHTML = options();
   selA.value = state.golfLineMembers.a ?? "";
   selB.value = state.golfLineMembers.b ?? "";
+  makeMemberSelectTypeable(selA);
+  makeMemberSelectTypeable(selB);
+  refreshMemberSelectFilter(selA);
+  refreshMemberSelectFilter(selB);
 }
 
 async function loadGolfLine() {
@@ -1707,6 +1751,7 @@ function openLogGolfRoundModal() {
   openModal({ title: "Log a golf round", body });
   q(body, "#golf-new-cancel").addEventListener("click", closeModal);
   const courseSelect = /** @type {HTMLSelectElement} */ (q(body, "#golf-new-course"));
+  makeMemberSelectTypeable(/** @type {HTMLSelectElement} */ (q(body, "#golf-new-player")));
   const parHint = /** @type {HTMLElement} */ (q(body, "#golf-new-par-hint"));
   courseSelect.addEventListener("change", () => {
     parHint.textContent = `Par ${COURSE_PAR[courseSelect.value]} at ${GOLF_COURSE_NAMES[courseSelect.value]}.`;
@@ -1756,6 +1801,7 @@ function openGolfEditModal(round, onDone) {
   const body = document.createElement("form"); body.className = "stack";
   body.innerHTML = `<label class="field">Player<select id="golf-edit-player" class="input">${state.members.map((m) => `<option value="${esc(m.id)}"${m.id === round.memberId ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label><label class="field">Course<select id="golf-edit-course" class="input">${GOLF_COURSES.map((c) => `<option value="${c}"${c === round.course ? " selected" : ""}>${esc(GOLF_COURSE_NAMES[c])}</option>`).join("")}</select></label><label class="field">Date<input id="golf-edit-date" class="input" type="date" value="${esc(round.playedAt.slice(0, 10))}" required></label><label class="field">Strokes<input id="golf-edit-strokes" class="input" type="number" min="1" max="300" value="${round.strokes}" required></label><div class="modal-actions"><button type="button" class="btn btn-ghost" id="golf-edit-cancel">Cancel</button><button class="btn btn-primary" type="submit">Save changes</button></div>`;
   openModal({ title: "Edit golf round", body }); q(body, "#golf-edit-cancel").addEventListener("click", closeModal);
+  makeMemberSelectTypeable(/** @type {HTMLSelectElement} */ (q(body, "#golf-edit-player")));
   body.addEventListener("submit", async (ev) => { ev.preventDefault(); const strokes = Number(field("golf-edit-strokes").value); const date = field("golf-edit-date").value; if (!Number.isInteger(strokes) || strokes < 1 || strokes > 300 || !date) return showBanner({ kind: "error", message: "Enter a valid date and whole-number score." }); try { await api(`/admin/golf/rounds/${encodeURIComponent(round.id)}`, { method: "PATCH", body: { memberId: field("golf-edit-player").value, course: field("golf-edit-course").value, strokes, playedAt: new Date(`${date}T12:00:00`).toISOString() } }); closeModal(); await loadGolfCourseData(); showBanner({ kind: "info", message: "Golf round updated." }); await onDone(); } catch (e) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (e), "Couldn't update the round.") }); } });
 }
 
@@ -2248,6 +2294,7 @@ function openLiveAddPlayerChooser(sessionId, existingIds) {
   const cancelBtn = /** @type {HTMLButtonElement} */ (q(body, ".live-add-cancel"));
   cancelBtn.addEventListener("click", closeModal);
   const select = /** @type {HTMLSelectElement} */ (q(body, "#live-new-player"));
+  makeMemberSelectTypeable(select);
   const customWrap = /** @type {HTMLElement} */ (q(body, "#live-add-custom-wrap"));
   const customInput = /** @type {HTMLInputElement} */ (q(body, "#live-add-custom-amount"));
   const customError = /** @type {HTMLElement} */ (q(body, "#live-add-custom-error"));
@@ -2424,7 +2471,7 @@ function openSessionModal(opts) {
         <input id="sf-playedAt" class="input" type="datetime-local" required>
       </div>
       <div>
-        <label class="field" for="sf-title">Title (optional)</label>
+        <label class="field" for="sf-title">Session name</label>
         <input id="sf-title" class="input" type="text" maxlength="120" placeholder="Friday night game">
       </div>
     </div>
@@ -2453,6 +2500,12 @@ function openSessionModal(opts) {
   const submitEl = /** @type {HTMLButtonElement} */ (el("sf-submit"));
 
   playedAtEl.value = editing ? toLocalInputValue(new Date(editing.playedAt)) : toLocalInputValue(new Date());
+  let titleAuto = !editing;
+  if (!editing) titleEl.value = defaultPokerSessionTitle(new Date(playedAtEl.value));
+  titleEl.addEventListener("input", () => { titleAuto = false; });
+  playedAtEl.addEventListener("change", () => {
+    if (titleAuto) titleEl.value = defaultPokerSessionTitle(new Date(playedAtEl.value));
+  });
 
   /** @type {{id: string, row: HTMLElement, check: HTMLInputElement, amount: HTMLInputElement, sign: "+"|"-"}[]} */
   const rows = [];
@@ -2700,6 +2753,10 @@ function openDirectSessionDisputeModal(sessionId, onDone) {
 function renderDetail(session) {
   const card = el("detail-card");
   const voided = session.status === "voided";
+  const recentEdit = Boolean(
+    !voided && state.status?.viewer?.id && session.recordedBy?.id === state.status.viewer.id &&
+    session.createdAt && Date.now() - new Date(session.createdAt).getTime() <= 60 * 60 * 1000
+  );
   const html = `
     <div class="detail-head">
       <h2>${esc(session.title || "Poker session")}</h2>
@@ -2723,13 +2780,13 @@ function renderDetail(session) {
     card.appendChild(disputeBtn);
   }
 
-  if (state.status?.admin && !voided) {
+  if ((state.status?.admin || recentEdit) && !voided) {
     const actions = document.createElement("div");
     actions.className = "detail-admin-actions";
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "btn";
-    editBtn.textContent = "Edit session";
+    editBtn.textContent = state.status?.admin ? "Edit session" : "Edit recent results";
     editBtn.addEventListener("click", () => {
       openSessionModal({
         editing: session,
@@ -3665,6 +3722,7 @@ async function maybeShowNamePrompt() {
     </div>`;
   openModal({ title: "Who are you?", body });
   const select = /** @type {HTMLSelectElement} */ (q(body, "#name-prompt-select"));
+  makeMemberSelectTypeable(select);
   const submit = /** @type {HTMLButtonElement} */ (q(body, "#name-prompt-submit"));
   select.addEventListener("change", () => {
     submit.disabled = !select.value;

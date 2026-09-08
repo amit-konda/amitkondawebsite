@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { z } from "zod";
-import { requireAdmin, requireGroup, requireViewer } from "../auth.js";
+import { requireAdmin, requireGroup, requireViewer, verifyAdmin } from "../auth.js";
 import { db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { disputeTokens, members, pokerSessions, sessionResults } from "../db/schema.js";
@@ -20,7 +20,7 @@ import { MAX_AMOUNT_CENTS, validateSessionResults } from "../domain/money.js";
 import { generateToken, hashToken, TOKEN_TTL_DAYS } from "../domain/tokens.js";
 import { enqueueEmail } from "../email/outbox.js";
 import { notifyEntity } from "../email/notify.js";
-import { ApiError, conflict, notFound } from "../errors.js";
+import { ApiError, conflict, forbidden, notFound } from "../errors.js";
 import type { Ctx, Router } from "../router.js";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -79,6 +79,7 @@ interface SessionPayload {
   recordedBy: { id: string; name: string } | null;
   participants: ParticipantPayload[];
   totalCents: number;
+  createdAt: string;
 }
 
 /** Session row without timestamps we don't expose. */
@@ -95,7 +96,7 @@ function sessionPayload(
   s: SessionListRow,
   participants: ParticipantPayload[],
   recordedByName: string | undefined,
-  extra: Pick<SessionPayload, "notes" | "totalCents">
+  extra: Pick<SessionPayload, "notes" | "totalCents" | "createdAt">
 ): SessionPayload {
   return {
     id: s.id,
@@ -170,7 +171,8 @@ async function loadSessionDetail(dbx: Db, id: string): Promise<SessionPayload | 
     s.recordedByMemberId ? names.get(s.recordedByMemberId) : undefined,
     {
       notes: s.notes,
-      totalCents: participants.reduce((acc, p) => acc + p.amountCents, 0)
+      totalCents: participants.reduce((acc, p) => acc + p.amountCents, 0),
+      createdAt: s.createdAt.toISOString()
     }
   );
 }
@@ -486,13 +488,22 @@ export function registerSessionsRoutes(router: Router): void {
 
   // PATCH /api/poker/admin/sessions/:id — edit/correct a session.
   router.patch("/api/poker/admin/sessions/:id", async (ctx: Ctx) => {
-    requireAdmin(ctx);
+    const claims = requireGroup(ctx);
+    const isAdmin = Boolean(verifyAdmin(ctx.req));
     const sessionId = ctx.params.id!;
     const body = editBodySchema.parse(ctx.body) as EditBody;
 
     const existing = await loadSessionRow(db, sessionId);
     if (!existing) throw notFound();
     if (existing.status === "voided") throw conflict("Session is voided.");
+    if (!isAdmin) {
+      if (!claims.mid || existing.recordedByMemberId !== claims.mid) {
+        throw forbidden("Only the member who recorded this session can edit it during the recent-edit window.");
+      }
+      if (Date.now() - existing.createdAt.getTime() > 60 * 60 * 1000) {
+        throw forbidden("The recent-edit window for this session has ended.");
+      }
+    }
     if (existing.version !== body.version) {
       throw conflict("Session was modified. Reload and try again.");
     }

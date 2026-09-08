@@ -256,7 +256,7 @@ describe("POST /viewer", () => {
 
     const res = await api(jar, "/viewer", { method: "POST", body: { memberId: aliceId } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ viewer: { id: aliceId, name: "Alice Example" } });
+    expect(await res.json()).toEqual({ viewer: { id: aliceId, name: "Alice Example", canRecordSessions: true } });
 
     // The group cookie is REPLACED (now carries the member id).
     applyCookies(res, jar);
@@ -264,10 +264,10 @@ describe("POST /viewer", () => {
 
     const status = (await (await api(jar, "/auth/status")).json()) as {
       group: boolean;
-      viewer: { id: string; name: string } | null;
+      viewer: { id: string; name: string; canRecordSessions: boolean } | null;
     };
     expect(status.group).toBe(true);
-    expect(status.viewer).toEqual({ id: aliceId, name: "Alice Example" });
+    expect(status.viewer).toEqual({ id: aliceId, name: "Alice Example", canRecordSessions: true });
   });
 
   it("rejects an inactive member (invalid_member)", async () => {

@@ -391,14 +391,21 @@ export function registerSessionsRoutes(router: Router): void {
     const viewerId = claims.mid!;
     const body = createBodySchema.parse(ctx.body) as CreateBody;
 
-    const results = await validateResultsInput(db, body.results);
-
     const viewerRow = await db
-      .select({ displayName: members.displayName })
+      .select({ displayName: members.displayName, canRecordSessions: members.canRecordSessions })
       .from(members)
       .where(eq(members.id, viewerId))
       .limit(1);
     const viewerDisplayName = viewerRow[0]?.displayName ?? viewerId;
+    // An admin can freeze a specific member's ability to add new sessions
+    // (e.g. while a discrepancy with their numbers gets sorted out) without
+    // touching their existing history or their ability to play in sessions
+    // someone else records.
+    if (viewerRow[0] && !viewerRow[0].canRecordSessions) {
+      throw forbidden("You're not able to record new sessions right now — ask an admin.");
+    }
+
+    const results = await validateResultsInput(db, body.results);
 
     const memberRows = await db
       .select({

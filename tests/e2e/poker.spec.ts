@@ -63,6 +63,14 @@ test.afterAll(async () => {
   await tdb.end();
 });
 
+// Every test in this file logs in at least once, all from the same "IP" (the
+// test harness has no real distinct clients) — clear the login rate-limit
+// bucket before each test so a test's own login attempts are judged on their
+// own, not on how many other tests happened to run first in a full suite.
+test.beforeEach(async () => {
+  await tdb.db.delete(rateLimitBuckets);
+});
+
 // ---------------------------------------------------------------------------
 
 test("homepage is unchanged", async ({ page }) => {
@@ -783,6 +791,23 @@ test("add past session: the +/- toggle sets a participant's sign without typing 
 
 // ---------------------------------------------------------------------------
 
+test("a member with recording blocked can't open Add session, but can still play in one someone else records", async ({ page }) => {
+  const fran = await seedMember(tdb, "Frozen Fran", "frozen-fran+e2e@example.com");
+  await tdb.db.update(members).set({ canRecordSessions: false }).where(eq(members.id, fran.id));
+
+  await page.goto("/poker/");
+  await loginAsGroup(page, GROUP_PASSWORD, "Frozen Fran");
+  await page.getByRole("button", { name: "Poker", exact: true }).click();
+  await page.getByRole("button", { name: /add (past )?session/i }).click();
+
+  await expect(page.getByText(/not able to record new sessions/i)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("checkbox").first()).not.toBeVisible();
+
+  expect(fran.id).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+
 test("overall settle up: pay with Venmo opens a prefilled link, only the recipient can confirm, then the ledger updates", async ({ page, browser }) => {
   const finn = await seedMember(tdb, "Finn", "finn+e2e@example.com");
   const grace = await seedMember(tdb, "Grace", "grace+e2e@example.com");
@@ -857,12 +882,9 @@ test("overall settle up: pay with Venmo opens a prefilled link, only the recipie
   await expect(transferRow).toContainText("Awaiting confirmation");
 
   // Confirming is Grace's call, not Finn's — open a separate session as her.
-  // This test is the only one in the file that logs in twice, which can tip
-  // over the per-IP login rate limit this late in a full suite run (every
-  // other test's own login already counted against the same bucket, since
-  // the harness has no real distinct IPs) — clear it first so Grace's login
-  // is judged on its own, not on how many tests happened to run before it.
-  await tdb.db.delete(rateLimitBuckets);
+  // This test logs in twice (Finn, then Grace); the per-test beforeEach
+  // above already cleared the login rate-limit bucket, so both count as
+  // fresh attempts rather than piling onto Finn's login a moment ago.
   const graceContext = await browser.newContext();
   const gracePage = await graceContext.newPage();
   await graceContext.route("https://venmo.com/**", (route) =>

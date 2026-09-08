@@ -92,20 +92,21 @@ export function registerAuthRoutes(router: Router): void {
     const group = verifyGroup(ctx.req);
     const admin = verifyAdmin(ctx.req);
 
-    let viewer: { id: string; name: string } | null = null;
+    let viewer: { id: string; name: string; canRecordSessions: boolean } | null = null;
     if (group?.mid) {
       const rows = await db
         .select({
           id: members.id,
           name: members.displayName,
-          status: members.status
+          status: members.status,
+          canRecordSessions: members.canRecordSessions
         })
         .from(members)
         .where(eq(members.id, group.mid))
         .limit(1);
       const row = rows[0];
       if (row && row.status === "active") {
-        viewer = { id: row.id, name: row.name };
+        viewer = { id: row.id, name: row.name, canRecordSessions: row.canRecordSessions };
       }
     }
 
@@ -128,7 +129,8 @@ export function registerAuthRoutes(router: Router): void {
       .select({
         id: members.id,
         name: members.displayName,
-        status: members.status
+        status: members.status,
+        canRecordSessions: members.canRecordSessions
       })
       .from(members)
       .where(eq(members.id, memberId))
@@ -139,7 +141,7 @@ export function registerAuthRoutes(router: Router): void {
     }
 
     setCookie(ctx.res, GROUP_COOKIE, makeGroupToken(member.id), GROUP_TTL_SECONDS);
-    return { viewer: { id: member.id, name: member.name } };
+    return { viewer: { id: member.id, name: member.name, canRecordSessions: member.canRecordSessions } };
   });
 
   // POST /admin/unlock — requires a valid group cookie + admin password.

@@ -64,7 +64,8 @@ const patchMemberSchema = z.object({
   email: emailSchema.optional().or(z.literal("")),
   phoneNumber: phoneNumberSchema,
   status: z.enum(["active", "inactive"]).optional(),
-  venmoUsername: venmoUsernameSchema
+  venmoUsername: venmoUsernameSchema,
+  canRecordSessions: z.boolean().optional()
 });
 
 const normalizeVenmoUsername = (s: string): string | null => {
@@ -216,7 +217,18 @@ export function registerMembersRoutes(router: Router): void {
 
   route(router, "get", "/admin/members", async (ctx) => {
     requireAdmin(ctx);
-    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, phoneNumber: members.phoneNumber, status: members.status, venmoUsername: members.venmoUsername }).from(members).orderBy(asc(members.displayName));
+    const rows = await db
+      .select({
+        id: members.id,
+        name: members.displayName,
+        email: members.emailNormalized,
+        phoneNumber: members.phoneNumber,
+        status: members.status,
+        venmoUsername: members.venmoUsername,
+        canRecordSessions: members.canRecordSessions
+      })
+      .from(members)
+      .orderBy(asc(members.displayName));
     return { members: rows };
   });
 
@@ -422,7 +434,14 @@ export function registerMembersRoutes(router: Router): void {
     const current = rows[0] ?? null;
     if (!current) throw notFound("Member not found.");
 
-    if (body.displayName === undefined && body.email === undefined && body.phoneNumber === undefined && body.status === undefined && body.venmoUsername === undefined) {
+    if (
+      body.displayName === undefined &&
+      body.email === undefined &&
+      body.phoneNumber === undefined &&
+      body.status === undefined &&
+      body.venmoUsername === undefined &&
+      body.canRecordSessions === undefined
+    ) {
       // Nothing to change — idempotent no-op.
       return {
         member: {
@@ -431,17 +450,26 @@ export function registerMembersRoutes(router: Router): void {
           email: current.emailNormalized,
           phoneNumber: current.phoneNumber,
           status: current.status,
-          venmoUsername: current.venmoUsername
+          venmoUsername: current.venmoUsername,
+          canRecordSessions: current.canRecordSessions
         }
       };
     }
 
-    const set: { displayName?: string; emailNormalized?: string; phoneNumber?: string | null; status?: "active" | "inactive"; venmoUsername?: string | null } = {};
+    const set: {
+      displayName?: string;
+      emailNormalized?: string;
+      phoneNumber?: string | null;
+      status?: "active" | "inactive";
+      venmoUsername?: string | null;
+      canRecordSessions?: boolean;
+    } = {};
     if (body.displayName !== undefined) set.displayName = body.displayName;
     if (body.email !== undefined) set.emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
     if (body.phoneNumber !== undefined) set.phoneNumber = normalizePhoneNumber(body.phoneNumber);
     if (body.status !== undefined) set.status = body.status;
     if (body.venmoUsername !== undefined) set.venmoUsername = normalizeVenmoUsername(body.venmoUsername);
+    if (body.canRecordSessions !== undefined) set.canRecordSessions = body.canRecordSessions;
 
     const updated = await db.transaction(async (tx) => {
       const result = await tx
@@ -454,7 +482,8 @@ export function registerMembersRoutes(router: Router): void {
           emailNormalized: members.emailNormalized,
           phoneNumber: members.phoneNumber,
           status: members.status,
-          venmoUsername: members.venmoUsername
+          venmoUsername: members.venmoUsername,
+          canRecordSessions: members.canRecordSessions
         });
       const row = result[0]!;
       await writeAudit(tx, {
@@ -462,8 +491,20 @@ export function registerMembersRoutes(router: Router): void {
         action: "member.update",
         entityType: "member",
         entityId: id,
-        beforeJson: { displayName: current.displayName, status: current.status, phoneNumber: current.phoneNumber, venmoUsername: current.venmoUsername },
-        afterJson: { displayName: row.displayName, status: row.status, phoneNumber: row.phoneNumber, venmoUsername: row.venmoUsername }
+        beforeJson: {
+          displayName: current.displayName,
+          status: current.status,
+          phoneNumber: current.phoneNumber,
+          venmoUsername: current.venmoUsername,
+          canRecordSessions: current.canRecordSessions
+        },
+        afterJson: {
+          displayName: row.displayName,
+          status: row.status,
+          phoneNumber: row.phoneNumber,
+          venmoUsername: row.venmoUsername,
+          canRecordSessions: row.canRecordSessions
+        }
       });
       return row;
     });
@@ -475,7 +516,8 @@ export function registerMembersRoutes(router: Router): void {
         email: updated.emailNormalized,
         phoneNumber: updated.phoneNumber,
         status: updated.status,
-        venmoUsername: updated.venmoUsername
+        venmoUsername: updated.venmoUsername,
+        canRecordSessions: updated.canRecordSessions
       }
     };
   });

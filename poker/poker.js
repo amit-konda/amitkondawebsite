@@ -95,6 +95,13 @@
 
 /* ── Constants ─────────────────────────────────────────────── */
 
+// Members whose ability to record new sessions is switched off, matched
+// case-insensitively against their display name. Hardcoded on purpose (no
+// admin UI for this) — mirrors the same list the server enforces in
+// POST /api/poker/sessions, which is the real security boundary; this only
+// gives an instant banner instead of waiting on a round trip.
+const RECORDING_BLOCKED_NAMES = new Set(["shrey b"]);
+
 const MAX_AMOUNT_CENTS = 100_000_000; // $1,000,000 — mirrors server/domain/money.ts
 const CENTS_RE = /^([+-]?)(\d*)(?:\.(\d{1,2}))?$/; // mirrors server
 const SESSION_PAGE_LIMIT = 8;
@@ -890,6 +897,9 @@ async function onGateUnlock(ev) {
     field("gate-password").value = "";
     await refreshStatus();
     route();
+    // A fresh login is always an explicit "who's using this now" moment,
+    // even if this tab already answered earlier — clear that before asking.
+    clearConfirmedViewerThisTab();
     void maybeShowNamePrompt();
   } catch (e) {
     const errObj = /** @type {ApiError} */ (e);
@@ -3289,18 +3299,12 @@ function buildMemberRow(m, refresh) {
     tag.textContent = "Deactivated";
     row.appendChild(tag);
   }
-  if (m.canRecordSessions === false) {
-    const tag = document.createElement("span");
-    tag.className = "member-inactive-tag";
-    tag.textContent = "Recording blocked";
-    row.appendChild(tag);
-  }
   const edit = document.createElement("button");
   edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
   edit.addEventListener("click", () => {
     const body = document.createElement("form"); body.className = "stack";
-    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Phone number<input class="input" id="edit-member-phone" type="tel" value="${esc(m.phoneNumber ?? "")}" maxlength="32" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><label class="field-check"><input type="checkbox" id="edit-member-can-record" ${m.canRecordSessions === false ? "" : "checked"}> Can record new sessions</label><button class="btn btn-primary" type="submit">Save changes</button>`;
-    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const p = body.querySelector("#edit-member-phone").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); const canRecordSessions = body.querySelector("#edit-member-can-record").checked; if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, phoneNumber: p, venmoUsername: v, canRecordSessions } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
+    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Phone number<input class="input" id="edit-member-phone" type="tel" value="${esc(m.phoneNumber ?? "")}" maxlength="32" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
+    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const p = body.querySelector("#edit-member-phone").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, phoneNumber: p, venmoUsername: v } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
     openModal({ title: "Edit member", body });
   });
   row.appendChild(edit);
@@ -3650,7 +3654,7 @@ async function onViewerChange() {
     if (state.status) {
       state.status = { ...state.status, viewer: data?.viewer ?? null };
     }
-    clearSkippedNamePrompt();
+    setConfirmedViewerThisTab();
     fillViewerSelect();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
@@ -3696,7 +3700,7 @@ function onAddSession() {
     });
     return;
   }
-  if (state.status.viewer.canRecordSessions === false) {
+  if (RECORDING_BLOCKED_NAMES.has(state.status.viewer.name.trim().toLowerCase())) {
     showBanner({ kind: "error", message: "You're not able to record new sessions right now — ask an admin." });
     return;
   }
@@ -3722,41 +3726,49 @@ async function onAdminLock() {
   }
 }
 
-/* ── Name prompt (ask once at login) ──────────────────────── */
+/* ── Name prompt (ask every login / every fresh tab) ────────── */
 
-const NAME_PROMPT_SKIP_KEY = "pokerSkipNamePrompt";
+// Tracks, per browser tab, whether someone has already answered "Who are
+// you?" — deliberately sessionStorage rather than localStorage: sessionStorage
+// survives a same-tab reload (so refreshing mid-session doesn't re-nag) but
+// is gone the moment the tab or app is closed, so reopening the app always
+// asks again. A stale localStorage flag or a stale server-remembered viewer
+// used to let the app skip straight to the ledger for whoever next picked up
+// a shared device, showing someone else's name — this is what fixes that.
+const VIEWER_CONFIRMED_KEY = "pokerViewerConfirmedThisTab";
 
-function hasSkippedNamePrompt() {
+function hasConfirmedViewerThisTab() {
   try {
-    return localStorage.getItem(NAME_PROMPT_SKIP_KEY) === "1";
+    return sessionStorage.getItem(VIEWER_CONFIRMED_KEY) === "1";
   } catch {
     return false;
   }
 }
 
-function setSkippedNamePrompt() {
+function setConfirmedViewerThisTab() {
   try {
-    localStorage.setItem(NAME_PROMPT_SKIP_KEY, "1");
+    sessionStorage.setItem(VIEWER_CONFIRMED_KEY, "1");
   } catch {
     /* ignore — private browsing / storage disabled */
   }
 }
 
-function clearSkippedNamePrompt() {
+function clearConfirmedViewerThisTab() {
   try {
-    localStorage.removeItem(NAME_PROMPT_SKIP_KEY);
+    sessionStorage.removeItem(VIEWER_CONFIRMED_KEY);
   } catch {
     /* ignore */
   }
 }
 
 /**
- * Ask once, right after logging in, who's using this device — instead of
- * letting people discover the requirement piecemeal via guard banners on
- * whichever action they try first. Only called right after a fresh login
- * (onGateUnlock) or a returning page load (init), so it never re-nags
- * mid-session; the existing per-action banners remain as a fallback for
- * anyone who dismisses or skips it.
+ * Ask who's using this device — right after a fresh login (onGateUnlock,
+ * which clears the per-tab confirmation first so this always fires there)
+ * and again on a returning page load (init) if this tab hasn't answered yet.
+ * The group password is shared, so being logged into the group says nothing
+ * about which person is holding the phone right now; the existing per-action
+ * banners remain as a fallback for anyone who dismisses it with "Just
+ * checking balances".
  *
  * Admins skip this: by the time this runs, state.status.admin already
  * reflects any active admin session (admin unlock is a separate, later
@@ -3764,14 +3776,14 @@ function clearSkippedNamePrompt() {
  * tools instead of being asked who they are.
  */
 async function maybeShowNamePrompt() {
-  if (!state.status?.group || state.status.admin || state.status.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
+  if (!state.status?.group || state.status.admin || state.token || hasConfirmedViewerThisTab() || activeModal) return;
   let members;
   try {
     members = (await api("/members")).members ?? [];
   } catch {
     return;
   }
-  if (members.length === 0 || state.status?.admin || state.status?.viewer || state.token || hasSkippedNamePrompt() || activeModal) return;
+  if (members.length === 0 || state.status?.admin || state.token || hasConfirmedViewerThisTab() || activeModal) return;
   state.members = members;
 
   const body = document.createElement("div");
@@ -3779,7 +3791,7 @@ async function maybeShowNamePrompt() {
   body.innerHTML = `
     <p class="form-hint">Pick your name so sessions you record are marked as yours, and the ledger shows your own totals.</p>
     <label class="field" for="name-prompt-select">Your name</label>
-    <select id="name-prompt-select" class="input">
+    <select id="name-prompt-select" class="input" autocomplete="off">
       <option value="">Select your name…</option>
       ${members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}
     </select>
@@ -3789,13 +3801,16 @@ async function maybeShowNamePrompt() {
     </div>`;
   openModal({ title: "Who are you?", body });
   const select = /** @type {HTMLSelectElement} */ (q(body, "#name-prompt-select"));
-  makeMemberSelectTypeable(select);
+  // Force a blank starting selection — some browsers restore a select's
+  // previously-chosen value on a fresh render of the same field, which would
+  // silently pick the wrong person for whoever opens this next.
+  select.value = "";
   const submit = /** @type {HTMLButtonElement} */ (q(body, "#name-prompt-submit"));
   select.addEventListener("change", () => {
     submit.disabled = !select.value;
   });
   q(body, "#name-prompt-skip").addEventListener("click", () => {
-    setSkippedNamePrompt();
+    setConfirmedViewerThisTab();
     closeModal();
   });
   submit.addEventListener("click", async () => {
@@ -3808,7 +3823,7 @@ async function maybeShowNamePrompt() {
       if (state.status) {
         state.status = { ...state.status, viewer: data?.viewer ?? null };
       }
-      clearSkippedNamePrompt();
+      setConfirmedViewerThisTab();
       fillViewerSelect();
       closeModal();
       route();

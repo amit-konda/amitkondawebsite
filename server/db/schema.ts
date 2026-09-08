@@ -60,12 +60,6 @@ export const members = pgTable(
     // nothing breaks if it's unset, the payer just has to pick the person
     // themselves inside Venmo.
     venmoUsername: text("venmo_username"),
-    // Lets an admin freeze a specific member's ability to record new
-    // sessions (e.g. while a discrepancy with their numbers gets sorted
-    // out) without hiding them: their existing history stays visible and
-    // anyone else can still add them as a participant in a session they
-    // record — this only blocks the member from submitting their own.
-    canRecordSessions: boolean("can_record_sessions").notNull().default(true),
     status: memberStatus("status").notNull().default("active"),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())

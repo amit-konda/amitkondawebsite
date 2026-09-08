@@ -842,49 +842,64 @@ describe("session lifecycle", () => {
   });
 });
 
-describe("session recording permission", () => {
-  it("blocks a member with canRecordSessions=false from creating a new session", async () => {
-    const [blocked] = await tdb.db
+// ---------------------------------------------------------------------------
+// Hardcoded recording block
+// ---------------------------------------------------------------------------
+describe("hardcoded recording block", () => {
+  it("blocks Shrey B from recording a session, but not from being added by someone else", async () => {
+    const [shrey, other] = await tdb.db
       .insert(members)
-      .values({ displayName: "Frozen Recorder", emailNormalized: "frozen-recorder@example.com", status: "active", canRecordSessions: false })
+      .values([
+        { displayName: "Shrey B", emailNormalized: "shrey-b-block-test@example.com", status: "active" },
+        { displayName: "Recording Block Other", emailNormalized: "recording-block-other@example.com", status: "active" }
+      ])
       .returning();
 
-    const res = await postJson(
+    const blocked = await postJson(
       "/api/poker/sessions",
       {
-        requestKey: "frozen-recorder-attempt",
+        requestKey: "shrey-b-blocked-attempt",
         playedAt: "2026-08-01T12:00:00.000Z",
         results: [
-          { memberId: crypto.randomUUID(), amountCents: 1000 },
-          { memberId: crypto.randomUUID(), amountCents: -1000 }
+          { memberId: shrey!.id, amountCents: 1000 },
+          { memberId: other!.id, amountCents: -1000 }
         ]
       },
-      { group: groupCookie(blocked!.id) }
+      { group: groupCookie(shrey!.id) }
     );
-    expect(res.status).toBe(403);
-    expect(res.json.error?.code).toBe("forbidden");
+    expect(blocked.status).toBe(403);
+    expect(blocked.json.error?.code).toBe("forbidden");
+    const notCreated = await tdb.db
+      .select()
+      .from(pokerSessions)
+      .where(eq(pokerSessions.requestKey, "shrey-b-blocked-attempt"));
+    expect(notCreated).toHaveLength(0);
 
-    // Nothing was created.
-    const found = await tdb.db.select().from(pokerSessions).where(eq(pokerSessions.requestKey, "frozen-recorder-attempt"));
-    expect(found).toHaveLength(0);
-
-    // Restoring the flag lets the same member record normally again.
-    await tdb.db.update(members).set({ canRecordSessions: true }).where(eq(members.id, blocked!.id));
-    const retry = await postJson(
+    // Someone else can still record a session that includes Shrey B as a
+    // participant — the block only stops Shrey B from being the recorder.
+    const recorded = await postJson(
       "/api/poker/sessions",
       {
-        requestKey: "frozen-recorder-retry",
+        requestKey: "shrey-b-as-participant",
         playedAt: "2026-08-01T12:00:00.000Z",
         results: [
-          { memberId: blocked!.id, amountCents: 1000 },
-          { memberId: crypto.randomUUID(), amountCents: -1000 }
+          { memberId: other!.id, amountCents: 1000 },
+          { memberId: shrey!.id, amountCents: -1000 }
         ]
       },
-      { group: groupCookie(blocked!.id) }
+      { group: groupCookie(other!.id) }
     );
-    // The second participant is a made-up id, so this still fails — but on
-    // validation grounds now, not the recording-permission check.
-    expect(retry.status).toBe(400);
-    expect(retry.json.error?.code).not.toBe("forbidden");
+    expect(recorded.status).toBe(201);
+    const sessionId = recorded.json.session!.id;
+
+    // Shrey B's existing participation stays fully visible in the ledger.
+    const ledger = await getLedger(groupCookie(other!.id));
+    expect(ledger.json.rows!.some((r) => r.name === "Shrey B")).toBe(true);
+
+    await tdb.db.delete(emailDeliveries).where(eq(emailDeliveries.entityId, sessionId));
+    await tdb.db.delete(disputeTokens).where(eq(disputeTokens.sessionId, sessionId));
+    await tdb.db.delete(sessionResults).where(eq(sessionResults.sessionId, sessionId));
+    await tdb.db.delete(pokerSessions).where(eq(pokerSessions.id, sessionId));
+    await tdb.db.delete(members).where(inArray(members.id, [shrey!.id, other!.id]));
   });
 });

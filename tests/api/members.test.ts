@@ -51,7 +51,6 @@ interface MemberLite {
   name: string;
   venmoUsername: string | null;
   phoneNumber?: string | null;
-  canRecordSessions?: boolean;
 }
 interface MembersListBody {
   members: MemberLite[];
@@ -516,7 +515,7 @@ describe("members + join requests API", () => {
     const res = await patchJson(`/admin/members/${direct.id}`, { status: "inactive" }, admin);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      member: { id: string; name: string; email: string; phoneNumber: string | null; status: string; venmoUsername: string | null; canRecordSessions: boolean };
+      member: { id: string; name: string; email: string; phoneNumber: string | null; status: string; venmoUsername: string | null };
     };
     expect(body.member).toEqual({
       id: direct.id,
@@ -524,8 +523,7 @@ describe("members + join requests API", () => {
       email: "direct@example.com",
       phoneNumber: "312-555-0100",
       status: "inactive",
-      venmoUsername: null,
-      canRecordSessions: true
+      venmoUsername: null
     });
 
     // Inactive members disappear from the group-facing list.
@@ -540,43 +538,12 @@ describe("members + join requests API", () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.action, "member.update"), eq(auditEvents.entityId, direct.id)));
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active", phoneNumber: "312-555-0100", venmoUsername: null, canRecordSessions: true });
-    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive", phoneNumber: "312-555-0100", venmoUsername: null, canRecordSessions: true });
+    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active", phoneNumber: "312-555-0100", venmoUsername: null });
+    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive", phoneNumber: "312-555-0100", venmoUsername: null });
 
     // Unknown member id → 404.
     const nf = await patchJson(`/admin/members/${randomUUID()}`, { status: "inactive" }, admin);
     expect(nf.status).toBe(404);
     expect(((await nf.json()) as ErrorBody).error.code).toBe("not_found");
-  });
-
-  it("admin: can freeze and restore a member's ability to record sessions", async () => {
-    const admin = await adminLogin();
-    const created = await postJson(
-      "/admin/members",
-      { displayName: "Recorder Check", email: "recorder-check@example.com" },
-      admin
-    );
-    expect(created.status).toBe(201);
-    const { member } = (await created.json()) as { member: MemberLite };
-
-    // Defaults to true — new members can record right away.
-    const initial = (
-      await conn.db.select().from(members).where(eq(members.id, member.id))
-    )[0]!;
-    expect(initial.canRecordSessions).toBe(true);
-
-    const blocked = await patchJson(`/admin/members/${member.id}`, { canRecordSessions: false }, admin);
-    expect(blocked.status).toBe(200);
-    const blockedBody = (await blocked.json()) as { member: MemberLite & { canRecordSessions: boolean } };
-    expect(blockedBody.member.canRecordSessions).toBe(false);
-
-    // Blocking doesn't touch anything else — still active, still listed.
-    const list = (await (
-      await getJson("/members", { poker_session: admin.poker_session })
-    ).json()) as MembersListBody;
-    expect(list.members.some((m) => m.id === member.id)).toBe(true);
-
-    const restored = await patchJson(`/admin/members/${member.id}`, { canRecordSessions: true }, admin);
-    expect(((await restored.json()) as { member: MemberLite & { canRecordSessions: boolean } }).member.canRecordSessions).toBe(true);
   });
 });

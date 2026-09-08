@@ -789,21 +789,53 @@ test("add past session: the +/- toggle sets a participant's sign without typing 
   expect(deb.id).toBeTruthy();
 });
 
-// ---------------------------------------------------------------------------
-
-test("a member with recording blocked can't open Add session, but can still play in one someone else records", async ({ page }) => {
-  const fran = await seedMember(tdb, "Frozen Fran", "frozen-fran+e2e@example.com");
-  await tdb.db.update(members).set({ canRecordSessions: false }).where(eq(members.id, fran.id));
+test("Shrey B is blocked from recording a session, but stays visible and playable", async ({ page }) => {
+  const shrey = await seedMember(tdb, "Shrey B", "shrey-b-e2e@example.com");
+  const other = await seedMember(tdb, "Recording Block Partner", "recording-block-partner-e2e@example.com");
 
   await page.goto("/poker/");
-  await loginAsGroup(page, GROUP_PASSWORD, "Frozen Fran");
+  await loginAsGroup(page, GROUP_PASSWORD, "Shrey B");
   await page.getByRole("button", { name: "Poker", exact: true }).click();
   await page.getByRole("button", { name: /add (past )?session/i }).click();
 
-  await expect(page.getByText(/not able to record new sessions/i)).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".banner")).toContainText(/not able to record new sessions/i, { timeout: 10_000 });
   await expect(page.getByRole("checkbox").first()).not.toBeVisible();
 
-  expect(fran.id).toBeTruthy();
+  expect(shrey.id).toBeTruthy();
+  expect(other.id).toBeTruthy();
+});
+
+test("who are you: no filter field, and it's asked again on every fresh login", async ({ page }) => {
+  await seedMember(tdb, "Ivy", "ivy+e2e@example.com");
+  await seedMember(tdb, "Jax", "jax+e2e@example.com");
+
+  await page.goto("/poker/");
+  await unlockGroupGate(page, GROUP_PASSWORD);
+
+  const dialog = page.getByRole("dialog", { name: /who are you/i });
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  // The old type-to-filter field that ships on other member pickers doesn't
+  // belong here — the select is short enough to just scroll.
+  await expect(page.getByPlaceholder(/type to filter/i)).toHaveCount(0);
+  await dialog.getByLabel(/your name/i).selectOption({ label: "Ivy" });
+  await dialog.getByRole("button", { name: /^continue$/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
+
+  // Reloading mid-session doesn't re-nag — this tab already answered.
+  await page.goto("/poker/");
+  await expect(page.getByRole("button", { name: "Poker", exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(dialog).toHaveCount(0);
+
+  // But logging out and back in is always treated as a fresh "who's this"
+  // moment, even though the tab already answered once this session — the
+  // group password is shared, so someone else could be holding the phone at
+  // the next login.
+  await page.getByRole("button", { name: "Log out" }).click();
+  // Logout is an in-SPA state transition (async logout call + re-render),
+  // not a navigation — give the gate time to actually render before
+  // loginAsGroup's own (non-retrying) check for it runs.
+  await expect(page.getByLabel(/password/i).filter({ visible: true })).toBeVisible({ timeout: 10_000 });
+  await loginAsGroup(page, GROUP_PASSWORD, "Jax");
 });
 
 // ---------------------------------------------------------------------------

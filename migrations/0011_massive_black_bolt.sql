@@ -1,1 +1,0 @@
-ALTER TABLE "members" ADD COLUMN "can_record_sessions" boolean DEFAULT true NOT NULL;

@@ -29,7 +29,8 @@ import {
   sessionResults,
   disputeTokens,
   disputes,
-  emailDeliveries
+  emailDeliveries,
+  rateLimitBuckets
 } from "../../server/db/schema.js";
 import {
   ADMIN_PASSWORD,
@@ -782,10 +783,16 @@ test("add past session: the +/- toggle sets a participant's sign without typing 
 
 // ---------------------------------------------------------------------------
 
-test("overall settle up: pay with Venmo opens a prefilled link, then confirming updates the ledger", async ({ page }) => {
+test("overall settle up: pay with Venmo opens a prefilled link, only the recipient can confirm, then the ledger updates", async ({ page, browser }) => {
   const finn = await seedMember(tdb, "Finn", "finn+e2e@example.com");
   const grace = await seedMember(tdb, "Grace", "grace+e2e@example.com");
   await seedSession(tdb, { participants: [{ memberId: finn.id, amountCents: -3000 }, { memberId: grace.id, amountCents: 3000 }] });
+  // Grace has a saved Venmo username — this is the case that hid the
+  // original prefill bug (a `recipients=` query param instead of a URL path
+  // segment): without a username the link falls back to the bare
+  // `venmo.com/?txn=pay...` form either way, so a test never seeding one
+  // could pass even with the bug in place.
+  await tdb.db.update(members).set({ venmoUsername: "grace-e2e-venmo" }).where(eq(members.id, grace.id));
 
   await page.goto("/poker/");
   await loginAsGroup(page, GROUP_PASSWORD, "Finn");
@@ -796,12 +803,17 @@ test("overall settle up: pay with Venmo opens a prefilled link, then confirming 
   await page.locator("#overall-settle-btn").click();
   // Scoped to the modal — the (hidden) Poker-tab settle-up card renders its
   // own .settle-row elements for the same imbalance and would otherwise
-  // double-match.
+  // double-match. Also excludes .settle-row-pending, which shares the
+  // .settle-row class and (once a payment is in flight) also mentions
+  // "Grace" — this locator must stay pointed at the transfer suggestion
+  // row specifically, even after a pending row for the same pair appears.
   const modal = page.locator("#modal-root");
-  const transferRow = modal.locator(".settle-row").filter({ hasText: "Grace" });
+  const transferRow = modal.locator(".settle-row:not(.settle-row-pending)").filter({ hasText: "Grace" });
   await expect(transferRow).toContainText("Finn");
   await expect(transferRow).toContainText("pays");
   await expect(transferRow.locator(".settle-amount")).toHaveText("30.00");
+  // Finn is the payer here, so his own row gets the action button.
+  await expect(transferRow.locator('button[data-action="pay"]')).toBeVisible();
 
   // "Pay with Venmo" opens a prefilled Venmo link in a new tab and records a
   // pending settlement — Venmo itself has no way to tell the app the money
@@ -818,6 +830,10 @@ test("overall settle up: pay with Venmo opens a prefilled link, then confirming 
   ]);
   await popup.waitForLoadState();
   expect(popup.url()).toContain("venmo.com");
+  // Recipient goes in the URL PATH (venmo.com/<username>), not a
+  // `recipients=` query param — that mismatch was the actual bug reported
+  // from a real device (Venmo fell back to its generic search screen).
+  expect(popup.url()).toContain("venmo.com/grace-e2e-venmo?");
   expect(popup.url()).toContain("amount=30.00");
   await popup.close();
 
@@ -827,17 +843,47 @@ test("overall settle up: pay with Venmo opens a prefilled link, then confirming 
   await expect(pendingRow).toContainText("paid");
   await expect(pendingRow).toContainText("Grace");
   await expect(pendingRow).toContainText("Pending");
+  // Finn sent the payment — only Grace, who received it, can confirm it
+  // landed, so Finn's own view has no "Mark received" button (Cancel still
+  // does, since either side can back out of a mistaken entry).
+  await expect(pendingRow.locator('button[data-action="confirm"]')).toHaveCount(0);
+  await expect(pendingRow.locator('button[data-action="void"]')).toBeVisible();
 
-  // Confirming moves real money off the ledger. The suite is append-only, so
-  // other members from earlier tests may still owe each other money —
-  // assert Finn/Grace specifically dropped out of the transfer list rather
-  // than assuming the whole modal is now empty.
-  await pendingRow.locator('button[data-action="confirm"]').click();
-  await expect(page.getByText("Payment confirmed — balances updated.")).toBeVisible({ timeout: 10_000 });
-  await expect(modal.locator(".settle-row-pending")).toHaveCount(0);
-  await expect(modal.locator(".settle-row").filter({ hasText: "Grace" })).toHaveCount(0);
+  // Re-tapping "Pay with Venmo" for the exact same transfer must not create
+  // a second pending row — the server refuses a second pending payment for
+  // the same pair, and the button itself disappears in favor of an
+  // "Awaiting confirmation" chip once one exists.
+  await expect(transferRow.locator('button[data-action="pay"]')).toHaveCount(0);
+  await expect(transferRow).toContainText("Awaiting confirmation");
 
-  await page.keyboard.press("Escape");
+  // Confirming is Grace's call, not Finn's — open a separate session as her.
+  // This test is the only one in the file that logs in twice, which can tip
+  // over the per-IP login rate limit this late in a full suite run (every
+  // other test's own login already counted against the same bucket, since
+  // the harness has no real distinct IPs) — clear it first so Grace's login
+  // is judged on its own, not on how many tests happened to run before it.
+  await tdb.db.delete(rateLimitBuckets);
+  const graceContext = await browser.newContext();
+  const gracePage = await graceContext.newPage();
+  await graceContext.route("https://venmo.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>venmo</body></html>" })
+  );
+  await gracePage.goto("/poker/");
+  await loginAsGroup(gracePage, GROUP_PASSWORD, "Grace");
+  await gracePage.getByRole("button", { name: "Overall", exact: true }).click();
+  await gracePage.locator("#overall-settle-btn").click();
+  const graceModal = gracePage.locator("#modal-root");
+  const gracePendingRow = graceModal.locator(".settle-row-pending");
+  await expect(gracePendingRow).toBeVisible({ timeout: 10_000 });
+  await gracePendingRow.locator('button[data-action="confirm"]').click();
+  await expect(gracePage.getByText("Payment confirmed — balances updated.")).toBeVisible({ timeout: 10_000 });
+  await expect(graceModal.locator(".settle-row-pending")).toHaveCount(0);
+  await gracePage.keyboard.press("Escape");
+  await graceContext.close();
+
+  // Back on Finn's page: reload to pick up Grace's confirmation.
+  await page.goto("/poker/");
+  await page.getByRole("button", { name: "Overall", exact: true }).click();
   await expect(page.locator("#overall-heading")).toHaveText("You're settled up across everything", { timeout: 10_000 });
 
   expect(grace.id).toBeTruthy();

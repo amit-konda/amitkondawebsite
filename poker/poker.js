@@ -347,16 +347,24 @@ function computeSettleUp(rows) {
  * and a note). Venmo has no API for a third-party app to confirm the money
  * actually moved, so this is a UI convenience only — the app tracks whether
  * it happened via its own pending -> confirmed settlement record, not by
- * asking Venmo. When the recipient hasn't saved a Venmo username, the link
- * still opens Venmo with the amount/note ready — the payer just has to pick
- * the person themselves.
+ * asking Venmo.
+ *
+ * Venmo's payment-prefill link takes the recipient as a URL PATH segment —
+ * https://venmo.com/<username>?txn=pay&amount=...&note=... — NOT a
+ * `recipients=` query parameter on the bare `/`. That was the original bug
+ * here: a `recipients` query param is silently ignored, so the link opened
+ * Venmo's generic "who are you paying" search screen instead of a prefilled
+ * payment (confirmed against real-device behavior, not just the URL
+ * shape). When the recipient hasn't saved a Venmo username there's no path
+ * segment to add, so it still opens with the amount/note ready and the
+ * payer just has to pick the person themselves.
  * @param {{recipientUsername?: string|null, amountCents: number, note: string}} opts
  * @returns {string}
  */
 function venmoPayLink(opts) {
   const params = new URLSearchParams({ txn: "pay", amount: (opts.amountCents / 100).toFixed(2), note: opts.note });
-  if (opts.recipientUsername) params.set("recipients", opts.recipientUsername.replace(/^@/, ""));
-  return `https://venmo.com/?${params.toString()}`;
+  const username = opts.recipientUsername ? opts.recipientUsername.replace(/^@/, "") : "";
+  return `https://venmo.com/${encodeURIComponent(username)}?${params.toString()}`;
 }
 
 /**
@@ -1162,39 +1170,76 @@ function renderOverallLedger() {
  * point it becomes a real ledger entry and the balances above update.
  */
 function openOverallSettleModal() {
-  let transfers = computeSettleUp(buildOverallRows());
+  const viewerId = state.status?.viewer?.id ?? null;
+  let transfers = sortTransfers(computeSettleUp(buildOverallRows()));
   const memberById = new Map(state.members.map((m) => [m.id, m]));
   const body = document.createElement("div");
   body.className = "stack";
   openModal({ title: "Settle up", body });
   render();
 
+  // Transfers you need to pay come first — that's the one actionable row for
+  // you here. Everyone else's transfer is still shown (so the group can see
+  // how settle-up will play out) but sorts below.
+  function sortTransfers(list) {
+    return [...list].sort((a, b) => (b.fromIsViewer ? 1 : 0) - (a.fromIsViewer ? 1 : 0));
+  }
+
   function render() {
     const pending = (state.settlements ?? []).filter((s) => s.status === "pending");
-    const pendingHtml = pending.length
-      ? `<div class="settle-pending-section"><p class="form-hint">Awaiting confirmation</p>${pending.map(pendingRowHtml).join("")}</div>`
+    // Duplicate pending rows for the same pair only happen via a rare race
+    // (the server also refuses to create a second one now) — collapse them
+    // to a single displayed row, and act on every duplicate together so
+    // "Mark received"/"Cancel" can't leave one behind to be confirmed again
+    // later and double-count a payment that only really happened once.
+    const pendingGroups = new Map();
+    for (const s of pending) {
+      const key = `${s.fromMemberId}|${s.toMemberId}`;
+      if (!pendingGroups.has(key)) pendingGroups.set(key, []);
+      pendingGroups.get(key).push(s);
+    }
+    const pendingDisplay = [...pendingGroups.values()].map((group) => group[0]);
+    const pendingPairs = new Set(pendingGroups.keys());
+
+    const pendingHtml = pendingDisplay.length
+      ? `<div class="settle-pending-section"><p class="form-hint">Awaiting confirmation</p>${pendingDisplay
+          .map((s) => pendingRowHtml(s, pendingGroups.get(`${s.fromMemberId}|${s.toMemberId}`)))
+          .join("")}</div>`
       : "";
     const transferHtml = transfers.length
-      ? transfers.map(transferRowHtml).join("")
+      ? transfers.map((t) => transferRowHtml(t, pendingPairs)).join("")
       : `<p class="empty-state">Everyone is settled up.</p>`;
     body.innerHTML = `<p class="form-hint">Fewest transfers that clear every balance across poker, blackjack, handshake bets, and settlements. We mainly use Venmo.</p>${pendingHtml}${transferHtml}<div class="settle-actions"><button type="button" class="btn" data-action="copy">Copy as text</button></div>`;
     wire();
   }
 
-  function transferRowHtml(t) {
+  function transferRowHtml(t, pendingPairs) {
+    // Only the payer can act on a transfer — everyone else's is plain text
+    // so the whole group can see how settle-up will happen without a
+    // "Pay with Venmo" button that isn't theirs to click.
+    let action = "";
+    if (t.fromIsViewer) {
+      action = pendingPairs.has(`${t.fromId}|${t.toId}`)
+        ? '<span class="chip chip-pending">Awaiting confirmation</span>'
+        : '<button type="button" class="btn btn-small" data-action="pay">Pay with Venmo</button>';
+    }
     return `<div class="settle-row" data-from="${esc(t.fromId)}" data-to="${esc(t.toId)}" data-amount="${t.amountCents}">
       <span class="settle-parties"><strong>${esc(t.fromName)}</strong> <span class="muted-inline">pays</span> <strong>${esc(t.toName)}</strong>${t.fromIsViewer || t.toIsViewer ? '<span class="you-tag">you</span>' : ""}</span>
       <span class="settle-amount money">${esc(formatPlainCents(t.amountCents))}</span>
-      <button type="button" class="btn btn-small" data-action="pay">Pay with Venmo</button>
+      ${action}
     </div>`;
   }
 
-  function pendingRowHtml(s) {
-    return `<div class="settle-row settle-row-pending" data-id="${esc(s.id)}">
+  function pendingRowHtml(s, group) {
+    const ids = (group && group.length ? group : [s]).map((g) => g.id).join(",");
+    // Only the person who was actually paid knows whether it landed — the
+    // payer already knows they sent it, and no one else in the group can.
+    const canConfirm = viewerId && s.toMemberId === viewerId;
+    return `<div class="settle-row settle-row-pending" data-id="${esc(s.id)}" data-ids="${esc(ids)}">
       <span class="settle-parties"><strong>${esc(s.fromName)}</strong> <span class="muted-inline">paid</span> <strong>${esc(s.toName)}</strong> <span class="chip chip-pending">Pending</span></span>
       <span class="settle-amount money">${esc(formatPlainCents(s.amountCents))}</span>
       <span class="settle-pending-actions">
-        <button type="button" class="btn btn-small" data-action="confirm">Mark received</button>
+        ${canConfirm ? '<button type="button" class="btn btn-small" data-action="confirm">Mark received</button>' : ""}
         <button type="button" class="btn btn-ghost btn-small" data-action="void">Cancel</button>
       </span>
     </div>`;
@@ -1232,12 +1277,18 @@ function openOverallSettleModal() {
       return;
     }
     const id = row.dataset.id;
+    const ids = (row.dataset.ids || id || "").split(",").filter(Boolean);
     if (action === "confirm") {
       btn.disabled = true;
       try {
-        await api(`/settlements/${encodeURIComponent(id)}/confirm`, { method: "POST" });
+        const [primary, ...extras] = ids;
+        await api(`/settlements/${encodeURIComponent(primary)}/confirm`, { method: "POST" });
+        // Any leftover duplicate for the exact same pair is the same
+        // real-world payment, not a second one — void the rest so none of
+        // them can be confirmed again later and double-count it.
+        await Promise.all(extras.map((extraId) => api(`/settlements/${encodeURIComponent(extraId)}/void`, { method: "POST" }).catch(() => {})));
         await Promise.all([loadSettlements(), loadSettlementLedger(), loadLedger(), loadBlackjackLedger(), loadHandshakeLedger()]);
-        transfers = computeSettleUp(buildOverallRows());
+        transfers = sortTransfers(computeSettleUp(buildOverallRows()));
         renderOverallLedger();
         render();
         showBanner({ kind: "info", message: "Payment confirmed — balances updated." });
@@ -1248,7 +1299,7 @@ function openOverallSettleModal() {
     } else if (action === "void") {
       btn.disabled = true;
       try {
-        await api(`/settlements/${encodeURIComponent(id)}/void`, { method: "POST" });
+        await Promise.all(ids.map((vid) => api(`/settlements/${encodeURIComponent(vid)}/void`, { method: "POST" })));
         await loadSettlements();
         render();
       } catch (e) {

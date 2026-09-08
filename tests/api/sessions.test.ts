@@ -181,13 +181,53 @@ describe("auth matrix", () => {
 
   it("blocks admin routes without an admin cookie", async () => {
     const group = groupCookie(alice?.id ?? null);
-    const patch = await req("/api/poker/admin/sessions/00000000-0000-4000-8000-000000000000", {
+
+    // The edit route now also allows the recording member a short self-edit
+    // window (see "Improve poker session naming and editing"), so it checks
+    // whether the session exists before it checks who's allowed to touch it
+    // — a made-up id 404s regardless of admin status rather than 403ing.
+    const patchMissing = await req("/api/poker/admin/sessions/00000000-0000-4000-8000-000000000000", {
       method: "PATCH",
       body: { version: 1 },
       group
     });
-    expect(patch.status).toBe(403);
-    expect(patch.json.error?.code).toBe("admin_required");
+    expect(patchMissing.status).toBe(404);
+    expect(patchMissing.json.error?.code).toBe("not_found");
+
+    // For a session that DOES exist, a non-admin who didn't record it still
+    // can't edit it — just with the route's actual "forbidden" code, not
+    // "admin_required" (this path can also reject a non-admin who simply
+    // isn't the recorder, not only a missing admin cookie). Inserted
+    // directly rather than through the real create endpoint, and hard-deleted
+    // below, so this throwaway fixture never surfaces in the exact,
+    // exhaustive ledger/pagination assertions later in this file.
+    const [owner, stranger] = await tdb.db
+      .insert(members)
+      .values([
+        { displayName: "Auth Matrix Owner", emailNormalized: "auth-matrix-owner@example.com", status: "active" },
+        { displayName: "Auth Matrix Stranger", emailNormalized: "auth-matrix-stranger@example.com", status: "active" }
+      ])
+      .returning();
+    const [ownedSession] = await tdb.db
+      .insert(pokerSessions)
+      .values({ playedAt: new Date("2026-08-01T12:00:00.000Z"), recordedByMemberId: owner!.id, requestKey: "auth-matrix-owned-session" })
+      .returning();
+    const ownedSessionId = ownedSession!.id;
+    await tdb.db.insert(sessionResults).values([
+      { sessionId: ownedSessionId, memberId: owner!.id, amountCents: 1000 },
+      { sessionId: ownedSessionId, memberId: stranger!.id, amountCents: -1000 }
+    ]);
+
+    const patchExisting = await req(`/api/poker/admin/sessions/${ownedSessionId}`, {
+      method: "PATCH",
+      body: { version: 1 },
+      group: groupCookie(stranger!.id)
+    });
+    expect(patchExisting.status).toBe(403);
+    expect(patchExisting.json.error?.code).toBe("forbidden");
+
+    await tdb.db.delete(pokerSessions).where(eq(pokerSessions.id, ownedSessionId));
+    await tdb.db.delete(members).where(inArray(members.id, [owner!.id, stranger!.id]));
 
     const voidRes = await postJson(
       "/api/poker/admin/sessions/00000000-0000-4000-8000-000000000000/void",

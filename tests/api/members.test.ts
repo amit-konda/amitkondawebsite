@@ -438,7 +438,7 @@ describe("members + join requests API", () => {
       id: directId,
       displayName: "Direct",
       emailNormalized: "direct@example.com",
-      phoneNumber: null
+      phoneNumber: "312-555-0100"
     });
 
     // Duplicate email → 409, nothing created.

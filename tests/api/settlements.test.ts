@@ -124,6 +124,35 @@ describe("settlements", () => {
     expect(dup.json.id).toBe(settlementId);
   });
 
+  it("refuses a second pending payment for the same pair, even with a different requestKey", async () => {
+    // A different requestKey means the requestKey idempotency check alone
+    // wouldn't catch this — re-tapping "Pay with Venmo" (a new browser tab, a
+    // retry) must still not create a second pending row for the same debt.
+    const res = await postJson(
+      "/api/poker/settlements",
+      { requestKey: randomUUID(), fromMemberId: ivy.id, toMemberId: jax.id, amountCents: 2000 },
+      groupCookie(ivy.id)
+    );
+    expect(res.status).toBe(200);
+    expect(res.json.duplicate).toBe(true);
+    expect(res.json.id).toBe(settlementId);
+
+    const list = await req("/api/poker/settlements", { group: groupCookie(ivy.id) });
+    const pendingForPair = (list.json.settlements as SettlementApi[]).filter(
+      (s) => s.fromMemberId === ivy.id && s.toMemberId === jax.id && s.status === "pending"
+    );
+    expect(pendingForPair).toHaveLength(1);
+  });
+
+  it("only the recipient can confirm — not the payer, not an uninvolved member", async () => {
+    const asPayer = await postJson(`/api/poker/settlements/${settlementId}/confirm`, {}, groupCookie(ivy.id));
+    expect(asPayer.status).toBe(403);
+    expect(asPayer.json.error?.code).toBe("forbidden");
+
+    const ledger = await req("/api/poker/settlements/ledger", { group: groupCookie(ivy.id) });
+    expect((ledger.json.rows as LedgerRow[]).every((r) => r.netCents === 0)).toBe(true);
+  });
+
   it("moves the ledger once confirmed", async () => {
     const res = await postJson(`/api/poker/settlements/${settlementId}/confirm`, {}, groupCookie(jax.id));
     expect(res.status).toBe(200);

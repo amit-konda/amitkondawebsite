@@ -19,7 +19,7 @@ import { db } from "../db/client.js";
 import { members, settlements } from "../db/schema.js";
 import { writeAudit } from "../domain/audit.js";
 import { MAX_AMOUNT_CENTS } from "../domain/money.js";
-import { badRequest, notFound } from "../errors.js";
+import { badRequest, forbidden, notFound } from "../errors.js";
 import type { Ctx, Router } from "../router.js";
 
 const createSchema = z.object({
@@ -120,6 +120,21 @@ export function registerSettlementRoutes(router: Router): void {
       .where(and(eq(members.status, "active"), inArray(members.id, [body.fromMemberId, body.toMemberId])));
     if (active.length !== 2) throw badRequest("invalid_members", "Choose active members only.");
 
+    // One active pending payment per direction at a time — re-tapping "Pay
+    // with Venmo" for the same transfer (opening the app again, a slow
+    // network retry, a second browser tab) would otherwise record a second
+    // pending settlement for the exact same debt, which could then be
+    // confirmed independently and double-count a payment that only really
+    // happened once. Hand back the existing one instead of creating another.
+    const existingPending = (
+      await db
+        .select({ id: settlements.id })
+        .from(settlements)
+        .where(and(eq(settlements.fromMemberId, body.fromMemberId), eq(settlements.toMemberId, body.toMemberId), eq(settlements.status, "pending")))
+        .limit(1)
+    )[0];
+    if (existingPending) return { created: false, id: existingPending.id, duplicate: true };
+
     const id = randomUUID();
     try {
       await db.insert(settlements).values({
@@ -150,15 +165,16 @@ export function registerSettlementRoutes(router: Router): void {
     return { created: true, id };
   });
 
-  // POST /api/poker/settlements/:id/confirm — the trust model here matches
-  // the rest of the app (any signed-in member, not just the two parties, can
-  // settle a handshake bet too) — this is a private group ledger, not a
-  // payments product with per-action authorization.
+  // POST /api/poker/settlements/:id/confirm — unlike a handshake bet (which
+  // any signed-in member can settle), only the person who was actually paid
+  // knows whether the money landed, so confirmation is restricted to the
+  // settlement's recipient.
   router.post("/api/poker/settlements/:id/confirm", async (ctx: Ctx) => {
     const claims = requireViewer(ctx);
     const id = ctx.params.id!;
     const existing = (await db.select().from(settlements).where(eq(settlements.id, id)).limit(1))[0];
     if (!existing) throw notFound();
+    if (existing.toMemberId !== claims.mid) throw forbidden("Only the person who was paid can confirm this.");
     if (existing.status !== "pending") throw badRequest("not_pending", "This payment isn't pending confirmation.");
     await db
       .update(settlements)

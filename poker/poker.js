@@ -3289,12 +3289,18 @@ function buildMemberRow(m, refresh) {
     tag.textContent = "Deactivated";
     row.appendChild(tag);
   }
+  if (m.canRecordSessions === false) {
+    const tag = document.createElement("span");
+    tag.className = "member-inactive-tag";
+    tag.textContent = "Recording blocked";
+    row.appendChild(tag);
+  }
   const edit = document.createElement("button");
   edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
   edit.addEventListener("click", () => {
     const body = document.createElement("form"); body.className = "stack";
-    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Phone number<input class="input" id="edit-member-phone" type="tel" value="${esc(m.phoneNumber ?? "")}" maxlength="32" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
-    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const p = body.querySelector("#edit-member-phone").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, phoneNumber: p, venmoUsername: v } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
+    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Phone number<input class="input" id="edit-member-phone" type="tel" value="${esc(m.phoneNumber ?? "")}" maxlength="32" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><label class="field-check"><input type="checkbox" id="edit-member-can-record" ${m.canRecordSessions === false ? "" : "checked"}> Can record new sessions</label><button class="btn btn-primary" type="submit">Save changes</button>`;
+    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const p = body.querySelector("#edit-member-phone").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); const canRecordSessions = body.querySelector("#edit-member-can-record").checked; if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, phoneNumber: p, venmoUsername: v, canRecordSessions } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
     openModal({ title: "Edit member", body });
   });
   row.appendChild(edit);
@@ -3688,6 +3694,10 @@ function onAddSession() {
       kind: "info",
       message: "Pick your name when asked at sign-in first — sessions are recorded for the selected name.",
     });
+    return;
+  }
+  if (state.status.viewer.canRecordSessions === false) {
+    showBanner({ kind: "error", message: "You're not able to record new sessions right now — ask an admin." });
     return;
   }
   if (state.members.length === 0) {

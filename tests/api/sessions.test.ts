@@ -841,3 +841,50 @@ describe("session lifecycle", () => {
     expect(ledger.json.totalCents).toBe(0);
   });
 });
+
+describe("session recording permission", () => {
+  it("blocks a member with canRecordSessions=false from creating a new session", async () => {
+    const [blocked] = await tdb.db
+      .insert(members)
+      .values({ displayName: "Frozen Recorder", emailNormalized: "frozen-recorder@example.com", status: "active", canRecordSessions: false })
+      .returning();
+
+    const res = await postJson(
+      "/api/poker/sessions",
+      {
+        requestKey: "frozen-recorder-attempt",
+        playedAt: "2026-08-01T12:00:00.000Z",
+        results: [
+          { memberId: crypto.randomUUID(), amountCents: 1000 },
+          { memberId: crypto.randomUUID(), amountCents: -1000 }
+        ]
+      },
+      { group: groupCookie(blocked!.id) }
+    );
+    expect(res.status).toBe(403);
+    expect(res.json.error?.code).toBe("forbidden");
+
+    // Nothing was created.
+    const found = await tdb.db.select().from(pokerSessions).where(eq(pokerSessions.requestKey, "frozen-recorder-attempt"));
+    expect(found).toHaveLength(0);
+
+    // Restoring the flag lets the same member record normally again.
+    await tdb.db.update(members).set({ canRecordSessions: true }).where(eq(members.id, blocked!.id));
+    const retry = await postJson(
+      "/api/poker/sessions",
+      {
+        requestKey: "frozen-recorder-retry",
+        playedAt: "2026-08-01T12:00:00.000Z",
+        results: [
+          { memberId: blocked!.id, amountCents: 1000 },
+          { memberId: crypto.randomUUID(), amountCents: -1000 }
+        ]
+      },
+      { group: groupCookie(blocked!.id) }
+    );
+    // The second participant is a made-up id, so this still fails — but on
+    // validation grounds now, not the recording-permission check.
+    expect(retry.status).toBe(400);
+    expect(retry.json.error?.code).not.toBe("forbidden");
+  });
+});

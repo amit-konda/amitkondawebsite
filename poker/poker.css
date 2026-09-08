@@ -236,6 +236,9 @@ textarea.input { resize: vertical; min-height: 88px; }
 .field-row { display: flex; gap: 8px; align-items: stretch; }
 .field-row .input { flex: 1; min-width: 0; }
 
+.field-check { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; margin: 4px 0; }
+.field-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--felt); flex: none; }
+
 .linkish {
   display: inline-flex;
   align-items: center;

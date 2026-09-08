@@ -3115,6 +3115,10 @@ function openMembersPanel() {
         <label class="field" for="am-email">Email</label>
         <input id="am-email" type="email" class="input" maxlength="254" placeholder="Optional">
       </div>
+      <div>
+        <label class="field" for="am-phone">Phone number</label>
+        <input id="am-phone" type="tel" class="input" maxlength="32" placeholder="Optional">
+      </div>
     </div>
     <label class="check-row">
       <input id="am-welcome" type="checkbox"> Send a welcome email
@@ -3131,6 +3135,7 @@ function openMembersPanel() {
   const noteEl = q(form, "#am-note");
   const nameEl = /** @type {HTMLInputElement} */ (q(form, "#am-name"));
   const emailEl = /** @type {HTMLInputElement} */ (q(form, "#am-email"));
+  const phoneEl = /** @type {HTMLInputElement} */ (q(form, "#am-phone"));
   const welcomeEl = /** @type {HTMLInputElement} */ (q(form, "#am-welcome"));
   const submitEl = /** @type {HTMLButtonElement} */ (q(form, "#am-submit"));
 
@@ -3150,10 +3155,11 @@ function openMembersPanel() {
     try {
       await api("/admin/members", {
         method: "POST",
-        body: { displayName: name, email, welcomeEmail: welcomeEl.checked },
+        body: { displayName: name, email, phoneNumber: phoneEl.value.trim(), welcomeEmail: welcomeEl.checked },
       });
       nameEl.value = "";
       emailEl.value = "";
+      phoneEl.value = "";
       welcomeEl.checked = false;
       noteEl.textContent = "Member added.";
       noteEl.hidden = false;
@@ -3236,8 +3242,8 @@ function buildMemberRow(m, refresh) {
   edit.type = "button"; edit.className = "btn btn-small"; edit.textContent = "Edit";
   edit.addEventListener("click", () => {
     const body = document.createElement("form"); body.className = "stack";
-    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
-    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, venmoUsername: v } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
+    body.innerHTML = `<label class="field">Display name<input class="input" id="edit-member-name" value="${esc(m.name)}" maxlength="80" required></label><label class="field">Email<input class="input" id="edit-member-email" type="email" value="${esc(m.email ?? "")}" placeholder="Optional"></label><label class="field">Phone number<input class="input" id="edit-member-phone" type="tel" value="${esc(m.phoneNumber ?? "")}" maxlength="32" placeholder="Optional"></label><label class="field">Venmo username<input class="input" id="edit-member-venmo" value="${esc(m.venmoUsername ?? "")}" maxlength="31" placeholder="Optional — used to prefill settle-up payment links"></label><button class="btn btn-primary" type="submit">Save changes</button>`;
+    body.addEventListener("submit", async (ev) => { ev.preventDefault(); const n = body.querySelector("#edit-member-name").value.trim(); const e = body.querySelector("#edit-member-email").value.trim(); const p = body.querySelector("#edit-member-phone").value.trim(); const v = body.querySelector("#edit-member-venmo").value.trim(); if (!n || (e && !EMAIL_RE.test(e))) return; try { await api(`/admin/members/${encodeURIComponent(m.id)}`, { method: "PATCH", body: { displayName: n, email: e, phoneNumber: p, venmoUsername: v } }); closeModal(); await refresh(); showBanner({ kind: "info", message: "Member updated." }); } catch (err) { showBanner({ kind: "error", message: friendlyMessage(/** @type {ApiError} */ (err), "Couldn't update the member.") }); } });
     openModal({ title: "Edit member", body });
   });
   row.appendChild(edit);

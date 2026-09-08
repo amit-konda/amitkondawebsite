@@ -52,6 +52,9 @@ export const members = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     displayName: text("display_name").notNull(),
     emailNormalized: text("email_normalized").notNull().unique(),
+    // Optional contact number for future SMS/payment workflows. Kept private
+    // to admin member management; the public member list never exposes it.
+    phoneNumber: text("phone_number"),
     // Venmo handle (no leading "@"), shown to other members so a settle-up
     // payment link can be prefilled with the right recipient. Optional —
     // nothing breaks if it's unset, the payer just has to pick the person
@@ -64,6 +67,10 @@ export const members = pgTable(
   (t) => [
     check("members_display_name_len", sql`char_length(${t.displayName}) between 1 and 80`),
     check("members_email_len", sql`char_length(${t.emailNormalized}) between 3 and 320`),
+    check(
+      "members_phone_number_len",
+      sql`${t.phoneNumber} is null or char_length(${t.phoneNumber}) between 7 and 32`
+    ),
     check(
       "members_venmo_username_len",
       sql`${t.venmoUsername} is null or char_length(${t.venmoUsername}) between 1 and 30`

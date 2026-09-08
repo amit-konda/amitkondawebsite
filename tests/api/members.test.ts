@@ -50,6 +50,7 @@ interface MemberLite {
   id: string;
   name: string;
   venmoUsername: string | null;
+  phoneNumber?: string | null;
 }
 interface MembersListBody {
   members: MemberLite[];
@@ -392,7 +393,7 @@ describe("members + join requests API", () => {
 
     const res = await postJson(
       "/admin/members",
-      { displayName: "Direct", email: "  Direct@Example.COM ", welcomeEmail: true },
+      { displayName: "Direct", email: "  Direct@Example.COM ", phoneNumber: " 312-555-0100 ", welcomeEmail: true },
       admin
     );
     expect(res.status).toBe(201);
@@ -408,6 +409,7 @@ describe("members + join requests API", () => {
     )[0]!;
     expect(m.displayName).toBe("Direct");
     expect(m.status).toBe("active");
+    expect(m.phoneNumber).toBe("312-555-0100");
 
     // member_welcome outbox row.
     const welcomes = await conn.db
@@ -435,7 +437,8 @@ describe("members + join requests API", () => {
     expect(createAudits[0]!.afterJson).toEqual({
       id: directId,
       displayName: "Direct",
-      emailNormalized: "direct@example.com"
+      emailNormalized: "direct@example.com",
+      phoneNumber: null
     });
 
     // Duplicate email → 409, nothing created.
@@ -512,12 +515,13 @@ describe("members + join requests API", () => {
     const res = await patchJson(`/admin/members/${direct.id}`, { status: "inactive" }, admin);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      member: { id: string; name: string; email: string; status: string; venmoUsername: string | null };
+      member: { id: string; name: string; email: string; phoneNumber: string | null; status: string; venmoUsername: string | null };
     };
     expect(body.member).toEqual({
       id: direct.id,
       name: "Direct",
       email: "direct@example.com",
+      phoneNumber: "312-555-0100",
       status: "inactive",
       venmoUsername: null
     });
@@ -534,8 +538,8 @@ describe("members + join requests API", () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.action, "member.update"), eq(auditEvents.entityId, direct.id)));
     expect(audits).toHaveLength(1);
-    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active", venmoUsername: null });
-    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive", venmoUsername: null });
+    expect(audits[0]!.beforeJson).toEqual({ displayName: "Direct", status: "active", phoneNumber: "312-555-0100", venmoUsername: null });
+    expect(audits[0]!.afterJson).toEqual({ displayName: "Direct", status: "inactive", phoneNumber: "312-555-0100", venmoUsername: null });
 
     // Unknown member id → 404.
     const nf = await patchJson(`/admin/members/${randomUUID()}`, { status: "inactive" }, admin);

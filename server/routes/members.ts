@@ -39,6 +39,7 @@ const JOIN_REQUEST_RECEIVED = { ok: true, message: "Request received." } as cons
 const displayNameSchema = z.string().trim().min(1).max(80);
 const emailSchema = z.string().trim().pipe(z.email("Invalid email address."));
 const noteSchema = z.string().trim().max(500);
+const phoneNumberSchema = z.string().trim().min(7).max(32).optional().or(z.literal(""));
 
 const joinRequestBodySchema = z.object({
   displayName: displayNameSchema,
@@ -49,6 +50,7 @@ const joinRequestBodySchema = z.object({
 const createMemberSchema = z.object({
   displayName: displayNameSchema,
   email: emailSchema.optional().or(z.literal("")),
+  phoneNumber: phoneNumberSchema,
   welcomeEmail: z.boolean().optional()
 });
 
@@ -60,6 +62,7 @@ const venmoUsernameSchema = z.string().trim().max(31).optional().or(z.literal(""
 const patchMemberSchema = z.object({
   displayName: displayNameSchema.optional(),
   email: emailSchema.optional().or(z.literal("")),
+  phoneNumber: phoneNumberSchema,
   status: z.enum(["active", "inactive"]).optional(),
   venmoUsername: venmoUsernameSchema
 });
@@ -70,6 +73,10 @@ const normalizeVenmoUsername = (s: string): string | null => {
 };
 
 const normalizeEmail = (s: string): string => s.trim().toLowerCase();
+const normalizePhoneNumber = (s: string | undefined): string | null => {
+  const trimmed = (s ?? "").trim().replace(/\s+/g, " ");
+  return trimmed || null;
+};
 
 /**
  * drizzle 0.45 wraps failed queries in DrizzleQueryError — the postgres
@@ -209,7 +216,7 @@ export function registerMembersRoutes(router: Router): void {
 
   route(router, "get", "/admin/members", async (ctx) => {
     requireAdmin(ctx);
-    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, status: members.status, venmoUsername: members.venmoUsername }).from(members).orderBy(asc(members.displayName));
+    const rows = await db.select({ id: members.id, name: members.displayName, email: members.emailNormalized, phoneNumber: members.phoneNumber, status: members.status, venmoUsername: members.venmoUsername }).from(members).orderBy(asc(members.displayName));
     return { members: rows };
   });
 
@@ -348,8 +355,8 @@ export function registerMembersRoutes(router: Router): void {
     const member = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(members)
-        .values({ displayName: body.displayName, emailNormalized, status: "active" })
-        .returning({ id: members.id, displayName: members.displayName });
+        .values({ displayName: body.displayName, emailNormalized, phoneNumber: normalizePhoneNumber(body.phoneNumber), status: "active" })
+        .returning({ id: members.id, displayName: members.displayName, phoneNumber: members.phoneNumber });
       const m = inserted[0]!;
 
       if (pending) {
@@ -379,7 +386,7 @@ export function registerMembersRoutes(router: Router): void {
         entityType: "member",
         entityId: m.id,
         beforeJson: null,
-        afterJson: { id: m.id, displayName: m.displayName, emailNormalized }
+          afterJson: { id: m.id, displayName: m.displayName, emailNormalized, phoneNumber: m.phoneNumber }
       });
 
       if (body.welcomeEmail && body.email) {
@@ -415,22 +422,24 @@ export function registerMembersRoutes(router: Router): void {
     const current = rows[0] ?? null;
     if (!current) throw notFound("Member not found.");
 
-    if (body.displayName === undefined && body.email === undefined && body.status === undefined && body.venmoUsername === undefined) {
+    if (body.displayName === undefined && body.email === undefined && body.phoneNumber === undefined && body.status === undefined && body.venmoUsername === undefined) {
       // Nothing to change — idempotent no-op.
       return {
         member: {
           id: current.id,
           name: current.displayName,
           email: current.emailNormalized,
+          phoneNumber: current.phoneNumber,
           status: current.status,
           venmoUsername: current.venmoUsername
         }
       };
     }
 
-    const set: { displayName?: string; emailNormalized?: string; status?: "active" | "inactive"; venmoUsername?: string | null } = {};
+    const set: { displayName?: string; emailNormalized?: string; phoneNumber?: string | null; status?: "active" | "inactive"; venmoUsername?: string | null } = {};
     if (body.displayName !== undefined) set.displayName = body.displayName;
     if (body.email !== undefined) set.emailNormalized = body.email ? normalizeEmail(body.email) : `noemail+${randomUUID()}@invalid.local`;
+    if (body.phoneNumber !== undefined) set.phoneNumber = normalizePhoneNumber(body.phoneNumber);
     if (body.status !== undefined) set.status = body.status;
     if (body.venmoUsername !== undefined) set.venmoUsername = normalizeVenmoUsername(body.venmoUsername);
 
@@ -443,6 +452,7 @@ export function registerMembersRoutes(router: Router): void {
           id: members.id,
           displayName: members.displayName,
           emailNormalized: members.emailNormalized,
+          phoneNumber: members.phoneNumber,
           status: members.status,
           venmoUsername: members.venmoUsername
         });
@@ -452,8 +462,8 @@ export function registerMembersRoutes(router: Router): void {
         action: "member.update",
         entityType: "member",
         entityId: id,
-        beforeJson: { displayName: current.displayName, status: current.status, venmoUsername: current.venmoUsername },
-        afterJson: { displayName: row.displayName, status: row.status, venmoUsername: row.venmoUsername }
+        beforeJson: { displayName: current.displayName, status: current.status, phoneNumber: current.phoneNumber, venmoUsername: current.venmoUsername },
+        afterJson: { displayName: row.displayName, status: row.status, phoneNumber: row.phoneNumber, venmoUsername: row.venmoUsername }
       });
       return row;
     });
@@ -463,6 +473,7 @@ export function registerMembersRoutes(router: Router): void {
         id: updated.id,
         name: updated.displayName,
         email: updated.emailNormalized,
+        phoneNumber: updated.phoneNumber,
         status: updated.status,
         venmoUsername: updated.venmoUsername
       }

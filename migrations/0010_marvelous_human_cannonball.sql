@@ -1,0 +1,2 @@
+ALTER TABLE "members" ADD COLUMN "phone_number" text;--> statement-breakpoint
+ALTER TABLE "members" ADD CONSTRAINT "members_phone_number_len" CHECK ("members"."phone_number" is null or char_length("members"."phone_number") between 7 and 32);

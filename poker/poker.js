@@ -179,6 +179,11 @@ const state = {
   golfLine: null,
 };
 
+// A dashboard render starts several requests in parallel. Selecting a member
+// changes the viewer claim used by those requests, so stale pre-selection
+// responses must not overwrite the selected profile's ledger.
+let viewerSelectionEpoch = 0;
+
 /* ── DOM helpers ───────────────────────────────────────────── */
 
 /**
@@ -1087,8 +1092,16 @@ async function renderBlackjackDashboard() {
 }
 
 async function loadBlackjackLedger() {
-  try { const data = await api("/blackjack/ledger"); state.blackjackLedger = { totalCents: data.totalCents ?? 0, rows: data.rows ?? [] }; renderBlackjackLedger(); }
-  catch (e) { renderErrorBox(el("blackjack-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack ledger."), loadBlackjackLedger); }
+  const epoch = viewerSelectionEpoch;
+  try {
+    const data = await api("/blackjack/ledger");
+    if (epoch !== viewerSelectionEpoch) return;
+    state.blackjackLedger = { totalCents: data.totalCents ?? 0, rows: data.rows ?? [] };
+    renderBlackjackLedger();
+  } catch (e) {
+    if (epoch !== viewerSelectionEpoch) return;
+    renderErrorBox(el("blackjack-ledger-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the blackjack ledger."), loadBlackjackLedger);
+  }
 }
 
 async function renderOverallDashboard() {
@@ -1347,11 +1360,14 @@ async function loadHandshakeCategories() {
 }
 
 async function loadHandshakeLedger() {
+  const epoch = viewerSelectionEpoch;
   try {
     const d = await api("/handshake/ledger");
+    if (epoch !== viewerSelectionEpoch) return;
     state.handshakeLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] };
     renderHandshakeScreen();
   } catch (e) {
+    if (epoch !== viewerSelectionEpoch) return;
     renderErrorBox(el("handshake-open-body"), friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load handshake balances."), loadHandshakeLedger);
   }
 }
@@ -1369,8 +1385,10 @@ async function loadHandshakeBets() {
 
 /** Confirmed-settlements-only net per member — see server/routes/settlements.ts. */
 async function loadSettlementLedger() {
+  const epoch = viewerSelectionEpoch;
   try {
     const d = await api("/settlements/ledger");
+    if (epoch !== viewerSelectionEpoch) return;
     state.settlementLedger = { totalCents: d.totalCents ?? 0, rows: d.rows ?? [] };
   } catch {
     // Non-fatal: the overall ledger just renders without the settlements
@@ -2059,14 +2077,17 @@ function fillViewerSelect() {
 
 async function loadLedger() {
   const body = el("ledger-body");
+  const epoch = viewerSelectionEpoch;
   try {
     const data = await api("/ledger");
+    if (epoch !== viewerSelectionEpoch) return;
     state.ledger = { totalCents: data.totalCents ?? 0, rows: data.rows ?? [] };
     renderLedger();
   } catch (e) {
+    if (epoch !== viewerSelectionEpoch) return;
     renderErrorBox(body, friendlyMessage(/** @type {ApiError} */ (e), "Couldn't load the ledger."), () => {
       body.innerHTML = `<div class="skel skel-row"></div><div class="skel skel-row"></div>`;
-      loadLedger();
+      if (epoch === viewerSelectionEpoch) loadLedger();
     });
   }
 }
@@ -3637,6 +3658,7 @@ async function onLogout() {
     }
   }
   state.members = [];
+  viewerSelectionEpoch += 1;
   state.ledger = null;
   state.sessions = [];
   state.live = null;
@@ -3655,6 +3677,8 @@ async function onViewerChange() {
       state.status = { ...state.status, viewer: data?.viewer ?? null };
     }
     setConfirmedViewerThisTab();
+    viewerSelectionEpoch += 1;
+    clearSkippedNamePrompt();
     fillViewerSelect();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
@@ -3824,6 +3848,8 @@ async function maybeShowNamePrompt() {
         state.status = { ...state.status, viewer: data?.viewer ?? null };
       }
       setConfirmedViewerThisTab();
+      viewerSelectionEpoch += 1;
+      clearSkippedNamePrompt();
       fillViewerSelect();
       closeModal();
       route();

@@ -40,13 +40,6 @@ const resultSchema = z.object({
 
 const resultsSchema = z.array(resultSchema).min(2);
 
-// Members whose ability to record new sessions is switched off, matched
-// case-insensitively against their display name. This is intentionally a
-// hardcoded list rather than an admin-editable flag on the member record —
-// see the block in POST /api/poker/sessions below for what it does and
-// doesn't affect.
-const RECORDING_BLOCKED_DISPLAY_NAMES = new Set(["shrey b"]);
-
 const createBodySchema = z.object({
   requestKey: z.string().min(8).max(64),
   playedAt: z.string().datetime(),
@@ -404,15 +397,6 @@ export function registerSessionsRoutes(router: Router): void {
       .where(eq(members.id, viewerId))
       .limit(1);
     const viewerDisplayName = viewerRow[0]?.displayName ?? viewerId;
-
-    // Recording is blocked for this specific member while a discrepancy with
-    // their numbers gets sorted out. Hardcoded on purpose (no admin UI for
-    // this) — it only stops them from submitting NEW sessions; their existing
-    // history stays visible and anyone else can still add them as a
-    // participant in a session someone else records.
-    if (RECORDING_BLOCKED_DISPLAY_NAMES.has(viewerDisplayName.trim().toLowerCase())) {
-      throw forbidden("You're not able to record new sessions right now — ask an admin.");
-    }
 
     const results = await validateResultsInput(db, body.results);
 

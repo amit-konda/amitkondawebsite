@@ -843,10 +843,10 @@ describe("session lifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Hardcoded recording block
+// Member recording permissions
 // ---------------------------------------------------------------------------
-describe("hardcoded recording block", () => {
-  it("blocks Shrey B from recording a session, but not from being added by someone else", async () => {
+describe("member recording permissions", () => {
+  it("allows Shrey B to record a session", async () => {
     const [shrey, other] = await tdb.db
       .insert(members)
       .values([
@@ -858,7 +858,7 @@ describe("hardcoded recording block", () => {
     const blocked = await postJson(
       "/api/poker/sessions",
       {
-        requestKey: "shrey-b-blocked-attempt",
+        requestKey: "shrey-b-allowed-attempt",
         playedAt: "2026-08-01T12:00:00.000Z",
         results: [
           { memberId: shrey!.id, amountCents: 1000 },
@@ -867,30 +867,8 @@ describe("hardcoded recording block", () => {
       },
       { group: groupCookie(shrey!.id) }
     );
-    expect(blocked.status).toBe(403);
-    expect(blocked.json.error?.code).toBe("forbidden");
-    const notCreated = await tdb.db
-      .select()
-      .from(pokerSessions)
-      .where(eq(pokerSessions.requestKey, "shrey-b-blocked-attempt"));
-    expect(notCreated).toHaveLength(0);
-
-    // Someone else can still record a session that includes Shrey B as a
-    // participant — the block only stops Shrey B from being the recorder.
-    const recorded = await postJson(
-      "/api/poker/sessions",
-      {
-        requestKey: "shrey-b-as-participant",
-        playedAt: "2026-08-01T12:00:00.000Z",
-        results: [
-          { memberId: other!.id, amountCents: 1000 },
-          { memberId: shrey!.id, amountCents: -1000 }
-        ]
-      },
-      { group: groupCookie(other!.id) }
-    );
-    expect(recorded.status).toBe(201);
-    const sessionId = recorded.json.session!.id;
+    expect(blocked.status).toBe(201);
+    const sessionId = blocked.json.session!.id;
 
     // Shrey B's existing participation stays fully visible in the ledger.
     const ledger = await getLedger(groupCookie(other!.id));

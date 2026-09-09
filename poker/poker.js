@@ -95,13 +95,6 @@
 
 /* ── Constants ─────────────────────────────────────────────── */
 
-// Members whose ability to record new sessions is switched off, matched
-// case-insensitively against their display name. Hardcoded on purpose (no
-// admin UI for this) — mirrors the same list the server enforces in
-// POST /api/poker/sessions, which is the real security boundary; this only
-// gives an instant banner instead of waiting on a round trip.
-const RECORDING_BLOCKED_NAMES = new Set(["shrey b"]);
-
 const MAX_AMOUNT_CENTS = 100_000_000; // $1,000,000 — mirrors server/domain/money.ts
 const CENTS_RE = /^([+-]?)(\d*)(?:\.(\d{1,2}))?$/; // mirrors server
 const SESSION_PAGE_LIMIT = 8;
@@ -3721,10 +3714,6 @@ function onAddSession() {
       kind: "info",
       message: "Pick your name when asked at sign-in first — sessions are recorded for the selected name.",
     });
-    return;
-  }
-  if (RECORDING_BLOCKED_NAMES.has(state.status.viewer.name.trim().toLowerCase())) {
-    showBanner({ kind: "error", message: "You're not able to record new sessions right now — ask an admin." });
     return;
   }
   if (state.members.length === 0) {

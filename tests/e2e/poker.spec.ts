@@ -192,6 +192,52 @@ test("request access → approve → member appears", async ({ page }) => {
 
 // ---------------------------------------------------------------------------
 
+test("member selection keeps the personalized ledger when an older load finishes last", async ({ page }) => {
+  await seedMember(tdb, "Race Viewer", "race-viewer+e2e@example.com");
+
+  let ledgerRequests = 0;
+  let releaseFirst = () => {};
+  let markFirstFetched = () => {};
+  let finishFirst = () => {};
+  let finishSecond = () => {};
+  const firstMayFinish = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const firstFetched = new Promise<void>((resolve) => { markFirstFetched = resolve; });
+  const firstFinished = new Promise<void>((resolve) => { finishFirst = resolve; });
+  const secondFinished = new Promise<void>((resolve) => { finishSecond = resolve; });
+
+  await page.route("**/api/poker/ledger", async (route) => {
+    ledgerRequests += 1;
+    const requestNumber = ledgerRequests;
+    const response = await route.fetch();
+    if (requestNumber === 1) {
+      markFirstFetched();
+      await firstMayFinish;
+    }
+    await route.fulfill({ response });
+    if (requestNumber === 1) finishFirst();
+    if (requestNumber === 2) finishSecond();
+  });
+
+  await page.goto("/poker/");
+  await unlockGroupGate(page, GROUP_PASSWORD);
+  await firstFetched;
+  const dialog = page.getByRole("dialog", { name: /who are you/i });
+  await dialog.getByLabel(/your name/i).selectOption({ label: "Race Viewer" });
+  await dialog.getByRole("button", { name: /^continue$/i }).click();
+  await expect(dialog).toBeHidden();
+  await secondFinished;
+
+  const heading = page.locator("#overall-heading");
+  await expect(heading).toContainText("You're");
+
+  releaseFirst();
+  await firstFinished;
+  await page.waitForTimeout(100);
+  await expect(heading).toContainText("You're");
+});
+
+// ---------------------------------------------------------------------------
+
 test("unlock, select viewer, create 3-player session, receipts, zero ledger", async ({ page }) => {
   // Four active members; ONLY three will be selected for the session.
   const maya = await seedMember(tdb, "Maya", "maya+e2e@example.com");

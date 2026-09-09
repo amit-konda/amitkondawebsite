@@ -839,7 +839,7 @@ test("add past session: the +/- toggle sets a participant's sign without typing 
   expect(deb.id).toBeTruthy();
 });
 
-test("Shrey B is blocked from recording a session, but stays visible and playable", async ({ page }) => {
+test("Shrey B can record a session", async ({ page }) => {
   const shrey = await seedMember(tdb, "Shrey B", "shrey-b-e2e@example.com");
   const other = await seedMember(tdb, "Recording Block Partner", "recording-block-partner-e2e@example.com");
 
@@ -848,8 +848,8 @@ test("Shrey B is blocked from recording a session, but stays visible and playabl
   await page.getByRole("button", { name: "Poker", exact: true }).click();
   await page.getByRole("button", { name: /add (past )?session/i }).click();
 
-  await expect(page.locator(".banner")).toContainText(/not able to record new sessions/i, { timeout: 10_000 });
-  await expect(page.getByRole("checkbox").first()).not.toBeVisible();
+  await expect(page.getByRole("dialog", { name: /add session/i })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByRole("checkbox").first()).toBeVisible();
 
   expect(shrey.id).toBeTruthy();
   expect(other.id).toBeTruthy();

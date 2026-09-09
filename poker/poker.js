@@ -3828,7 +3828,6 @@ async function maybeShowNamePrompt() {
   // previously-chosen value on a fresh render of the same field, which would
   // silently pick the wrong person for whoever opens this next.
   select.value = "";
-  makeMemberSelectTypeable(select);
   const submit = /** @type {HTMLButtonElement} */ (q(body, "#name-prompt-submit"));
   select.addEventListener("change", () => {
     submit.disabled = !select.value;

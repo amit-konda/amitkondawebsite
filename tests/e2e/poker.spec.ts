@@ -196,6 +196,7 @@ test("member selection keeps the personalized ledger when an older load finishes
   await seedMember(tdb, "Race Viewer", "race-viewer+e2e@example.com");
 
   let ledgerRequests = 0;
+  const ledgerViewerFlags: boolean[] = [];
   let releaseFirst = () => {};
   let markFirstFetched = () => {};
   let finishFirst = () => {};
@@ -209,11 +210,13 @@ test("member selection keeps the personalized ledger when an older load finishes
     ledgerRequests += 1;
     const requestNumber = ledgerRequests;
     const response = await route.fetch();
+    const payload = await response.json();
+    ledgerViewerFlags[requestNumber - 1] = payload.rows.some((row: { isViewer: boolean }) => row.isViewer);
     if (requestNumber === 1) {
       markFirstFetched();
       await firstMayFinish;
     }
-    await route.fulfill({ response });
+    await route.fulfill({ response, body: JSON.stringify(payload) });
     if (requestNumber === 1) finishFirst();
     if (requestNumber === 2) finishSecond();
   });
@@ -226,6 +229,7 @@ test("member selection keeps the personalized ledger when an older load finishes
   await dialog.getByRole("button", { name: /^continue$/i }).click();
   await expect(dialog).toBeHidden();
   await secondFinished;
+  expect(ledgerViewerFlags.slice(0, 2)).toEqual([false, true]);
 
   const heading = page.locator("#overall-heading");
   await expect(heading).toContainText("You're");

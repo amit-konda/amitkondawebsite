@@ -3678,7 +3678,6 @@ async function onViewerChange() {
     }
     setConfirmedViewerThisTab();
     viewerSelectionEpoch += 1;
-    clearSkippedNamePrompt();
     fillViewerSelect();
     // The dashboard asks the user to choose a name until a viewer is set.
     // Clear that one-time prompt as soon as the selection succeeds.
@@ -3829,6 +3828,7 @@ async function maybeShowNamePrompt() {
   // previously-chosen value on a fresh render of the same field, which would
   // silently pick the wrong person for whoever opens this next.
   select.value = "";
+  makeMemberSelectTypeable(select);
   const submit = /** @type {HTMLButtonElement} */ (q(body, "#name-prompt-submit"));
   select.addEventListener("change", () => {
     submit.disabled = !select.value;
@@ -3849,7 +3849,6 @@ async function maybeShowNamePrompt() {
       }
       setConfirmedViewerThisTab();
       viewerSelectionEpoch += 1;
-      clearSkippedNamePrompt();
       fillViewerSelect();
       closeModal();
       route();

@@ -73,10 +73,13 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   const requestBody = openCode ? {
     model: e.OPENCODE_GO_RECEIPT_MODEL,
     messages: [{ role: "user", content: [
-      { type: "text", text: "Extract merchant, date, every purchased line, adjustments, and total from this receipt." },
+      { type: "text", text: "Extract this receipt and return only a valid JSON object with exactly these keys: merchant (string or null), purchasedAt (ISO date string or null), currency (3-letter code), subtotalCents, taxCents, tipCents, feesCents, discountCents, totalCents (integer cents), items (array of objects with description, quantity, unitPriceCents, lineTotalCents, confidence), confidence (0 to 1), and warnings (array of strings). Do not use markdown fences. Do not invent unreadable values; put a warning in warnings." },
       { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
     ] }],
-    response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: jsonSchema } }
+    // OpenCode Go's current gateway supports json_object but not the newer
+    // json_schema response format. The response is still validated strictly
+    // with ReceiptExtractionSchema below before it can become a draft.
+    response_format: { type: "json_object" }
   } : {
     model: e.OPENAI_RECEIPT_MODEL,
     instructions: "Extract the receipt faithfully. Monetary values must be integer cents. Do not invent unreadable items; add a warning. The output is a draft that a person will review.",

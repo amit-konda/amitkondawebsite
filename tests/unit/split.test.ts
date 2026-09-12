@@ -212,6 +212,7 @@ describe("receipt OCR fallback", () => {
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-opencode-key");
     const body = JSON.parse(String(init.body));
     expect(body.model).toBe("cheap-vision");
+    expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.messages[0].content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "image_url", image_url: expect.objectContaining({ url: "data:image/png;base64,receipt" }) })
     ]));

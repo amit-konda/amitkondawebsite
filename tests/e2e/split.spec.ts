@@ -57,6 +57,23 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.locator("#person-phone")).toHaveValue("+12145550101");
   });
 
+  test("blocks duplicate diner contacts while adding them", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.getByRole("button", { name: /Split a new bill/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({ name: "receipt.png", mimeType: "image/png", buffer: Buffer.from("png") });
+    await expect(page.getByRole("heading", { name: "Check the details." })).toBeVisible();
+    await page.locator("#person-name").fill("Maya");
+    await page.locator("#person-phone").fill("(214) 555-0101");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.locator("#person-name").fill("Maya again");
+    await page.locator("#person-phone").fill("+1 214-555-0101");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText("That person is already on this split.")).toBeVisible();
+    await expect(page.locator("#participant-list .person")).toHaveCount(1);
+  });
+
   test("runs a real receipt upload through the review editor", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");

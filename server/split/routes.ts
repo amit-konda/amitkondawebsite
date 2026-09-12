@@ -476,8 +476,16 @@ async function lockBill(ctx: Ctx) {
 
 async function reportPaid(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const participant = await selectableParticipant(ctx.params.participantId!, user.id, "payment");
-  if (!["unpaid", "rejected"].includes(participant.paymentStatus)) throw conflict("This payment is not outstanding.");
   const input = z.object({ requestKey: z.string().min(8).max(128) }).parse(ctx.body);
+  if (!["unpaid", "rejected"].includes(participant.paymentStatus)) {
+    // A client may retry after a successful response was lost. Treat the
+    // original request key as idempotent, while still rejecting a new key
+    // against an already-reported payment.
+    const [existing] = await db.select({ participantId: splitPayments.participantId }).from(splitPayments)
+      .where(eq(splitPayments.requestKey, input.requestKey)).limit(1);
+    if (existing?.participantId === participant.id) return { status: participant.paymentStatus };
+    throw conflict("This payment is not outstanding.");
+  }
   await db.transaction(async (tx) => {
     const [bill] = await tx.select({ payerUserId: splitBills.payerUserId }).from(splitBills).where(eq(splitBills.id, participant.billId)).limit(1);
     if (!bill) throw notFound();

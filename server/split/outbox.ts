@@ -133,6 +133,12 @@ export async function processSmsOutbox(db: SplitDb, limit = 25): Promise<{ proce
         claimId: null,
         claimedAt: null
       }).where(eq(splitSmsDeliveries.id, claimed.id));
+      // Keep the participant-facing state honest once an invitation has
+      // exhausted all retries. While it is retryable, leave the invitation
+      // queued so the organizer can still see that delivery is in progress.
+      if (attempts >= 5 && claimed.eventType === "invitation" && claimed.participantId) {
+        await db.update(splitParticipants).set({ invitationStatus: "failed" }).where(eq(splitParticipants.id, claimed.participantId));
+      }
       failed++;
     }
   }

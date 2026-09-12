@@ -156,6 +156,9 @@ function addArithmeticWarnings(extraction: ReceiptExtraction): ReceiptExtraction
   if (itemSubtotal !== extraction.subtotalCents) {
     warnings.push("Line items do not exactly match the scanned subtotal. Please review the items.");
   }
+  if (extraction.items.some((item) => item.confidence < 0.75)) {
+    warnings.push("One or more items were hard to read. Please review those lines before publishing.");
+  }
   if (expectedTotal !== extraction.totalCents) {
     warnings.push("Tax, tip, discounts, and subtotal do not exactly match the scanned total. Please review the amounts.");
   }

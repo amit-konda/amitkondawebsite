@@ -228,6 +228,7 @@ function uploadView() {
 }
 
 async function handleReceipt(file) {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return notice("Choose a JPG, PNG, or WebP receipt image.", "error");
   if (file.size > 10 * 1024 * 1024) return notice("That file is over 10 MB. Try a smaller image.", "error");
   const content = document.querySelector("#upload-content");
   const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;

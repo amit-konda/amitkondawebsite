@@ -367,8 +367,8 @@ async function publishBill(ctx: Ctx) {
     });
     await tx.update(splitParticipants).set({ invitationStatus: "queued" }).where(and(eq(splitParticipants.billId, bill.id), eq(splitParticipants.invitationStatus, "pending")));
   });
-  await processSmsOutbox(db, 50);
-  return { ok: true };
+  const delivery = await processSmsOutbox(db, 50);
+  return { ok: true, delivery };
 }
 
 async function getInvite(ctx: Ctx) {
@@ -470,8 +470,8 @@ async function lockBill(ctx: Ctx) {
     const locked = await tx.update(splitBills).set({ status: "locked", lockedAt: now, version: bill.version + 1 }).where(and(eq(splitBills.id, bill.id), eq(splitBills.version, bill.version), eq(splitBills.status, "open"))).returning({ id: splitBills.id });
     if (!locked.length) throw conflict("The bill changed. Refresh and try again.");
   });
-  await processSmsOutbox(db, 50);
-  return { allocations: finals };
+  const delivery = await processSmsOutbox(db, 50);
+  return { allocations: finals, delivery };
 }
 
 async function reportPaid(ctx: Ctx) {

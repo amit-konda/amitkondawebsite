@@ -321,10 +321,11 @@ function bindEditor(b) {
   // subtotal or a receipt whose line items were corrected before submission.
   total();
 }
-function addPersonFromInputs(people) { const name = document.querySelector("#person-name"), phone = document.querySelector("#person-phone"); if (!name.value.trim() || phone.value.replace(/\D/g,"").length < 10) return notice("Add a name and valid phone number.","error"); people.insertAdjacentHTML("beforeend", personEditor({name:name.value.trim(),phone:phone.value.trim()})); name.value="";phone.value=""; }
+function phoneKey(value) { let digits = String(value || "").replace(/\D/g, ""); if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1); return digits; }
+function addPersonFromInputs(people) { const name = document.querySelector("#person-name"), phone = document.querySelector("#person-phone"), key = phoneKey(phone.value); if (!name.value.trim() || key.length !== 10) return notice("Add a name and valid phone number.","error"); const duplicate = [...people.querySelectorAll(".person-phone-value")].some(input => phoneKey(input.value) === key); if (duplicate) return notice("That person is already on this split.", "error"); people.insertAdjacentHTML("beforeend", personEditor({name:name.value.trim(),phone:phone.value.trim()})); name.value="";phone.value=""; }
 async function pickContact(people) {
   if (!navigator.contacts?.select) return notice("Contact picking isn’t available in this browser. You can still enter someone manually.", "error");
-  try { const selected = await navigator.contacts.select(["name","tel"], { multiple: true }); selected.forEach(contact => { const name = contact.name?.[0] || "Guest", phone = contact.tel?.[0] || ""; if (phone) people.insertAdjacentHTML("beforeend", personEditor({ name, phone })); }); } catch (_) { /* The person closed the native picker. */ }
+  try { const selected = await navigator.contacts.select(["name","tel"], { multiple: true }); const existing = new Set([...people.querySelectorAll(".person-phone-value")].map(input => phoneKey(input.value)).filter(Boolean)); selected.forEach(contact => { const name = contact.name?.[0] || "Guest", phone = contact.tel?.[0] || "", key = phoneKey(phone); if (key.length === 10 && !existing.has(key)) { people.insertAdjacentHTML("beforeend", personEditor({ name, phone })); existing.add(key); } }); } catch (_) { /* The person closed the native picker. */ }
 }
 async function saveDraft(event,b) {
   event.preventDefault(); const button = event.currentTarget.querySelector("button[type=submit]"); const form = event.currentTarget;

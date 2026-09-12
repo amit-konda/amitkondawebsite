@@ -17,6 +17,7 @@
     "hash:password": "node scripts/hash-password.mjs"
   },
   "dependencies": {
+    "@vercel/blob": "^2.8.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",

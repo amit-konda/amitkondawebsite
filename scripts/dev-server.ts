@@ -11,6 +11,8 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { handleApiRequest } from "../server/app.js";
+import { handleSplitApiRequest } from "../server/split/app.js";
+import { handleSplitUpload } from "../server/split/upload.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -31,9 +33,17 @@ const MIME: Record<string, string> = {
 export function startServer(port = 8788): Promise<{ server: Server; url: string }> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://local");
-    if (url.pathname.startsWith("/api/poker")) {
+    if (url.pathname.startsWith("/api/poker") || url.pathname.startsWith("/api/split")) {
       try {
-        await handleApiRequest(req, res);
+        if (url.pathname.startsWith("/api/split")) {
+          if (url.pathname.replace(/\/+$/, "") === "/api/split/upload") {
+            await handleSplitUpload(req, res);
+          } else {
+            await handleSplitApiRequest(req, res);
+          }
+        } else {
+          await handleApiRequest(req, res);
+        }
       } catch (err) {
         console.error("dev-server api error:", err);
         if (!res.headersSent) {

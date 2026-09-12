@@ -2,11 +2,43 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "routes": [
     {
+      "src": "/api/split(?:/(.*))?",
+      "dest": "/api/split/[...route].ts"
+    },
+    {
       "src": "/api/poker(?:/(.*))?",
       "dest": "/api/poker/[...route].ts"
     }
   ],
+  "crons": [
+    {
+      "path": "/api/split/workers/reminders",
+      "schedule": "0 17 * * *"
+    }
+  ],
   "headers": [
+    {
+      "source": "/split/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; connect-src 'self' blob:; form-action 'self'"
+        },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/api/split/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
     {
       "source": "/poker/(.*)",
       "headers": [

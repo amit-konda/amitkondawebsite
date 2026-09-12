@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f3eb">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="Split a receipt, claim your items, and settle up without the group chat math.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Split — dinner math, done</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/split/split.css">
+</head>
+<body>
+  <a class="skip-link" href="#app">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="/split" aria-label="Split home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>split</span>
+    </a>
+    <div id="header-actions" class="header-actions"></div>
+  </header>
+
+  <div id="notice-root" class="notice-root" aria-live="polite"></div>
+  <main id="app" tabindex="-1">
+    <section class="loading-view" aria-label="Loading">
+      <div class="loader-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+      <p>Getting the table ready…</p>
+    </section>
+  </main>
+
+  <nav id="bottom-nav" class="bottom-nav" aria-label="Primary" hidden>
+    <a href="#/dashboard" data-nav="dashboard">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 11.2 12 4l8 7.2V20h-5v-6H9v6H4z"/></svg>
+      <span>Home</span>
+    </a>
+    <button type="button" data-action="new-bill" class="nav-create" aria-label="Split a new bill">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      <span>New split</span>
+    </button>
+    <a href="#/activity" data-nav="activity">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8v5l3 2M21 12a9 9 0 1 1-3-6.7"/></svg>
+      <span>Activity</span>
+    </a>
+  </nav>
+
+  <template id="icon-chevron"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></template>
+  <noscript><p class="noscript">Split needs JavaScript enabled to upload and divide receipts.</p></noscript>
+  <script src="/split/split.js" defer></script>
+</body>
+</html>

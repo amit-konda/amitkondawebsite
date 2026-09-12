@@ -77,4 +77,17 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.locator('input[name="tip"]')).toHaveValue("6.00");
     await expect(page.locator("#calculated-total")).toHaveText("$38.40");
   });
+
+  test("previews the diner claim flow with select-all and an immediate update state", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.getByRole("link", { name: /Loro/i }).click();
+    await expect(page.getByRole("button", { name: "Select all" })).toBeVisible();
+    await page.getByRole("button", { name: "Select all" }).click();
+    await expect(page.getByRole("button", { name: "All selected" })).toBeDisabled();
+    await page.getByRole("button", { name: "Save my items" }).click();
+    await expect(page.getByRole("heading", { name: "Items submitted" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Update my items" })).toBeVisible();
+  });
 });

@@ -1,4 +1,11 @@
-import { expect, test } from "playwright/test";
+import { expect, test, type Page } from "playwright/test";
+
+async function signIn(page: Page, phone: string, name: string): Promise<void> {
+  await page.locator('input[name="name"]').fill(name);
+  await page.locator('input[name="phone"]').fill(phone);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: new RegExp(`^(Morning|Afternoon|Evening), ${name.split(" ")[0]}\\.$`) })).toBeVisible();
+}
 
 test.describe("Split browser smoke flows", () => {
   test("anonymous user sees phone sign-in and can preview the complete flow", async ({ page }) => {
@@ -6,7 +13,7 @@ test.describe("Split browser smoke flows", () => {
     await page.goto("/split");
     await expect(page.getByRole("heading", { name: "Sign in to start splitting" })).toBeVisible();
     await expect(page.locator('input[name="phone"]')).toBeVisible();
-    await expect(page.getByRole("button", { name: "Text me a code" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
     await page.getByRole("button", { name: /Preview with sample data/i }).click();
     await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Alex\.$/ })).toBeVisible();
     await expect(page.getByText("Loro")).toBeVisible();
@@ -41,18 +48,13 @@ test.describe("Split browser smoke flows", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");
     await page.locator('input[name="phone"]').fill("+1 (214) 940-0587");
-    await page.getByRole("button", { name: "Text me a code" }).click();
-    await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
+    await signIn(page, "+1 (214) 940-0587", "Pasted User");
   });
 
-  test("auto-submits a six-digit verification code", async ({ page }) => {
+  test("signs in without a verification step", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");
-    await page.locator('input[name="phone"]').fill("214-940-0587");
-    await page.getByRole("button", { name: "Text me a code" }).click();
-    await page.locator('input[name="name"]').fill("Test User");
-    await page.locator('input[name="code"]').fill("000000");
-    await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Test\.$/ })).toBeVisible();
+    await signIn(page, "214-940-0590", "Test User");
   });
 
   test("filters diner contacts and fills a selected phone number", async ({ page }) => {
@@ -102,10 +104,7 @@ test.describe("Split browser smoke flows", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");
     await page.locator('input[name="phone"]').fill("214-940-0588");
-    await page.getByRole("button", { name: "Text me a code" }).click();
-    await page.locator('input[name="name"]').fill("OCR Tester");
-    await page.locator('input[name="code"]').fill("000000");
-    await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), OCR\.$/ })).toBeVisible();
+    await signIn(page, "214-940-0588", "OCR Tester");
     await page.getByRole("button", { name: "Scan a receipt" }).click();
     await page.locator('input[type="file"]').setInputFiles({
       name: "receipt.png",
@@ -124,10 +123,7 @@ test.describe("Split browser smoke flows", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");
     await page.locator('input[name="phone"]').fill("214-940-0589");
-    await page.getByRole("button", { name: "Text me a code" }).click();
-    await page.locator('input[name="name"]').fill("Retry Tester");
-    await page.locator('input[name="code"]').fill("000000");
-    await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Retry\.$/ })).toBeVisible();
+    await signIn(page, "214-940-0589", "Retry Tester");
     await page.getByRole("button", { name: "Scan a receipt" }).click();
     let firstAttempt = true;
     await page.route("**/api/split/upload**", async route => {

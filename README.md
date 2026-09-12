@@ -29,6 +29,11 @@ Production setup requires:
   `/api/split/workers/reminders` and processes reminders whose 24-hour due time
   has elapsed.
 
+Split’s primary sign-in is currently low-friction: a person enters a name and
+phone number and can continue without an OTP. The legacy Twilio Verify start,
+check, and phone-link endpoints remain available for a future verification
+rollout.
+
 Only send messages to people who have consented to receive them; Twilio STOP,
 START, and HELP keywords are honored. See the Split environment variables in
 `.env.example` for the complete list.

@@ -32,6 +32,7 @@ const uuid = z.string().uuid();
 const cents = z.number().int().min(0).max(100_000_000);
 const StartAuthSchema = z.object({ phone: z.string().min(7).max(40) });
 const VerifyAuthSchema = StartAuthSchema.extend({ code: z.string().min(4).max(10), displayName: z.string().trim().min(1).max(80).optional() });
+const ContinueAuthSchema = StartAuthSchema.extend({ displayName: z.string().trim().min(1).max(80) });
 const LinkPhoneSchema = z.object({ phone: z.string().min(7).max(40) });
 const LinkPhoneVerifySchema = LinkPhoneSchema.extend({ code: z.string().min(4).max(10) });
 const BillSchema = z.object({
@@ -72,6 +73,7 @@ function route(router: Router, method: "get" | "post" | "patch" | "delete", path
 
 export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/auth/start", startAuth);
+  route(router, "post", "/auth/continue", continueAuth);
   route(router, "post", "/auth/verify", verifyAuth);
   route(router, "post", "/auth/logout", logout);
   route(router, "get", "/auth/status", authStatus);
@@ -111,6 +113,29 @@ async function startAuth(ctx: Ctx) {
   if (!perIp.ok || !perPhone.ok) throw rateLimited(Math.max(perIp.ok ? 0 : perIp.retryAfterSec, perPhone.ok ? 0 : perPhone.retryAfterSec));
   await startPhoneVerification(normalized);
   return { ok: true };
+}
+
+/** Primary low-friction path: account access does not require phone verification. */
+async function continueAuth(ctx: Ctx) {
+  const input = ContinueAuthSchema.parse(ctx.body);
+  const phone = normalizePhone(input.phone);
+  const [perIp, perPhone] = await Promise.all([
+    checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req)),
+    checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(phone).slice(0, 32))
+  ]);
+  if (!perIp.ok || !perPhone.ok) throw rateLimited(Math.max(perIp.ok ? 0 : perIp.retryAfterSec, perPhone.ok ? 0 : perPhone.retryAfterSec));
+  const lookup = phoneHash(phone);
+  let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  if (!user) {
+    [user] = await db.insert(splitUsers).values({
+      displayName: input.displayName, phoneEncrypted: encryptPhone(phone), phoneLookupHash: lookup, smsConsentAt: new Date()
+    }).onConflictDoNothing({ target: splitUsers.phoneLookupHash }).returning();
+    if (!user) [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  }
+  if (!user || user.status !== "active") throw new ApiError(403, "account_disabled", "This account is unavailable.");
+  const token = await createSplitSession(user.id);
+  setSplitSessionCookie(ctx, token);
+  return { user: { id: user.id, displayName: user.displayName, hasPhone: Boolean(user.phoneLookupHash) } };
 }
 
 async function verifyAuth(ctx: Ctx) {

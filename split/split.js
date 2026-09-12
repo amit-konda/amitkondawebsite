@@ -116,9 +116,10 @@ function authView(step = "phone") {
           <button class="demo-link" type="button" data-action="change-phone">Use a different number</button>
         </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Enter your phone number and we’ll text you a secure code. It takes a few seconds.</p>
         <form id="phone-form" class="stack">
-          <label class="field"><span>Phone number</span><span class="phone-row"><input class="input country-code" value="+1" aria-label="Country code" readonly><input class="input" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(512) 555-0148" required autofocus></span></label>
-          <button class="btn btn-primary btn-block" type="submit">Text me a code</button>
-          <p class="fine-print">By continuing, you agree to receive transactional texts about bills you join. Message and data rates may apply. Reply STOP to opt out.</p>
+          <label class="field"><span>Your name</span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex" required autofocus></label>
+          <label class="field"><span>Phone number</span><span class="phone-row"><input class="input country-code" value="+1" aria-label="Country code" readonly><input class="input" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(512) 555-0148" required></span></label>
+          <button class="btn btn-primary btn-block" type="submit">Continue</button>
+          <p class="fine-print">No verification step for now. By continuing, you agree to receive transactional texts about bills you join. Message and data rates may apply. Reply STOP to opt out.</p>
         </form>
         <button class="demo-link" type="button" data-action="demo">Preview with sample data</button>`}
     </div>
@@ -144,14 +145,20 @@ async function resendCode(event) {
 
 async function startAuth(event) {
   event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button[type=submit]");
+  const name = String(new FormData(form).get("name") || "").trim();
+  if (!name) return notice("Enter your name to continue.", "error");
   let digits = String(new FormData(form).get("phone") || "").replace(/\D/g, "");
   // Accept the common pasted +1 format even though the country code has its
   // own field in the compact phone form.
   if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
   if (digits.length !== 10) return notice("Enter a 10-digit US phone number.", "error");
   state.phone = `+1${digits}`;
-  setBusy(button, true, "Sending…");
-  try { await api("/auth/start", { method: "POST", body: { phone: state.phone } }); authView("verify"); }
+  setBusy(button, true, "Opening Split…");
+  try {
+    const result = await api("/auth/continue", { method: "POST", body: { phone: state.phone, displayName: name } });
+    state.me = result.user || result.me || result; notice("You’re in.");
+    const invite = sessionStorage.getItem("split_invite"); go(invite ? `invite/${invite}` : "dashboard");
+  }
   catch (error) { notice(error.message, "error"); setBusy(button, false); }
 }
 async function verifyAuth(event) {

@@ -66,6 +66,24 @@ describe("Split organizer and settlement flow", () => {
     await server?.close();
   });
 
+  it("creates and resumes a phone account without verification", async () => {
+    const jar = freshJar();
+    const phone = "+15550109999";
+    const response = await api(server, jar, "/auth/continue", {
+      method: "POST", body: { phone, displayName: "No Verify User" }
+    });
+    expect(response.status).toBe(200);
+    applyCookies(response, jar);
+    expect((await json<{ user: { displayName: string; hasPhone: boolean } }>(response)).user).toMatchObject({ displayName: "No Verify User", hasPhone: true });
+    const dashboard = await api(server, jar, "/dashboard");
+    expect(dashboard.status).toBe(200);
+    const second = await api(server, freshJar(), "/auth/continue", {
+      method: "POST", body: { phone, displayName: "Updated Name" }
+    });
+    expect(second.status).toBe(200);
+    expect((await json<{ user: { displayName: string } }>(second)).user.displayName).toBe("No Verify User");
+  });
+
   it("creates accounts, edits/publishes a bill, claims an invite, settles, and idempotently reminds", async () => {
     const organizerJar = freshJar();
     const attendeeJar = freshJar();
@@ -264,8 +282,9 @@ describe("Split organizer and settlement flow", () => {
       api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, { method: "POST", body: { requestKey: competingKey } })
     ]);
     expect(reports.map((response) => response.status).sort()).toEqual([200, 409]);
+    const winningKey = reports[0]!.status === 200 ? requestKey : competingKey;
     const retryReport = await api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, {
-      method: "POST", body: { requestKey }
+      method: "POST", body: { requestKey: winningKey }
     });
     expect(retryReport.status).toBe(200);
     expect(await retryReport.json()).toMatchObject({ status: "reported_paid" });

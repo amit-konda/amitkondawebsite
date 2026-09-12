@@ -356,7 +356,7 @@ async function billView(id) {
   shell(true); app.innerHTML=`<div class="skeleton"></div><div class="split-layout"><div class="skeleton"></div><div class="skeleton"></div></div>`;
   try { let b; if (state.demo) b=id==="demo-new"?state.draft:demoBill(id); else b=normalizeBill(await api(`/bills/${encodeURIComponent(id)}`)); renderBill(b); } catch(error){renderError("We couldn’t open this dinner.",error.message,()=>billView(id));}
 }
-function demoBill(id){return {...demoDraft(),id,status:id==="demo-3"?"settled":"open",participants:[{id:"p1",name:"Alex",paymentStatus:"paid",amountCents:4832},{id:"p2",name:"Maya",paymentStatus:"unpaid",amountCents:3982},{id:"p3",name:"Sam",paymentStatus:"reported_paid",amountCents:2600}]};}
+function demoBill(id){const participants=[{id:"p1",name:"Alex",userId:id==="demo-2"?"demo-user":"payer-user",paymentStatus:"paid",amountCents:4832},{id:"p2",name:"Maya",userId:id==="demo-1"?"demo-user":"maya-user",paymentStatus:"unpaid",amountCents:3982},{id:"p3",name:"Sam",userId:"sam-user",paymentStatus:"reported_paid",amountCents:2600}];return {...demoDraft(),id,status:id==="demo-3"?"settled":"open",organizerUserId:id==="demo-2"?"demo-user":"payer-user",participants,currentParticipant:id==="demo-1"?participants[1]:undefined};}
 function renderBill(b) {
   const people=b.participants||[], rawItems=b.items||b.lineItems||[], items=rawItems.map(item=>({...item,allocations:item.allocations||(b.allocations||[]).filter(a=>String(a.itemId)===String(item.id))})), mine=b.currentParticipant||people.find(p=>p.userId===state.me?.id);
   const isOrganizer=b.organizerUserId===state.me?.id;

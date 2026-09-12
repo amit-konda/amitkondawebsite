@@ -68,6 +68,7 @@ function shell(loggedIn = Boolean(state.me)) {
   headerActions.innerHTML = loggedIn ? `<button class="text-btn" type="button" data-action="logout">Log out</button><button class="avatar" type="button" data-action="profile" aria-label="Account for ${esc(state.me?.displayName || state.me?.name || "you")}">${esc(initials(state.me?.displayName || state.me?.name))}</button>` : `<a class="text-btn" href="/">amitkonda.com ↗</a>`;
   bottomNav.hidden = !loggedIn;
   headerActions.querySelector('[data-action="logout"]')?.addEventListener("click", logout);
+  headerActions.querySelector('[data-action="profile"]')?.addEventListener("click", () => go("profile"));
 }
 
 async function bootstrap() {
@@ -124,7 +125,7 @@ function authView(step = "phone") {
   document.querySelector("#phone-form")?.addEventListener("submit", startAuth);
   document.querySelector("#verify-form")?.addEventListener("submit", verifyAuth);
   document.querySelector('[data-action="change-phone"]')?.addEventListener("click", () => authView());
-  document.querySelector('[data-action="demo"]')?.addEventListener("click", () => { state.demo = true; state.me = { id: "demo-user", name: "Alex" }; go("dashboard"); });
+  document.querySelector('[data-action="demo"]')?.addEventListener("click", () => { state.demo = true; state.me = { id: "demo-user", name: "Alex", hasPhone: true }; go("dashboard"); });
 }
 
 async function startAuth(event) {
@@ -183,6 +184,20 @@ function billRow(b) {
   return `<a class="bill-row" href="#/bill/${encodeURIComponent(b.id)}"><span class="merchant-icon">${esc(merchant[0])}</span><span class="bill-meta"><h3>${esc(merchant)}</h3><p>${esc(dateLabel(b.purchasedAt || b.date || b.receiptDate))} · ${esc(sub)}</p></span><span class="status ${esc(status)}">${esc(status.replaceAll("_", " "))}</span><span class="bill-amount">${money(b.yourAmountCents ?? b.totalCents)}<small>${b.role === "organizer" ? `${money(b.totalCents)} total` : "your total"}</small></span></a>`;
 }
 function emptyDashboard() { return `<div class="card empty-state"><div class="empty-icon" aria-hidden="true">⌁</div><h2>No receipt drama yet</h2><p class="muted">Upload your first dinner receipt and invite everyone to claim their items.</p><button class="btn btn-primary" data-action="new-bill" type="button">Split your first bill</button></div>`; }
+
+function profileView() {
+  shell(true);
+  app.innerHTML = `<a class="back-link" href="#/dashboard">← Back to dashboard</a><div class="page-head"><div><p class="eyebrow">Account</p><h1>${esc(state.me?.displayName || "Your account")}</h1><p class="lede">Add a verified phone so Split can send dinner invites and payment reminders.</p></div></div><section class="card card-pad"><h2>${state.me?.hasPhone ? "Phone number linked" : "Link your phone"}</h2><p class="muted">Your number stays private and is only used for transactional Split texts.</p><form id="link-phone-form" class="stack"><label class="field"><span>Phone number</span><input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(214) 940-0587" required></label><button class="btn btn-primary" type="submit">Text me a code</button></form></section>`;
+  document.querySelector("#link-phone-form").addEventListener("submit", linkPhoneStart);
+}
+async function linkPhoneStart(event) {
+  event.preventDefault(); const form = event.currentTarget; const phone = new FormData(form).get("phone");
+  try { await api("/auth/phone/link/start", { method: "POST", body: { phone } }); form.innerHTML = `<label class="field"><span>Verification code</span><input class="input" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required></label><button class="btn btn-primary" type="submit">Verify phone</button>`; form.addEventListener("submit", e => linkPhoneVerify(e, phone), { once: true }); notice("Code sent."); } catch (error) { notice(error.message, "error"); }
+}
+async function linkPhoneVerify(event, phone) {
+  event.preventDefault(); const code = new FormData(event.currentTarget).get("code");
+  try { await api("/auth/phone/link/verify", { method: "POST", body: { phone, code } }); state.me.hasPhone = true; notice("Phone linked."); go("dashboard"); } catch (error) { notice(error.message, "error"); }
+}
 
 function uploadView() {
   shell(true); app.innerHTML = `<a class="back-link" href="#/dashboard">← Back to dashboard</a><div class="page-head"><div><p class="eyebrow">New split · 1 of 3</p><h1>Show us the receipt.</h1><p class="lede">A clear, flat photo works best. You’ll review every item before anyone gets a text.</p></div></div>
@@ -325,7 +340,7 @@ function activityView(){dashboardView();}
 function renderError(title,detail,retry){shell(Boolean(state.me));app.innerHTML=`<div class="card empty-state"><div class="empty-icon">!</div><h1>${esc(title)}</h1><p class="muted">${esc(detail||"Try again in a moment.")}</p><button class="btn btn-primary" type="button" id="retry">Try again</button></div>`;document.querySelector("#retry").addEventListener("click",retry);}
 function bindCommon(){document.querySelectorAll('[data-action="new-bill"]').forEach(x=>x.addEventListener("click",()=>go("new")));}
 
-function route(){const parts=getRoute();const routeName=parts[0]|| (state.me?"dashboard":"welcome");document.querySelectorAll("[data-nav]").forEach(x=>x.classList.toggle("active",x.dataset.nav===routeName));if(!state.me&&routeName!=="invite")return authView();if(routeName==="welcome")return state.me?go("dashboard"):authView();if(routeName==="dashboard")return dashboardView();if(routeName==="activity")return activityView();if(routeName==="new")return uploadView();if(routeName==="edit")return editorView();if(routeName==="preview")return previewBill();if(routeName==="bill"&&parts[1])return billView(parts[1]);if(routeName==="invite"&&parts[1])return inviteView(parts[1]);go(state.me?"dashboard":"welcome");}
+function route(){const parts=getRoute();const routeName=parts[0]|| (state.me?"dashboard":"welcome");document.querySelectorAll("[data-nav]").forEach(x=>x.classList.toggle("active",x.dataset.nav===routeName));if(!state.me&&routeName!=="invite")return authView();if(routeName==="welcome")return state.me?go("dashboard"):authView();if(routeName==="dashboard")return dashboardView();if(routeName==="activity")return activityView();if(routeName==="profile")return profileView();if(routeName==="new")return uploadView();if(routeName==="edit")return editorView();if(routeName==="preview")return previewBill();if(routeName==="bill"&&parts[1])return billView(parts[1]);if(routeName==="invite"&&parts[1])return inviteView(parts[1]);go(state.me?"dashboard":"welcome");}
 
 bottomNav.addEventListener("click",e=>{if(e.target.closest('[data-action="new-bill"]'))go("new");});
 window.addEventListener("hashchange",route);

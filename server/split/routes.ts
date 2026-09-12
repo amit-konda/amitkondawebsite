@@ -32,6 +32,8 @@ const uuid = z.string().uuid();
 const cents = z.number().int().min(0).max(100_000_000);
 const StartAuthSchema = z.object({ phone: z.string().min(7).max(40) });
 const VerifyAuthSchema = StartAuthSchema.extend({ code: z.string().min(4).max(10), displayName: z.string().trim().min(1).max(80).optional() });
+const LinkPhoneSchema = z.object({ phone: z.string().min(7).max(40) });
+const LinkPhoneVerifySchema = LinkPhoneSchema.extend({ code: z.string().min(4).max(10) });
 const BillSchema = z.object({
   requestKey: z.string().min(8).max(128),
   merchantName: z.string().trim().max(160).nullable().optional(),
@@ -73,6 +75,8 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/auth/verify", verifyAuth);
   route(router, "post", "/auth/logout", logout);
   route(router, "get", "/auth/status", authStatus);
+  route(router, "post", "/auth/phone/link/start", linkPhoneStart);
+  route(router, "post", "/auth/phone/link/verify", linkPhoneVerify);
   route(router, "get", "/auth/google", googleAuth);
   route(router, "get", "/auth/google/callback", googleAuthCallback);
   route(router, "get", "/dashboard", dashboard);
@@ -122,7 +126,30 @@ async function verifyAuth(ctx: Ctx) {
   if (!user || user.status !== "active") throw new ApiError(403, "account_disabled", "This account is unavailable.");
   const token = await createSplitSession(user.id);
   setSplitSessionCookie(ctx, token);
-  return { user: { id: user.id, displayName: user.displayName } };
+  return { user: { id: user.id, displayName: user.displayName, hasPhone: true } };
+}
+
+async function linkPhoneStart(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const { phone } = LinkPhoneSchema.parse(ctx.body);
+  const normalized = normalizePhone(phone);
+  const limited = await checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(normalized).slice(0, 32));
+  if (!limited.ok) throw rateLimited(limited.retryAfterSec);
+  const [existing] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneHash(normalized))).limit(1);
+  if (existing && existing.id !== user.id) throw conflict("That phone number is already linked to another account.");
+  await startPhoneVerification(normalized);
+  return { ok: true };
+}
+
+async function linkPhoneVerify(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const { phone, code } = LinkPhoneVerifySchema.parse(ctx.body);
+  const normalized = normalizePhone(phone); const lookup = phoneHash(normalized);
+  if (!await checkPhoneVerification(normalized, code)) throw new ApiError(401, "invalid_code", "Invalid or expired verification code.");
+  const [existing] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  if (existing && existing.id !== user.id) throw conflict("That phone number is already linked to another account.");
+  await db.update(splitUsers).set({ phoneEncrypted: encryptPhone(normalized), phoneLookupHash: lookup, smsConsentAt: new Date() }).where(eq(splitUsers.id, user.id));
+  return { ok: true, hasPhone: true };
 }
 
 async function logout(ctx: Ctx) {

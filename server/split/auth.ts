@@ -14,7 +14,7 @@ import {
 } from "./tokens.js";
 import { splitEnv } from "./env.js";
 
-export interface SplitIdentity { id: string; displayName: string }
+export interface SplitIdentity { id: string; displayName: string; hasPhone: boolean }
 
 export function googleConfigured(): boolean { const e = splitEnv(); return Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET); }
 export function googleStartUrl(origin: string): string {
@@ -73,7 +73,7 @@ export async function optionalSplitUser(ctx: Ctx): Promise<SplitIdentity | null>
   if (!token) return null;
   const now = new Date();
   const [row] = await db
-    .select({ id: splitUsers.id, displayName: splitUsers.displayName, sessionId: splitSessions.id })
+    .select({ id: splitUsers.id, displayName: splitUsers.displayName, hasPhone: splitUsers.phoneLookupHash, sessionId: splitSessions.id })
     .from(splitSessions)
     .innerJoin(splitUsers, eq(splitSessions.userId, splitUsers.id))
     .where(and(
@@ -85,7 +85,7 @@ export async function optionalSplitUser(ctx: Ctx): Promise<SplitIdentity | null>
     .limit(1);
   if (!row) return null;
   void db.update(splitSessions).set({ lastUsedAt: now }).where(eq(splitSessions.id, row.sessionId));
-  return { id: row.id, displayName: row.displayName };
+  return { id: row.id, displayName: row.displayName, hasPhone: Boolean(row.hasPhone) };
 }
 
 export async function requireSplitUser(ctx: Ctx): Promise<SplitIdentity> {

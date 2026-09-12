@@ -184,9 +184,9 @@ function renderDashboard(data) {
   shell(true); const bills = normalizeBills(data); const summary = data.summary || data.totals || {};
   app.innerHTML = `<div class="page-head"><div class="page-head-copy"><p class="eyebrow">Your table</p><h1>${greeting()}, ${esc((state.me?.displayName || state.me?.name || "friend").split(" ")[0])}.</h1><p class="lede">Here’s who owes what—without digging through the group chat.</p></div><button class="btn btn-primary" type="button" data-action="new-bill">Scan a receipt</button></div>
     <section class="summary-grid" aria-label="Balance summary">
-      <div class="card summary-card"><span class="muted small">Open dinners</span><strong class="amount">${Number(summary.outstandingCount ?? bills.filter(x => !["paid","settled"].includes(x.status)).length)}</strong></div>
+      <div class="card summary-card"><span class="muted small">Open balances</span><strong class="amount">${Number(summary.outstandingCount ?? bills.filter(x => !["paid","settled"].includes(x.status)).length)}</strong></div>
       <div class="card summary-card owe"><span class="muted small">You owe</span><strong class="amount">${money(summary.owedByYouCents ?? summary.youOweCents)}</strong></div>
-      <div class="card summary-card owed"><span class="muted small">Owed to you</span><strong class="amount">${money(summary.owedToYouCents ?? summary.youAreOwedCents)}</strong></div>
+      <div class="card summary-card owed"><span class="muted small">Owed to you</span><strong class="amount">${money(summary.owedToYouCents ?? summary.youAreOwedCents)}</strong>${Number(summary.reportedPaidCents || 0) > 0 ? `<span class="muted small">${money(summary.reportedPaidCents)} reported paid</span>` : ""}</div>
     </section>
     <section class="section"><div class="section-head"><h2>Recent dinners</h2>${bills.length ? `<span class="muted small">${bills.length} receipt${bills.length === 1 ? "" : "s"}</span>` : ""}</div>
       ${bills.length ? `<div class="bill-list">${bills.map(billRow).join("")}</div>` : emptyDashboard()}

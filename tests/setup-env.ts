@@ -47,6 +47,6 @@ process.env.SPLIT_DEV_MODE = process.env.SPLIT_DEV_MODE ?? "true";
 delete process.env.OPENAI_API_KEY;
 delete process.env.OPENCODE_GO_API_KEY;
 delete process.env.TWILIO_ACCOUNT_SID;
-delete process.env.TWILIO_AUTH_TOKEN;
+process.env.TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN ?? "test-twilio-signing-token";
 delete process.env.TWILIO_VERIFY_SERVICE_SID;
 delete process.env.TWILIO_MESSAGING_FROM;

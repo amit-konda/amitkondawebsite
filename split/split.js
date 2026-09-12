@@ -288,34 +288,48 @@ function editorView() {
       ${b.warnings?.length ? `<div class="callout warning"><strong>Review the scan</strong><ul>${b.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
       <section class="card card-pad"><div class="form-grid"><label class="field"><span>Restaurant</span><input class="input" name="merchant" value="${esc(b.merchantName || b.merchant)}" maxlength="120" required></label><label class="field"><span>Date</span><input class="input" type="date" name="date" value="${esc(String(b.purchasedAt || b.date || "").slice(0,10))}" required></label></div></section>
       <section class="card card-pad"><div class="section-head"><div><h2>Receipt items</h2><p class="muted small">Tap any line to correct it.</p></div><button class="btn btn-sm" type="button" data-action="add-item">+ Add item</button></div><div id="item-list">${items.map((x,i) => itemEditor(x,i)).join("")}</div></section>
-      <section class="card card-pad"><div class="section-head"><div><h2>People at dinner</h2><p class="muted small">They’ll get an individual link after you publish.</p></div><button class="btn btn-sm" type="button" data-action="pick-contact">From contacts</button></div><div id="participant-list" class="participant-list">${people.map(personEditor).join("")}</div><div class="add-person"><div class="contact-name-wrap"><input class="input" id="person-name" placeholder="Search a name" maxlength="80" autocomplete="off"><div id="contact-suggestions" class="contact-suggestions" role="listbox" hidden></div></div><input class="input" id="person-phone" type="tel" inputmode="tel" placeholder="Phone number"><button class="btn" type="button" data-action="add-person">Add</button></div><p class="field-hint">Search past diners or enter a new name and phone. Existing Split users connect automatically.</p></section>
+      <section class="card card-pad"><div class="section-head"><div><h2>People at dinner</h2><p class="muted small">They’ll get an individual link after you publish.</p></div><button class="btn btn-sm" type="button" data-action="pick-contact">From contacts</button></div><div id="participant-list" class="participant-list">${people.map(p => personEditor(p, p.userId !== b.organizerUserId)).join("")}</div><div class="add-person"><div class="contact-name-wrap"><label class="sr-only" for="person-name">Diner name</label><input class="input" id="person-name" placeholder="Search a name" maxlength="80" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="contact-suggestions" aria-expanded="false"><div id="contact-suggestions" class="contact-suggestions" role="listbox" hidden></div></div><div><label class="sr-only" for="person-phone">Diner phone number</label><input class="input" id="person-phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="Phone number"></div><button class="btn" type="button" data-action="add-person">Add</button></div><p class="field-hint">Search past diners or enter a new name and phone. Existing Split users connect automatically.</p></section>
     </div><aside class="editor-aside"><section class="card card-pad"><h2>Receipt total</h2><div class="totals"><label class="total-line"><span>Subtotal</span><span class="input-prefix"><input class="input money-input" name="subtotal" value="${(Number(b.subtotalCents || 0)/100).toFixed(2)}" inputmode="decimal"></span></label><label class="total-line"><span>Tax</span><span class="input-prefix"><input class="input money-input" name="tax" value="${(Number(b.taxCents || 0)/100).toFixed(2)}" inputmode="decimal"></span></label><label class="total-line"><span>Tip</span><span class="input-prefix"><input class="input money-input" name="tip" value="${(Number(b.tipCents || 0)/100).toFixed(2)}" inputmode="decimal"></span></label><div class="total-line grand"><span>Total</span><strong id="calculated-total">${money(b.totalCents)}</strong></div></div></section><button class="btn btn-primary btn-block" type="submit">Save and preview</button><p class="fine-print center">No texts are sent until the next step.</p></aside></form>`;
   bindEditor(b);
 }
 function itemEditor(x,i) { return `<div class="item-row" data-item-id="${esc(x.id || "")}"><input class="input item-name" value="${esc(x.description || x.name)}" aria-label="Item ${i+1} name" maxlength="160"><span class="input-prefix"><input class="input money-input item-price" value="${(Number(x.lineTotalCents ?? x.totalCents ?? x.priceCents ?? 0)/100).toFixed(2)}" inputmode="decimal" aria-label="Item ${i+1} price"></span><button class="icon-btn" type="button" data-action="remove-item" aria-label="Remove item">×</button></div>`; }
-function personEditor(p) { const name=p.displayName||p.name||"Guest";return `<div class="person" data-person-id="${esc(p.id || "")}"><span class="person-dot">${esc(initials(name))}</span><span class="person-copy"><strong>${esc(name)}</strong><small>${esc(p.phone || p.maskedPhone || "Invite pending")}</small></span>${p.id?"":`<button class="text-btn btn-danger" type="button" data-action="remove-person">Remove</button>`}<input type="hidden" class="person-name-value" value="${esc(name)}"><input type="hidden" class="person-phone-value" value="${esc(p.phone || "")}"></div>`; }
+function personEditor(p, allowRemove = !p.id) { const name=p.displayName||p.name||"Guest"; const editable = Boolean(p.id && allowRemove); const details = editable ? `<span class="person-copy person-edit-fields"><input class="input person-name-value" aria-label="${esc(name)} name" value="${esc(name)}" maxlength="80"><input class="input person-phone-value" aria-label="${esc(name)} phone" value="${esc(p.phone || "")}" inputmode="tel"></span>` : `<span class="person-copy"><strong>${esc(name)}</strong><small>${esc(p.phone || p.maskedPhone || "Invite pending")}</small></span><input type="hidden" class="person-name-value" value="${esc(name)}"><input type="hidden" class="person-phone-value" value="${esc(p.phone || "")}">`; return `<div class="person" data-person-id="${esc(p.id || "")}"><span class="person-dot">${esc(initials(name))}</span>${details}${allowRemove?`<button class="text-btn btn-danger" type="button" data-action="remove-person">Remove</button>`:""}</div>`; }
 function bindEditor(b) {
   const form = document.querySelector("#bill-form"), list = document.querySelector("#item-list"), people = document.querySelector("#participant-list");
   document.querySelector('[data-action="choose-receipt"]')?.addEventListener("click", () => { state.draft = null; });
   const nameInput = document.querySelector("#person-name"), phoneInput = document.querySelector("#person-phone"), suggestions = document.querySelector("#contact-suggestions");
-  let searchTimer, searchVersion = 0;
+  let searchTimer, searchVersion = 0, activeSuggestion = -1;
+  const setSuggestionsOpen = open => { suggestions.hidden = !open; nameInput.setAttribute("aria-expanded", String(open)); if (!open) { activeSuggestion = -1; nameInput.removeAttribute("aria-activedescendant"); } };
   nameInput?.addEventListener("input", () => {
     clearTimeout(searchTimer);
     const version = ++searchVersion;
     const query = nameInput.value.trim();
-    if (query.length < 1) { suggestions.hidden = true; suggestions.innerHTML = ""; return; }
+    activeSuggestion = -1;
+    if (query.length < 1) { setSuggestionsOpen(false); suggestions.innerHTML = ""; return; }
     searchTimer = setTimeout(async () => {
       const found = state.demo ? [{ name: "Maya", phone: "+12145550101" }, { name: "Sam", phone: "+15125550102" }].filter(x => x.name.toLowerCase().includes(query.toLowerCase())) : (await api(`/contacts?q=${encodeURIComponent(query)}`).catch(() => ({ contacts: [] }))).contacts || [];
       if (version !== searchVersion || nameInput.value.trim() !== query) return;
-      suggestions.innerHTML = found.map(contact => `<button type="button" role="option" data-action="choose-contact" data-name="${esc(contact.name)}" data-phone="${esc(contact.phone)}"><strong>${esc(contact.name)}</strong><small>${esc(contact.phone.slice(-4).padStart(contact.phone.length, "•"))}</small></button>`).join("");
-      suggestions.hidden = !found.length;
+      suggestions.innerHTML = found.map((contact, index) => `<button id="contact-option-${index}" type="button" role="option" aria-selected="false" data-action="choose-contact" data-name="${esc(contact.name)}" data-phone="${esc(contact.phone)}"><strong>${esc(contact.name)}</strong><small>${esc(contact.phone.slice(-4).padStart(contact.phone.length, "•"))}</small></button>`).join("");
+      setSuggestionsOpen(Boolean(found.length));
     }, 180);
   });
-  nameInput?.addEventListener("keydown", event => { if (event.key === "Escape") suggestions.hidden = true; });
-  document.addEventListener("click", event => { if (!event.target.closest(".contact-name-wrap")) suggestions.hidden = true; });
+  nameInput?.addEventListener("keydown", event => {
+    const options = [...suggestions.querySelectorAll('[role="option"]')];
+    if (event.key === "Escape") { setSuggestionsOpen(false); return; }
+    if (!options.length || suggestions.hidden) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      activeSuggestion = (activeSuggestion + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+      options.forEach((option, index) => option.setAttribute("aria-selected", String(index === activeSuggestion)));
+      nameInput.setAttribute("aria-activedescendant", options[activeSuggestion].id);
+    } else if (event.key === "Enter" && activeSuggestion >= 0) {
+      event.preventDefault(); options[activeSuggestion].click();
+    }
+  });
+  form.addEventListener("click", event => { if (!event.target.closest(".contact-name-wrap")) setSuggestionsOpen(false); });
   const total = () => { const itemSum = [...document.querySelectorAll(".item-price")].reduce((s,x) => s + parseCents(x.value),0); form.elements.subtotal.value = (itemSum/100).toFixed(2); document.querySelector("#calculated-total").textContent = money(itemSum + parseCents(form.elements.tax.value) + parseCents(form.elements.tip.value)); };
   form.addEventListener("input", e => { if (e.target.matches(".item-price,[name=tax],[name=tip]")) total(); });
-  form.addEventListener("click", e => { const target=e.target.closest("[data-action]"), action = target?.dataset.action; if (action === "add-item") { list.insertAdjacentHTML("beforeend", itemEditor({},list.children.length)); list.lastElementChild.querySelector("input").focus(); } if (action === "remove-item") { e.target.closest(".item-row").remove(); total(); } if (action === "remove-person") e.target.closest(".person").remove(); if (action === "add-person") addPersonFromInputs(people); if (action === "choose-contact") { nameInput.value=target.dataset.name||""; phoneInput.value=target.dataset.phone||""; suggestions.hidden=true; } if (action === "pick-contact") pickContact(people); });
+  form.addEventListener("click", e => { const target=e.target.closest("[data-action]"), action = target?.dataset.action; if (action === "add-item") { list.insertAdjacentHTML("beforeend", itemEditor({},list.children.length)); list.lastElementChild.querySelector("input").focus(); } if (action === "remove-item") { e.target.closest(".item-row").remove(); total(); } if (action === "remove-person") e.target.closest(".person").remove(); if (action === "add-person") addPersonFromInputs(people); if (action === "choose-contact") { nameInput.value=target.dataset.name||""; phoneInput.value=target.dataset.phone||""; phoneInput.focus(); setSuggestionsOpen(false); } if (action === "pick-contact") pickContact(people); });
   form.addEventListener("submit", e => saveDraft(e,b));
   // Reconcile the summary immediately, including OCR results with a missing
   // subtotal or a receipt whose line items were corrected before submission.
@@ -344,7 +358,17 @@ async function saveItemsAndPeople(b,items,participants) {
   const retained=new Set(items.filter(x=>x.id).map(x=>String(x.id)));
   const calls=items.map(item=>{const body={description:item.description,quantity:item.quantity,unitPriceCents:item.unitPriceCents,lineTotalCents:item.lineTotalCents,displayOrder:item.displayOrder};return item.id?api(`/items/${encodeURIComponent(item.id)}`,{method:"PATCH",body}):api(`/bills/${encodeURIComponent(b.id)}/items`,{method:"POST",body});});
   for(const old of b.items||[])if(!retained.has(String(old.id)))calls.push(api(`/items/${encodeURIComponent(old.id)}`,{method:"DELETE"}));
-  for(const person of participants)if(!person.id)calls.push(api(`/bills/${encodeURIComponent(b.id)}/participants`,{method:"POST",body:{displayName:person.name,phone:person.phone}}));
+  const retainedParticipants = new Set(participants.filter(p => p.id).map(p => String(p.id)));
+  const previousParticipants = new Map((b.participants || []).map(p => [String(p.id), p]));
+  for(const person of participants) {
+    const previous = person.id ? previousParticipants.get(String(person.id)) : null;
+    if (previous?.userId === b.organizerUserId) continue;
+    const body = { displayName: person.name, phone: person.phone };
+    calls.push(person.id
+      ? api(`/participants/${encodeURIComponent(person.id)}`, { method: "PATCH", body })
+      : api(`/bills/${encodeURIComponent(b.id)}/participants`, { method: "POST", body }));
+  }
+  for(const old of b.participants || []) if(old.id && old.userId !== b.organizerUserId && !retainedParticipants.has(String(old.id))) calls.push(api(`/participants/${encodeURIComponent(old.id)}`, { method: "DELETE" }));
   await Promise.all(calls);
 }
 

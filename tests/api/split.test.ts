@@ -137,10 +137,22 @@ describe("Split organizer and settlement flow", () => {
     const invitation = await json<{ participant: { id: string }; inviteToken: string }>(addParticipant);
     expect(invitation.inviteToken).toContain(invitation.participant.id);
 
+    const editedParticipant = await api(server, organizerJar, `/participants/${invitation.participant.id}`, {
+      method: "PATCH", body: { displayName: "Attendee Edited", phone: attendeePhone }
+    });
+    expect(editedParticipant.status).toBe(200);
+    expect((await json<{ participant: { displayName: string } }>(editedParticipant)).participant.displayName).toBe("Attendee Edited");
+    const removable = await api(server, organizerJar, `/bills/${billId}/participants`, {
+      method: "POST", body: { displayName: "Temporary Diner", phone: "+15550000003" }
+    });
+    expect(removable.status).toBe(200);
+    const removableId = (await json<{ participant: { id: string } }>(removable)).participant.id;
+    expect((await api(server, organizerJar, `/participants/${removableId}`, { method: "DELETE" })).status).toBe(200);
+
     const contactSearch = await api(server, organizerJar, "/contacts?q=att");
     expect(contactSearch.status).toBe(200);
     expect(await json<{ contacts: Array<{ name: string; phone: string }> }>(contactSearch)).toMatchObject({
-      contacts: [{ name: "Attendee", phone: attendeePhone }]
+      contacts: [{ name: "Attendee Edited", phone: attendeePhone }]
     });
 
     // Re-adding a contact should produce a useful conflict instead of a raw

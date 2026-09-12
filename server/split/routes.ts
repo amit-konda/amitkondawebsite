@@ -88,6 +88,8 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "patch", "/items/:itemId", patchItem);
   route(router, "delete", "/items/:itemId", deleteItem);
   route(router, "post", "/bills/:billId/participants", addParticipant);
+  route(router, "patch", "/participants/:participantId", patchParticipant);
+  route(router, "delete", "/participants/:participantId", deleteParticipant);
   route(router, "post", "/bills/:billId/publish", publishBill);
   route(router, "get", "/invites/:token", getInvite);
   route(router, "post", "/invites/:token/accept", acceptInvite);
@@ -363,6 +365,45 @@ async function addParticipant(ctx: Ctx) {
     displayName: input.displayName, invitedPhoneEncrypted: encryptPhone(phone), invitedPhoneLookupHash: phoneLookupHash, inviteTokenHash: hashInviteToken(token)
   }).returning();
   return { participant: publicParticipant(participant!), inviteToken: token };
+}
+
+async function patchParticipant(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const [row] = await db.select({ participant: splitParticipants, bill: splitBills })
+    .from(splitParticipants).innerJoin(splitBills, eq(splitParticipants.billId, splitBills.id))
+    .where(eq(splitParticipants.id, ctx.params.participantId!)).limit(1);
+  if (!row || row.bill.organizerUserId !== user.id) throw notFound();
+  if (row.bill.status !== "review") throw conflict("Diners can only be edited before publishing.");
+  if (row.participant.userId === row.bill.organizerUserId) throw conflict("The payer stays on the split.");
+  const input = ParticipantSchema.parse(ctx.body);
+  const phone = normalizePhone(input.phone);
+  const phoneLookupHash = phoneHash(phone);
+  const [duplicate] = await db.select({ id: splitParticipants.id }).from(splitParticipants).where(and(
+    eq(splitParticipants.billId, row.bill.id),
+    eq(splitParticipants.invitedPhoneLookupHash, phoneLookupHash)
+  )).limit(2);
+  if (duplicate && duplicate.id !== row.participant.id) throw conflict("That person is already on this split.");
+  const [existingUser] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneLookupHash)).limit(1);
+  const [participant] = await db.update(splitParticipants).set({
+    displayName: input.displayName,
+    invitedPhoneEncrypted: encryptPhone(phone),
+    invitedPhoneLookupHash: phoneLookupHash,
+    userId: existingUser?.id ?? null,
+    invitationStatus: "pending"
+  }).where(eq(splitParticipants.id, row.participant.id)).returning();
+  return { participant: publicParticipant(participant!) };
+}
+
+async function deleteParticipant(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const [row] = await db.select({ participant: splitParticipants, bill: splitBills })
+    .from(splitParticipants).innerJoin(splitBills, eq(splitParticipants.billId, splitBills.id))
+    .where(eq(splitParticipants.id, ctx.params.participantId!)).limit(1);
+  if (!row || row.bill.organizerUserId !== user.id) throw notFound();
+  if (row.bill.status !== "review") throw conflict("Diners can only be removed before publishing.");
+  if (row.participant.userId === row.bill.organizerUserId) throw conflict("The payer stays on the split.");
+  await db.delete(splitParticipants).where(eq(splitParticipants.id, row.participant.id));
+  return { ok: true };
 }
 
 async function publishBill(ctx: Ctx) {

@@ -39,8 +39,17 @@ export async function googleCallback(code: string, origin: string): Promise<stri
   if (!profileResponse.ok) throw unauthorized();
   const profile = await profileResponse.json() as { sub?: string; name?: string; email?: string; email_verified?: boolean };
   if (!profile.sub || !profile.email || profile.email_verified === false) throw unauthorized();
+  const email = profile.email.toLowerCase();
   let [user] = await db.select().from(splitUsers).where(eq(splitUsers.googleSubject, profile.sub)).limit(1);
-  if (!user) [user] = await db.insert(splitUsers).values({ displayName: (profile.name || profile.email.split("@")[0]!).trim().slice(0, 80), googleSubject: profile.sub, email: profile.email.toLowerCase() }).onConflictDoNothing().returning();
+  // Link an existing phone-based account by verified email instead of creating
+  // a duplicate identity when the user chooses Google later.
+  if (!user) {
+    [user] = await db.select().from(splitUsers).where(eq(splitUsers.email, email)).limit(1);
+    if (user) {
+      [user] = await db.update(splitUsers).set({ googleSubject: profile.sub }).where(eq(splitUsers.id, user.id)).returning();
+    }
+  }
+  if (!user) [user] = await db.insert(splitUsers).values({ displayName: (profile.name || email.split("@")[0]!).trim().slice(0, 80), googleSubject: profile.sub, email }).onConflictDoNothing().returning();
   if (!user || user.status !== "active") throw unauthorized();
   return createSplitSession(user.id);
 }

@@ -10,6 +10,12 @@
       "dest": "/api/poker/[...route].ts"
     }
   ],
+  "rewrites": [
+    {
+      "source": "/split/i/:token",
+      "destination": "/split?invite=:token"
+    }
+  ],
   "crons": [
     {
       "path": "/api/split/workers/reminders",

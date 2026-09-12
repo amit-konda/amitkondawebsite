@@ -29,7 +29,7 @@ async function statusWebhook(ctx: Ctx) {
     const [delivery] = await tx.select().from(splitSmsDeliveries).where(eq(splitSmsDeliveries.providerMessageId, sid)).limit(1);
     if (!delivery) return;
     await tx.update(splitWebhookEvents).set({ deliveryId: delivery.id }).where(eq(splitWebhookEvents.id, inserted[0]!.id));
-    if (status && statusRank(status) >= statusRank(delivery.status)) {
+    if (status && shouldAdvanceSmsStatus(delivery.status, status)) {
       await tx.update(splitSmsDeliveries).set({
         status,
         deliveredAt: status === "delivered" ? new Date() : undefined,
@@ -154,4 +154,11 @@ function statusRank(status: string): number {
   if (status === "delivered") return 3;
   if (status === "sent") return 2;
   return 1;
+}
+
+/** Carrier callbacks can arrive out of order; once terminal, never regress. */
+export function shouldAdvanceSmsStatus(current: string, next: string): boolean {
+  const terminal = new Set(["delivered", "failed", "undelivered", "dead_letter"]);
+  if (terminal.has(current)) return current === next;
+  return statusRank(next) >= statusRank(current);
 }

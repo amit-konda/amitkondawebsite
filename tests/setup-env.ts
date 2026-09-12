@@ -27,3 +27,25 @@ process.env.RESEND_API_KEY = process.env.RESEND_API_KEY ?? "re_test_dummy";
 process.env.RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET ?? "test-webhook-secret";
 process.env.POKER_EMAIL_FROM = process.env.POKER_EMAIL_FROM ?? "Poker Test <test@example.com>";
 process.env.PUBLIC_APP_ORIGIN = process.env.PUBLIC_APP_ORIGIN ?? "http://localhost:8788";
+
+// Split's crypto helpers validate these secrets at module call time. Keep the
+// defaults local and deterministic in tests; callers can still override them
+// when a test explicitly needs a different key.
+process.env.SPLIT_PHONE_HASH_SECRET =
+  process.env.SPLIT_PHONE_HASH_SECRET ?? "test-split-phone-hash-secret-0123456789";
+process.env.SPLIT_PHONE_ENCRYPTION_KEY =
+  process.env.SPLIT_PHONE_ENCRYPTION_KEY ?? "test-split-phone-encryption-0123456789";
+process.env.SPLIT_SESSION_SECRET =
+  process.env.SPLIT_SESSION_SECRET ?? "test-split-session-secret-0123456789";
+process.env.SPLIT_INVITE_SECRET =
+  process.env.SPLIT_INVITE_SECRET ?? "test-split-invite-secret-0123456789";
+process.env.SPLIT_DEV_MODE = process.env.SPLIT_DEV_MODE ?? "true";
+
+// Never let a developer's real provider key cause unit tests to make an
+// external OCR request. OCR's deterministic fallback is the intended test
+// behavior unless a test deliberately mocks the provider.
+delete process.env.OPENAI_API_KEY;
+delete process.env.TWILIO_ACCOUNT_SID;
+delete process.env.TWILIO_AUTH_TOKEN;
+delete process.env.TWILIO_VERIFY_SERVICE_SID;
+delete process.env.TWILIO_MESSAGING_FROM;

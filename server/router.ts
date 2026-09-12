@@ -77,6 +77,7 @@ export class Router {
         if (!params) continue;
         ctx.params = params;
         const data = await route.handler(ctx);
+        if (res.writableEnded) return;
         respondJson(res, res.statusCode === 200 ? 200 : res.statusCode, data ?? null);
         return;
       }

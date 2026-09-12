@@ -1,4 +1,36 @@
-# amitkonda.com — Poker Ledger
+# amitkonda.com — Poker Ledger + Split
+
+## Split dinner receipts
+
+`https://amitkonda.com/split` is a mobile-first receipt-splitting flow. A bill
+organizer uploads a receipt, reviews OCR itemization, adds dinner participants,
+and publishes invitations. Each participant selects their items from a private
+link and reports payment; the organizer can track outstanding balances and
+history. Due reminders are queued after each 24-hour interval while an item is
+unpaid. STOP/START inbound SMS handling is included.
+
+The Split API uses the same Neon database and Vercel deployment as Poker. Apply
+the committed migration before the first production use:
+
+```sh
+npm run db:migrate
+```
+
+Production setup requires:
+
+- Neon `DATABASE_URL` and the four Split secrets in `.env.example`.
+- An OpenAI API key for receipt OCR.
+- A Twilio Verify service (OTP) and Messaging-enabled number for invitations,
+  payment updates, and reminders. Configure Twilio status and inbound webhooks
+  to `/api/split/webhooks/twilio/status` and `/api/split/webhooks/twilio/inbound`.
+- A Vercel Blob store with `BLOB_READ_WRITE_TOKEN` for private receipt images.
+- `CRON_SECRET` configured in Vercel; the daily Vercel Cron invokes
+  `/api/split/workers/reminders` and processes reminders whose 24-hour due time
+  has elapsed.
+
+Only send messages to people who have consented to receive them; Twilio STOP,
+START, and HELP keywords are honored. See the Split environment variables in
+`.env.example` for the complete list.
 
 A private poker-group ledger at **https://amitkonda.com/poker**. The homepage
 (`index.html`, `style.css`, `data/*.json` feeds) is untouched and deploys from

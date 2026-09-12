@@ -297,17 +297,21 @@ function bindEditor(b) {
   const form = document.querySelector("#bill-form"), list = document.querySelector("#item-list"), people = document.querySelector("#participant-list");
   document.querySelector('[data-action="choose-receipt"]')?.addEventListener("click", () => { state.draft = null; });
   const nameInput = document.querySelector("#person-name"), phoneInput = document.querySelector("#person-phone"), suggestions = document.querySelector("#contact-suggestions");
-  let searchTimer;
+  let searchTimer, searchVersion = 0;
   nameInput?.addEventListener("input", () => {
     clearTimeout(searchTimer);
+    const version = ++searchVersion;
     const query = nameInput.value.trim();
     if (query.length < 1) { suggestions.hidden = true; suggestions.innerHTML = ""; return; }
     searchTimer = setTimeout(async () => {
       const found = state.demo ? [{ name: "Maya", phone: "+12145550101" }, { name: "Sam", phone: "+15125550102" }].filter(x => x.name.toLowerCase().includes(query.toLowerCase())) : (await api(`/contacts?q=${encodeURIComponent(query)}`).catch(() => ({ contacts: [] }))).contacts || [];
+      if (version !== searchVersion || nameInput.value.trim() !== query) return;
       suggestions.innerHTML = found.map(contact => `<button type="button" role="option" data-action="choose-contact" data-name="${esc(contact.name)}" data-phone="${esc(contact.phone)}"><strong>${esc(contact.name)}</strong><small>${esc(contact.phone.slice(-4).padStart(contact.phone.length, "•"))}</small></button>`).join("");
       suggestions.hidden = !found.length;
     }, 180);
   });
+  nameInput?.addEventListener("keydown", event => { if (event.key === "Escape") suggestions.hidden = true; });
+  document.addEventListener("click", event => { if (!event.target.closest(".contact-name-wrap")) suggestions.hidden = true; });
   const total = () => { const itemSum = [...document.querySelectorAll(".item-price")].reduce((s,x) => s + parseCents(x.value),0); form.elements.subtotal.value = (itemSum/100).toFixed(2); document.querySelector("#calculated-total").textContent = money(itemSum + parseCents(form.elements.tax.value) + parseCents(form.elements.tip.value)); };
   form.addEventListener("input", e => { if (e.target.matches(".item-price,[name=tax],[name=tip]")) total(); });
   form.addEventListener("click", e => { const target=e.target.closest("[data-action]"), action = target?.dataset.action; if (action === "add-item") { list.insertAdjacentHTML("beforeend", itemEditor({},list.children.length)); list.lastElementChild.querySelector("input").focus(); } if (action === "remove-item") { e.target.closest(".item-row").remove(); total(); } if (action === "remove-person") e.target.closest(".person").remove(); if (action === "add-person") addPersonFromInputs(people); if (action === "choose-contact") { nameInput.value=target.dataset.name||""; phoneInput.value=target.dataset.phone||""; suggestions.hidden=true; } if (action === "pick-contact") pickContact(people); });

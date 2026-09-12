@@ -363,7 +363,11 @@ async function addParticipant(ctx: Ctx) {
   const [participant] = await db.insert(splitParticipants).values({
     id, billId: bill.id, userId: existingUser?.id ?? null, invitedByUserId: user.id,
     displayName: input.displayName, invitedPhoneEncrypted: encryptPhone(phone), invitedPhoneLookupHash: phoneLookupHash, inviteTokenHash: hashInviteToken(token)
-  }).returning();
+  }).onConflictDoNothing().returning();
+  // The preflight lookup above improves the normal error message, while the
+  // unique index remains the authority when two tabs add the same diner at
+  // the same time.
+  if (!participant) throw conflict("That person is already on this split.");
   return { participant: publicParticipant(participant!), inviteToken: token };
 }
 
@@ -412,7 +416,13 @@ async function publishBill(ctx: Ctx) {
   const participants = await db.select().from(splitParticipants).where(eq(splitParticipants.billId, bill.id));
   if (!participants.length) throw badRequest("missing_participants", "Add at least one diner.");
   await db.transaction(async (tx) => {
-    await tx.update(splitBills).set({ status: "open", version: bill.version + 1 }).where(eq(splitBills.id, bill.id));
+    // Publish is a one-way state transition. The version/status predicate
+    // makes a double tap or two stale tabs produce one winner and one 409,
+    // instead of both claiming to have published the bill.
+    const published = await tx.update(splitBills).set({ status: "open", version: bill.version + 1 })
+      .where(and(eq(splitBills.id, bill.id), eq(splitBills.status, "review"), eq(splitBills.version, bill.version)))
+      .returning({ id: splitBills.id });
+    if (!published.length) throw conflict("This bill has already been published. Refresh to see the latest status.");
     for (const p of participants.filter((row) => row.userId !== bill.organizerUserId)) await enqueueSms(tx, {
       eventType: "invitation", billId: bill.id, participantId: p.id,
       phoneEncrypted: p.invitedPhoneEncrypted, phoneHash: p.invitedPhoneLookupHash,
@@ -542,12 +552,24 @@ async function reportPaid(ctx: Ctx) {
   await db.transaction(async (tx) => {
     const [bill] = await tx.select({ payerUserId: splitBills.payerUserId }).from(splitBills).where(eq(splitBills.id, participant.billId)).limit(1);
     if (!bill) throw notFound();
+    // Claim the participant row first. PostgreSQL serializes concurrent
+    // updates to this row, so only one request can transition unpaid →
+    // reported_paid. A retry with the same key is idempotent; a different key
+    // gets a conflict and cannot create a second payment record.
+    const [claimed] = await tx.update(splitParticipants).set({ paymentStatus: "reported_paid", nextReminderAt: null })
+      .where(and(eq(splitParticipants.id, participant.id), inArray(splitParticipants.paymentStatus, ["unpaid", "rejected"])))
+      .returning({ id: splitParticipants.id });
+    if (!claimed) {
+      const [existing] = await tx.select({ participantId: splitPayments.participantId }).from(splitPayments)
+        .where(eq(splitPayments.requestKey, input.requestKey)).limit(1);
+      if (existing?.participantId === participant.id) return;
+      throw conflict("This payment is not outstanding.");
+    }
     const inserted = await tx.insert(splitPayments).values({ billId: participant.billId, participantId: participant.id, payerUserId: bill.payerUserId, amountCents: participant.finalAmountCents, status: "reported_paid", reportSource: "web", requestKey: input.requestKey, reportedAt: new Date() }).onConflictDoNothing().returning({ participantId: splitPayments.participantId });
     if (!inserted.length) {
       const [existing] = await tx.select({ participantId: splitPayments.participantId }).from(splitPayments).where(eq(splitPayments.requestKey, input.requestKey)).limit(1);
       if (existing?.participantId !== participant.id) throw conflict("Request key is already in use.");
     }
-    await tx.update(splitParticipants).set({ paymentStatus: "reported_paid", nextReminderAt: null }).where(eq(splitParticipants.id, participant.id));
   });
   return { status: "reported_paid" };
 }

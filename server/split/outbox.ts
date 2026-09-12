@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import * as schema from "../db/schema.js";
 import {
@@ -15,6 +15,9 @@ import { splitEnv } from "./env.js";
 
 export type SplitDb = PostgresJsDatabase<typeof schema>;
 type SmsEventType = "invitation" | "final_amount" | "payment_reminder" | "payment_clarification";
+
+/** A crashed SMS claim becomes retryable after this lease expires. */
+export const SMS_CLAIM_LEASE_MS = 10 * 60 * 1000;
 
 export async function enqueueSms(db: SplitDb, input: {
   eventType: SmsEventType;
@@ -80,11 +83,13 @@ export async function enqueueDueReminders(db: SplitDb, now = new Date()): Promis
 
 /** Best-effort durable outbox drain. Safe for overlapping workers. */
 export async function processSmsOutbox(db: SplitDb, limit = 25): Promise<{ processed: number; sent: number; failed: number }> {
+  const now = new Date();
+  const staleBefore = new Date(now.getTime() - SMS_CLAIM_LEASE_MS);
   const candidates = await db.select({ id: splitSmsDeliveries.id })
     .from(splitSmsDeliveries)
-    .where(and(
-      inArray(splitSmsDeliveries.status, ["queued", "failed"]),
-      or(isNull(splitSmsDeliveries.nextAttemptAt), lte(splitSmsDeliveries.nextAttemptAt, new Date()))
+    .where(or(
+      and(inArray(splitSmsDeliveries.status, ["queued", "failed"]), or(isNull(splitSmsDeliveries.nextAttemptAt), lte(splitSmsDeliveries.nextAttemptAt, now))),
+      and(eq(splitSmsDeliveries.status, "processing"), lt(splitSmsDeliveries.claimedAt, staleBefore))
     ))
     .limit(Math.max(1, Math.min(limit, 100)));
   let sent = 0;
@@ -95,7 +100,10 @@ export async function processSmsOutbox(db: SplitDb, limit = 25): Promise<{ proce
       status: "processing", claimId, claimedAt: new Date(), lastAttemptAt: new Date()
     }).where(and(
       eq(splitSmsDeliveries.id, candidate.id),
-      inArray(splitSmsDeliveries.status, ["queued", "failed"])
+      or(
+        and(inArray(splitSmsDeliveries.status, ["queued", "failed"]), or(isNull(splitSmsDeliveries.nextAttemptAt), lte(splitSmsDeliveries.nextAttemptAt, now))),
+        and(eq(splitSmsDeliveries.status, "processing"), lt(splitSmsDeliveries.claimedAt, staleBefore))
+      )
     )).returning();
     if (!claimed) continue;
     try {

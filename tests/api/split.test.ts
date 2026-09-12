@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { splitBills, splitItemAllocations, splitPayments, splitParticipants, splitSmsDeliveries, splitUsers } from "../../server/db/schema.js";
 import { createSplitSession } from "../../server/split/auth.js";
 import { SPLIT_SESSION_COOKIE } from "../../server/split/tokens.js";
-import { enqueueDueReminders } from "../../server/split/outbox.js";
+import { enqueueDueReminders, processSmsOutbox, SMS_CLAIM_LEASE_MS } from "../../server/split/outbox.js";
 import { phoneHash } from "../../server/split/phone.js";
 import { openDb, resetDb } from "../helpers/db.js";
 import type { TestDb } from "../helpers/db.js";
@@ -163,8 +163,23 @@ describe("Split organizer and settlement flow", () => {
     expect(duplicate.status).toBe(409);
     expect((await duplicate.json() as { error: { message: string } }).error.message).toContain("already on this split");
 
-    const publish = await api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" });
-    expect(publish.status).toBe(200);
+    // The lookup above is not enough protection on its own: two tabs can
+    // pass it simultaneously. The database uniqueness constraint must still
+    // become a useful 409 rather than a raw 500.
+    const concurrentAdds = await Promise.all([
+      api(server, organizerJar, `/bills/${billId}/participants`, { method: "POST", body: { displayName: "Race A", phone: "+15550000004" } }),
+      api(server, organizerJar, `/bills/${billId}/participants`, { method: "POST", body: { displayName: "Race B", phone: "+15550000004" } })
+    ]);
+    expect(concurrentAdds.map((response) => response.status).sort()).toEqual([200, 409]);
+    const raceWinner = concurrentAdds.find((response) => response.status === 200);
+    const raceBody = await raceWinner!.json() as { participant: { id: string } };
+    expect((await api(server, organizerJar, `/participants/${raceBody.participant.id}`, { method: "DELETE" })).status).toBe(200);
+
+    const publishes = await Promise.all([
+      api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" }),
+      api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" })
+    ]);
+    expect(publishes.map((response) => response.status).sort()).toEqual([200, 409]);
     const publishedRows = await tdb.db.select().from(splitSmsDeliveries);
     expect(publishedRows.filter((row) => row.eventType === "invitation")).toHaveLength(1);
     const duplicatePublish = await api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" });
@@ -227,12 +242,24 @@ describe("Split organizer and settlement flow", () => {
     expect(await enqueueDueReminders(tdb.db, dueAt)).toBe(0);
     const reminders = await tdb.db.select().from(splitSmsDeliveries);
     expect(reminders.filter((row) => row.eventType === "payment_reminder")).toHaveLength(1);
+    const reminder = reminders.find((row) => row.eventType === "payment_reminder");
+    expect(reminder).toBeDefined();
+    await tdb.db.update(splitSmsDeliveries).set({
+      status: "processing", claimId: "crashed-worker", claimedAt: new Date(Date.now() - SMS_CLAIM_LEASE_MS - 1000)
+    }).where(eq(splitSmsDeliveries.id, reminder!.id));
+    const recovered = await processSmsOutbox(tdb.db, 10);
+    expect(recovered.processed).toBe(1);
+    const [recoveredRow] = await tdb.db.select().from(splitSmsDeliveries).where(eq(splitSmsDeliveries.id, reminder!.id));
+    expect(recoveredRow!.status).toBe("sent");
+    expect(recoveredRow!.claimId).toBeNull();
 
     const requestKey = `paid-${randomUUID()}`;
-    const report = await api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, {
-      method: "POST", body: { requestKey }
-    });
-    expect(report.status).toBe(200);
+    const competingKey = `paid-${randomUUID()}`;
+    const reports = await Promise.all([
+      api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, { method: "POST", body: { requestKey } }),
+      api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, { method: "POST", body: { requestKey: competingKey } })
+    ]);
+    expect(reports.map((response) => response.status).sort()).toEqual([200, 409]);
     const retryReport = await api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, {
       method: "POST", body: { requestKey }
     });

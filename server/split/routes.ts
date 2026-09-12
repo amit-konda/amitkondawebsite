@@ -261,12 +261,19 @@ async function createBill(ctx: Ctx) {
 async function getBill(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const bill = await accessibleBill(ctx.params.billId!, user.id);
-  const [items, participants, allocations] = await Promise.all([
+  const [items, participants, allocations, latestReceipt] = await Promise.all([
     db.select().from(splitItems).where(eq(splitItems.billId, bill.id)).orderBy(asc(splitItems.displayOrder)),
     db.select().from(splitParticipants).where(eq(splitParticipants.billId, bill.id)).orderBy(asc(splitParticipants.createdAt)),
-    db.select({ allocation: splitItemAllocations }).from(splitItemAllocations).innerJoin(splitItems, eq(splitItemAllocations.itemId, splitItems.id)).where(eq(splitItems.billId, bill.id))
+    db.select({ allocation: splitItemAllocations }).from(splitItemAllocations).innerJoin(splitItems, eq(splitItemAllocations.itemId, splitItems.id)).where(eq(splitItems.billId, bill.id)),
+    db.select({ ocrRawJson: splitReceiptFiles.ocrRawJson }).from(splitReceiptFiles)
+      .where(and(eq(splitReceiptFiles.billId, bill.id), eq(splitReceiptFiles.status, "ready")))
+      .orderBy(desc(splitReceiptFiles.createdAt)).limit(1)
   ]);
-  return { bill, items, participants: participants.map(publicParticipant), allocations: allocations.map((r) => r.allocation) };
+  const raw = latestReceipt[0]?.ocrRawJson;
+  const warnings = raw && typeof raw === "object" && !Array.isArray(raw) && "warnings" in raw && Array.isArray(raw.warnings)
+    ? raw.warnings.filter((warning): warning is string => typeof warning === "string").slice(0, 20)
+    : [];
+  return { bill: { ...bill, warnings }, items, participants: participants.map(publicParticipant), allocations: allocations.map((r) => r.allocation) };
 }
 
 async function patchBill(ctx: Ctx) {

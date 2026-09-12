@@ -106,6 +106,7 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.locator('input[name="tax"]')).toHaveValue("2.40");
     await expect(page.locator('input[name="tip"]')).toHaveValue("6.00");
     await expect(page.locator("#calculated-total")).toHaveText("$38.40");
+    await expect(page.getByText("Review the scan")).toBeVisible();
   });
 
   test("previews the diner claim flow with select-all and an immediate update state", async ({ page }) => {

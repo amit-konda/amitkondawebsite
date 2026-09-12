@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { splitBills, splitItemAllocations, splitPayments, splitParticipants, splitSmsDeliveries } from "../../server/db/schema.js";
+import { splitBills, splitItemAllocations, splitPayments, splitParticipants, splitSmsDeliveries, splitUsers } from "../../server/db/schema.js";
+import { createSplitSession } from "../../server/split/auth.js";
+import { SPLIT_SESSION_COOKIE } from "../../server/split/tokens.js";
 import { enqueueDueReminders } from "../../server/split/outbox.js";
 import { openDb, resetDb } from "../helpers/db.js";
 import type { TestDb } from "../helpers/db.js";
@@ -211,5 +213,21 @@ describe("Split organizer and settlement flow", () => {
     const paidParticipant = participantRows.find((row) => row.id === invitation.participant.id);
     expect(paidParticipant!.paymentStatus).toBe("confirmed");
     expect(paidParticipant!.nextReminderAt).toBeNull();
+  });
+
+  it("rejects a phone-less Google account before creating an orphaned bill", async () => {
+    const [user] = await tdb.db.insert(splitUsers).values({
+      displayName: "Google Preview", googleSubject: `google-${randomUUID()}`, email: `preview-${randomUUID()}@example.com`
+    }).returning({ id: splitUsers.id });
+    const token = await createSplitSession(user!.id);
+    const jar = new Map([[SPLIT_SESSION_COOKIE, token]]);
+    const before = await tdb.db.select().from(splitBills);
+    const response = await api(server, jar, "/bills", {
+      method: "POST", body: { requestKey: `phone-required-${randomUUID()}`, subtotalCents: 0, taxCents: 0, tipCents: 0, feeCents: 0, discountCents: 0, totalCents: 0 }
+    });
+    expect(response.status).toBe(400);
+    const errorBody = await response.json() as { error: { code: string } };
+    expect(errorBody.error.code).toBe("phone_required");
+    expect((await tdb.db.select().from(splitBills))).toHaveLength(before.length);
   });
 });

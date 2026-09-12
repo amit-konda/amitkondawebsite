@@ -81,6 +81,9 @@ async function inboundWebhook(ctx: Ctx) {
     });
     return twiml(ctx);
   }
+  if (body === "HELP") {
+    return twiml(ctx, "Split helps your dinner group claim receipt items and settle up. Open your Split link for details. Reply STOP to unsubscribe.");
+  }
   if (!/^PAID(?:\s+[A-Z0-9-]{2,12})?$/.test(body)) return twiml(ctx);
   const outstanding = await db.select({ participant: splitParticipants, billStatus: splitBills.status })
     .from(splitParticipants)
@@ -113,12 +116,17 @@ async function inboundWebhook(ctx: Ctx) {
   return twiml(ctx);
 }
 
-function twiml(ctx: Ctx): null {
+function twiml(ctx: Ctx, message?: string): null {
   ctx.res.statusCode = 200;
   ctx.res.setHeader("Content-Type", "application/xml; charset=utf-8");
   ctx.res.setHeader("Cache-Control", "no-store");
-  ctx.res.end("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>");
+  const body = message ? `<Message>${escapeXml(message)}</Message>` : "";
+  ctx.res.end(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
   return null;
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/[<>&'\"]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '\"': "&quot;" })[character] ?? character);
 }
 
 function verify(ctx: Ctx): Record<string, string> {

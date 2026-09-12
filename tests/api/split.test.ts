@@ -295,6 +295,9 @@ describe("Split organizer and settlement flow", () => {
       const signature = createHmac("sha1", process.env.TWILIO_AUTH_TOKEN!).update(url + `Body${body}From${from}MessageSid${sid}`).digest("base64");
       return fetch(`${server.url}/api/split/webhooks/twilio/inbound`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": signature }, body: raw });
     };
+    const help = await postInbound("HELP", `SM-${randomUUID()}`);
+    expect(help.status).toBe(200);
+    expect(await help.text()).toContain("<Message>Split helps your dinner group");
     expect((await postInbound("STOP", `SM-${randomUUID()}`)).status).toBe(200);
     const [stopped] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, participant!.id));
     expect(stopped!.nextReminderAt).toBeNull();

@@ -205,6 +205,12 @@ async function dashboard(ctx: Ctx) {
 
 async function createBill(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
+  const [account] = await db.select().from(splitUsers).where(eq(splitUsers.id, user.id)).limit(1);
+  // Check this before inserting the draft so a Google-only account does not
+  // leave an unusable orphaned bill when SMS identity is required.
+  if (!account || !account.phoneEncrypted || !account.phoneLookupHash) {
+    throw badRequest("phone_required", "Add a phone number before creating a split so guests can receive texts.");
+  }
   const input = BillSchema.parse(ctx.body);
   assertReceiptMath(input);
   const [bill] = await db.insert(splitBills).values({
@@ -215,8 +221,6 @@ async function createBill(ctx: Ctx) {
     status: "review"
   }).onConflictDoNothing().returning();
   if (bill) {
-    const [account] = await db.select().from(splitUsers).where(eq(splitUsers.id, user.id)).limit(1);
-    if (!account || !account.phoneEncrypted || !account.phoneLookupHash) throw badRequest("phone_required", "Add a phone number before creating a split so guests can receive texts.");
     const participantId = randomUUID();
     const inviteToken = makeInviteToken(participantId);
     await db.insert(splitParticipants).values({

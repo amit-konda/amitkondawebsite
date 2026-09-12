@@ -214,10 +214,16 @@ describe("Split organizer and settlement flow", () => {
     const reminders = await tdb.db.select().from(splitSmsDeliveries);
     expect(reminders.filter((row) => row.eventType === "payment_reminder")).toHaveLength(1);
 
+    const requestKey = `paid-${randomUUID()}`;
     const report = await api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, {
-      method: "POST", body: { requestKey: `paid-${randomUUID()}` }
+      method: "POST", body: { requestKey }
     });
     expect(report.status).toBe(200);
+    const retryReport = await api(server, attendeeJar, `/participants/${invitation.participant.id}/report-paid`, {
+      method: "POST", body: { requestKey }
+    });
+    expect(retryReport.status).toBe(200);
+    expect(await retryReport.json()).toMatchObject({ status: "reported_paid" });
     expect((await api(server, organizerJar, `/participants/${invitation.participant.id}/payment-status`, {
       method: "POST", body: { status: "confirmed" }
     })).status).toBe(200);

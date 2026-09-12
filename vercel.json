@@ -16,6 +16,11 @@
       "schedule": "0 17 * * *"
     }
   ],
+  "functions": {
+    "api/split/[...route].ts": {
+      "includeFiles": ["migrations/**/*"]
+    }
+  },
   "headers": [
     {
       "source": "/split/(.*)",

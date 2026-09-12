@@ -4,8 +4,8 @@ import { isOpenAiConfigured, splitDevMode, splitEnv } from "./env.js";
 
 export const ReceiptExtractionSchema = z.object({
   merchant: z.string().max(160).nullable(),
-  purchasedAt: z.string().nullable(),
-  currency: z.string().length(3).default("USD"),
+  purchasedAt: z.string().refine((value) => Number.isFinite(Date.parse(value)), "Invalid date").nullable(),
+  currency: z.string().length(3).transform((value) => value.toUpperCase()).default("USD"),
   subtotalCents: z.number().int().nonnegative(),
   taxCents: z.number().int().nonnegative(),
   tipCents: z.number().int().nonnegative(),
@@ -86,21 +86,36 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
     ] }],
     text: { format: { type: "json_schema", name: "receipt", strict: true, schema: jsonSchema } }
   };
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${e.OPENCODE_GO_API_KEY ?? e.OPENAI_API_KEY!}`,
-      "Content-Type": "application/json",
-      ...(openCode ? { "x-opencode-session": "split-ocr" } : {})
-    },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(45_000)
-  });
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${e.OPENCODE_GO_API_KEY ?? e.OPENAI_API_KEY!}`,
+        "Content-Type": "application/json",
+        ...(openCode ? { "x-opencode-session": "split-ocr" } : {})
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(45_000)
+    });
+  } catch (error) {
+    // DNS failures, timeouts, and connection resets are provider failures too.
+    // Keep the client-facing error stable and avoid turning a transient outage
+    // into an unhelpful 500 response.
+    console.error("Split OCR provider request failed", error);
+    throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
+  }
   if (!response.ok) {
     console.error("Split OCR provider failure", response.status);
     throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   }
-  const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+  let payload: { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+  try {
+    payload = await response.json() as typeof payload;
+  } catch (error) {
+    console.error("Split OCR provider returned invalid JSON", error);
+    throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data.");
+  }
   const chatContent = payload.choices?.[0]?.message?.content;
   const chatText = typeof chatContent === "string"
     ? chatContent
@@ -109,7 +124,7 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   if (!text) throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(stripJsonFences(text));
   } catch {
     throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data.");
   }
@@ -118,6 +133,13 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   } catch {
     throw new ApiError(502, "ocr_failed", "The receipt scan returned incomplete data.");
   }
+}
+
+/** Vision providers occasionally wrap otherwise-valid JSON in a markdown fence. */
+function stripJsonFences(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1]?.trim() ?? trimmed;
 }
 
 function deterministicDevReceipt(): ReceiptExtraction {

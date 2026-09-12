@@ -10,6 +10,7 @@ test.describe("Split browser smoke flows", () => {
     await page.getByRole("button", { name: /Preview with sample data/i }).click();
     await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Alex\.$/ })).toBeVisible();
     await expect(page.getByText("Loro")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Scan a receipt" })).toBeVisible();
     await page.getByRole("button", { name: /Split a new bill/i }).click();
     await expect(page.getByRole("heading", { name: "Show us the receipt." })).toBeVisible();
     await expect(page.getByText(/OCR is a starting point/i)).toBeVisible();

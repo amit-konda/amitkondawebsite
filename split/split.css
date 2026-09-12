@@ -139,7 +139,11 @@ h3 { margin-bottom: 4px; font-size: 1rem; }
   .site-header { height: 62px; padding: 0 18px; }.header-actions .text-btn { display: none; }
   #app { padding: 8px 16px 105px; }.bottom-nav:not([hidden]) { display: grid; }
   .auth-view { grid-template-columns: 1fr; gap: 24px; min-height: auto; padding: 28px 0; }.auth-copy { text-align: center; }.auth-copy .lede { margin-right: auto; margin-left: auto; }.mini-receipt { display: none; }.auth-card { padding: 23px; }
-  .page-head { align-items: flex-start; margin-top: 18px; }.page-head .btn { display: none; }
+  .page-head { align-items: flex-start; margin-top: 18px; }
+  /* Keep the primary dashboard action visible on phones. The fixed nav is
+     useful once someone knows the app, but a first-time user should not have
+     to discover it before starting their first split. */
+  .page-head .btn { display: inline-flex; }
   .summary-grid { grid-template-columns: 1fr 1fr; }.summary-card { padding: 17px; }.summary-card:first-child { grid-column: span 2; }.summary-card .amount { font-size: 1.65rem; }
   .bill-row { grid-template-columns: auto 1fr auto; gap: 11px; }.bill-row .status { display: none; }.merchant-icon { width: 40px; height: 40px; }
   .upload-layout,.editor-layout,.split-layout { grid-template-columns: 1fr; }.upload-zone { min-height: 260px; }.editor-aside { position: static; }.form-grid { grid-template-columns: 1fr; }.span-2 { grid-column: auto; }

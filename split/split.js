@@ -217,7 +217,7 @@ async function linkPhoneVerify(event, phone) {
 
 function uploadView() {
   shell(true); app.innerHTML = `<a class="back-link" href="#/dashboard">← Back to dashboard</a><div class="page-head"><div><p class="eyebrow">New split · 1 of 3</p><h1>Show us the receipt.</h1><p class="lede">A clear, flat photo works best. You’ll review every item before anyone gets a text.</p></div></div>
-    <div class="upload-layout"><label class="upload-zone" id="upload-zone"><input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><span id="upload-content"><span class="upload-icon">＋</span><h2>Take a photo or choose a file</h2><p class="muted">JPG, PNG, or WebP · up to 4 MB</p><span class="btn">Choose receipt</span></span></label>
+    <div class="upload-layout"><label class="upload-zone" id="upload-zone"><input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><span id="upload-content"><span class="upload-icon">＋</span><h2>Take a photo or choose a file</h2><p class="muted">JPG, PNG, or WebP · compressed automatically</p><span class="btn">Choose receipt</span></span></label>
       <aside class="card upload-details"><p class="eyebrow">A few tips</p><div class="stack"><div><h3>Find good light</h3><p class="muted small">Avoid hard shadows and glare across the prices.</p></div><div><h3>Get the whole receipt</h3><p class="muted small">Include the merchant, every item, tax, tip, and total.</p></div><div><h3>Check our work</h3><p class="muted small">OCR is a starting point. Nothing is sent until you approve it.</p></div></div></aside>
     </div>`;
   const input = document.querySelector("#receipt-file"), zone = document.querySelector("#upload-zone");
@@ -229,7 +229,10 @@ function uploadView() {
 
 async function handleReceipt(file) {
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return notice("Choose a JPG, PNG, or WebP receipt image.", "error");
-  if (file.size > 4 * 1024 * 1024) return notice("That file is over 4 MB. Try a smaller image.", "error");
+  // Phone cameras often produce 5–12 MB images. Compress those in-browser
+  // before upload; only reject unusually large files that would be expensive
+  // to decode on a mobile device.
+  if (file.size > 20 * 1024 * 1024) return notice("That file is over 20 MB. Try a smaller image.", "error");
   const content = document.querySelector("#upload-content");
   const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
   content.innerHTML = `${preview ? `<img class="receipt-preview" src="${esc(preview)}" alt="Receipt preview">` : `<span class="upload-icon">PDF</span>`}<h2>Reading your receipt…</h2><p class="muted">Finding items, tax, tip, and the total.</p><div class="progress" aria-label="Processing"><i></i></div>`;

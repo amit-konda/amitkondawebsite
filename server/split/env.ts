@@ -42,12 +42,23 @@ export function isOpenAiConfigured(): boolean {
   return Boolean(e.OPENCODE_GO_API_KEY || e.OPENAI_API_KEY);
 }
 
-export function isTwilioConfigured(): boolean {
+/** The Verify product is only needed for phone sign-in/linking. */
+export function isTwilioVerifyConfigured(): boolean {
   const e = splitEnv();
   return Boolean(
     e.TWILIO_ACCOUNT_SID &&
       e.TWILIO_AUTH_TOKEN &&
-      e.TWILIO_VERIFY_SERVICE_SID &&
-      e.TWILIO_MESSAGING_FROM
+      e.TWILIO_VERIFY_SERVICE_SID
   );
+}
+
+/** Messaging can be enabled independently of Verify (invites/reminders). */
+export function isTwilioMessagingConfigured(): boolean {
+  const e = splitEnv();
+  return Boolean(e.TWILIO_ACCOUNT_SID && e.TWILIO_AUTH_TOKEN && e.TWILIO_MESSAGING_FROM);
+}
+
+/** Backwards-compatible aggregate check for callers that need both products. */
+export function isTwilioConfigured(): boolean {
+  return isTwilioVerifyConfigured() && isTwilioMessagingConfigured();
 }

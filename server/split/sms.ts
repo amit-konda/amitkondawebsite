@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { ApiError } from "../errors.js";
-import { isTwilioConfigured, splitDevMode, splitEnv } from "./env.js";
+import { isTwilioMessagingConfigured, isTwilioVerifyConfigured, splitDevMode, splitEnv } from "./env.js";
 import { normalizePhone } from "./phone.js";
 
 export interface SmsResult { providerId: string; status: string }
@@ -11,7 +11,7 @@ function twilioAuth(e: ReturnType<typeof splitEnv>): string {
 
 export async function startPhoneVerification(phone: string): Promise<{ status: string }> {
   const to = normalizePhone(phone);
-  if (!isTwilioConfigured()) {
+  if (!isTwilioVerifyConfigured()) {
     if (splitDevMode() || process.env.NODE_ENV === "test") return { status: "pending" };
     throw unavailable();
   }
@@ -34,7 +34,7 @@ export async function startPhoneVerification(phone: string): Promise<{ status: s
 export async function checkPhoneVerification(phone: string, code: string): Promise<boolean> {
   const to = normalizePhone(phone);
   if (!/^\d{4,10}$/.test(code)) return false;
-  if (!isTwilioConfigured()) {
+  if (!isTwilioVerifyConfigured()) {
     if (splitDevMode() || process.env.NODE_ENV === "test") return code === "000000";
     throw unavailable();
   }
@@ -57,7 +57,7 @@ export async function checkPhoneVerification(phone: string, code: string): Promi
 
 export async function sendSms(toInput: string, message: string, statusCallbackUrl?: string): Promise<SmsResult> {
   const to = normalizePhone(toInput);
-  if (!isTwilioConfigured()) {
+  if (!isTwilioMessagingConfigured()) {
     if (splitDevMode() || process.env.NODE_ENV === "test") {
       return { providerId: `dev-${createHmac("sha256", "split-dev").update(`${to}:${message}`).digest("hex").slice(0, 24)}`, status: "sent" };
     }

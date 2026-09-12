@@ -350,7 +350,9 @@ async function deleteItem(ctx: Ctx) {
 
 async function addParticipant(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const bill = await organizerBill(ctx.params.billId!, user.id);
-  if (!["review", "open"].includes(bill.status)) throw conflict("Participants can no longer be added.");
+  // Participants are invited as part of publish. Keeping this review-only
+  // avoids creating a post-publish row that never receives an invitation.
+  if (bill.status !== "review") throw conflict("Add everyone before publishing this split.");
   const input = ParticipantSchema.parse(ctx.body); const phone = normalizePhone(input.phone); const id = randomUUID();
   const phoneLookupHash = phoneHash(phone);
   const [existingParticipant] = await db.select({ id: splitParticipants.id }).from(splitParticipants).where(and(

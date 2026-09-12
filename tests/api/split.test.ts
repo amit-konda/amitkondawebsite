@@ -180,6 +180,10 @@ describe("Split organizer and settlement flow", () => {
       api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" })
     ]);
     expect(publishes.map((response) => response.status).sort()).toEqual([200, 409]);
+    const lateAdd = await api(server, organizerJar, `/bills/${billId}/participants`, {
+      method: "POST", body: { displayName: "Late Diner", phone: "+15550000005" }
+    });
+    expect(lateAdd.status).toBe(409);
     const publishedRows = await tdb.db.select().from(splitSmsDeliveries);
     expect(publishedRows.filter((row) => row.eventType === "invitation")).toHaveLength(1);
     const duplicatePublish = await api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" });

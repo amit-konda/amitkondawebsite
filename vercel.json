@@ -18,7 +18,7 @@
   ],
   "functions": {
     "api/split/[...route].ts": {
-      "includeFiles": ["migrations/**/*"]
+      "includeFiles": "migrations/**/*"
     }
   },
   "headers": [

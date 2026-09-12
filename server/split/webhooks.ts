@@ -35,6 +35,9 @@ async function statusWebhook(ctx: Ctx) {
         deliveredAt: status === "delivered" ? new Date() : undefined,
         errorCode: status === "failed" || status === "undelivered" ? (form.ErrorCode ?? "provider_failure") : null
       }).where(eq(splitSmsDeliveries.id, delivery.id));
+      if (["failed", "undelivered"].includes(status) && delivery.eventType === "invitation" && delivery.participantId) {
+        await tx.update(splitParticipants).set({ invitationStatus: "failed" }).where(eq(splitParticipants.id, delivery.participantId));
+      }
     }
   });
   return { ok: true };

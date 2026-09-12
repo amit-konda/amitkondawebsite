@@ -90,4 +90,14 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.getByRole("heading", { name: "Items submitted" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Update my items" })).toBeVisible();
   });
+
+  test("previews a settled diner share with the tax and tip breakdown", async ({ page }) => {
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.getByRole("link", { name: /Home Slice/i }).click();
+    await expect(page.getByRole("heading", { name: "Your share" })).toBeVisible();
+    await expect(page.getByText("Your tax")).toBeVisible();
+    await expect(page.getByText("Your tip")).toBeVisible();
+    await expect(page.getByText("You’re all settled up.")).toBeVisible();
+  });
 });

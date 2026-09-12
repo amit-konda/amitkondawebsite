@@ -110,6 +110,7 @@ function authView(step = "phone") {
           <label class="field"><span>Verification code</span><input class="input" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]{4,8}" placeholder="123456" required autofocus></label>
           <label class="field"><span>Your name <em class="muted small">(new accounts)</em></span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex"></label>
           <button class="btn btn-primary btn-block" type="submit">Continue</button>
+          <button class="demo-link" type="button" data-action="resend-code">Resend code</button>
           <button class="demo-link" type="button" data-action="change-phone">Use a different number</button>
         </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Enter your phone number and we’ll text you a secure code. It takes a few seconds.</p>
         <form id="phone-form" class="stack">
@@ -122,8 +123,17 @@ function authView(step = "phone") {
   </section>`;
   document.querySelector("#phone-form")?.addEventListener("submit", startAuth);
   document.querySelector("#verify-form")?.addEventListener("submit", verifyAuth);
+  document.querySelector('[data-action="resend-code"]')?.addEventListener("click", resendCode);
   document.querySelector('[data-action="change-phone"]')?.addEventListener("click", () => authView());
   document.querySelector('[data-action="demo"]')?.addEventListener("click", () => { state.demo = true; state.me = { id: "demo-user", name: "Alex", hasPhone: true }; go("dashboard"); });
+}
+
+async function resendCode(event) {
+  const button = event.currentTarget;
+  setBusy(button, true, "Sending…");
+  try { await api("/auth/start", { method: "POST", body: { phone: state.phone } }); notice("A new code is on its way."); }
+  catch (error) { notice(error.message, "error"); }
+  finally { setBusy(button, false); }
 }
 
 async function startAuth(event) {

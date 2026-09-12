@@ -6,6 +6,7 @@ test.describe("Split browser smoke flows", () => {
     await page.goto("/split");
     await expect(page.getByRole("heading", { name: "Sign in to start splitting" })).toBeVisible();
     await expect(page.locator('input[name="phone"]')).toBeVisible();
+    await expect(page.getByRole("button", { name: "Text me a code" })).toBeVisible();
     await page.getByRole("button", { name: /Preview with sample data/i }).click();
     await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Alex\.$/ })).toBeVisible();
     await expect(page.getByText("Loro")).toBeVisible();

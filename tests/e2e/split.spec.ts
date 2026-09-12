@@ -43,4 +43,17 @@ test.describe("Split browser smoke flows", () => {
     await page.locator('input[name="code"]').fill("000000");
     await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Test\.$/ })).toBeVisible();
   });
+
+  test("filters diner contacts and fills a selected phone number", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.getByRole("button", { name: /Scan a receipt/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({ name: "receipt.png", mimeType: "image/png", buffer: Buffer.from("png") });
+    await expect(page.getByRole("heading", { name: "Check the details." })).toBeVisible();
+    await page.locator("#person-name").fill("May");
+    await expect(page.getByRole("option", { name: /Maya/ })).toBeVisible();
+    await page.getByRole("option", { name: /Maya/ }).click();
+    await expect(page.locator("#person-phone")).toHaveValue("+12145550101");
+  });
 });

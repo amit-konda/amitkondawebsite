@@ -218,6 +218,33 @@ describe("receipt OCR fallback", () => {
     expect(receipt.items[0]?.description).toBe("Coffee");
   });
 
+  it("accepts JSON wrapped in a markdown fence from a vision provider", async () => {
+    process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
+    process.env.SPLIT_DEV_MODE = "false";
+    const extraction = {
+      merchant: "Cafe", purchasedAt: null, currency: "USD", subtotalCents: 1000,
+      taxCents: 80, tipCents: 0, feesCents: 0, discountCents: 0, totalCents: 1080,
+      items: [{ description: "Coffee", quantity: 1, unitPriceCents: 1000, lineTotalCents: 1000, confidence: 0.9 }],
+      confidence: 0.9, warnings: []
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ choices: [{ message: { content: `\`\`\`json\n${JSON.stringify(extraction)}\n\`\`\`` } }] }),
+      { status: 200 }
+    )));
+    vi.resetModules();
+    const { extractReceipt: extract } = await import("../../server/split/ocr.js");
+    await expect(extract("data:image/png;base64,receipt")).resolves.toMatchObject(extraction);
+  });
+
+  it("maps provider connection failures to a retryable OCR error", async () => {
+    process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
+    process.env.SPLIT_DEV_MODE = "false";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")));
+    vi.resetModules();
+    const { extractReceipt: extract } = await import("../../server/split/ocr.js");
+    await expect(extract("data:image/png;base64,receipt")).rejects.toMatchObject({ status: 502, code: "ocr_failed" });
+  });
+
   it("turns provider failures and malformed model output into safe OCR errors", async () => {
     process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
     process.env.SPLIT_DEV_MODE = "false";

@@ -134,9 +134,11 @@ async function logout(ctx: Ctx) {
 async function authStatus(ctx: Ctx) { return { user: await optionalSplitUser(ctx) }; }
 
 function requestOrigin(ctx: Ctx): string {
-  const configured = splitEnv().PUBLIC_APP_ORIGIN.replace(/\/$/, "");
-  const forwarded = ctx.req.headers["x-forwarded-proto"] && ctx.req.headers.host;
-  return forwarded ? `${ctx.req.headers["x-forwarded-proto"]}://${ctx.req.headers.host}` : configured;
+  // OAuth redirect URIs must be derived from our configured first-party origin,
+  // never from an arbitrary Host/X-Forwarded-Host header supplied by a client.
+  // This prevents redirect URI injection and keeps Google callbacks consistent
+  // across the production apex/www aliases and preview deployments.
+  return splitEnv().PUBLIC_APP_ORIGIN.replace(/\/$/, "");
 }
 async function googleAuth(ctx: Ctx) {
   if (!googleConfigured()) throw new ApiError(503, "google_not_configured", "Google sign-in is not configured yet.");

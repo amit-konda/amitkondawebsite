@@ -74,6 +74,19 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.locator("#participant-list .person")).toHaveCount(1);
   });
 
+  test("keeps negative receipt adjustments in the editor", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.getByRole("button", { name: /Split a new bill/i }).click();
+    await page.locator('input[type="file"]').setInputFiles({ name: "receipt.png", mimeType: "image/png", buffer: Buffer.from("png") });
+    await expect(page.getByRole("heading", { name: "Check the details." })).toBeVisible();
+    await page.locator('input[name="tax"]').fill("-1.00");
+    await page.getByRole("button", { name: "Save and preview" }).click();
+    await expect(page.getByText("Receipt amounts can’t be negative.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Check the details." })).toBeVisible();
+  });
+
   test("runs a real receipt upload through the review editor", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");

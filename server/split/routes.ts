@@ -355,7 +355,7 @@ async function addParticipant(ctx: Ctx) {
 
 async function publishBill(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const bill = await organizerBill(ctx.params.billId!, user.id);
-  if (!["review", "open"].includes(bill.status)) throw conflict("This bill cannot be published.");
+  if (bill.status !== "review") throw conflict("This bill has already been published.");
   const participants = await db.select().from(splitParticipants).where(eq(splitParticipants.billId, bill.id));
   if (!participants.length) throw badRequest("missing_participants", "Add at least one diner.");
   await db.transaction(async (tx) => {

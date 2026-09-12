@@ -153,6 +153,8 @@ describe("Split organizer and settlement flow", () => {
     expect(publish.status).toBe(200);
     const publishedRows = await tdb.db.select().from(splitSmsDeliveries);
     expect(publishedRows.filter((row) => row.eventType === "invitation")).toHaveLength(1);
+    const duplicatePublish = await api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" });
+    expect(duplicatePublish.status).toBe(409);
 
     // The invite preview is public, but its encrypted number and token hash
     // must never be returned before the invitee verifies their phone.

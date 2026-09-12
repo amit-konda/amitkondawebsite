@@ -68,9 +68,13 @@ async function inboundWebhook(ctx: Ctx) {
     return twiml(ctx);
   }
   if (optOutType === "START" || body === "START" || body === "UNSTOP") {
+    const nextReminderAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await db.transaction(async (tx) => {
       await tx.update(splitUsers).set({ smsOptedOutAt: null, smsConsentAt: new Date() }).where(eq(splitUsers.phoneLookupHash, hash));
-      await tx.update(splitParticipants).set({ remindersSnoozedUntil: null }).where(eq(splitParticipants.invitedPhoneLookupHash, hash));
+      await tx.update(splitParticipants).set({ remindersSnoozedUntil: null, nextReminderAt }).where(and(
+        eq(splitParticipants.invitedPhoneLookupHash, hash),
+        inArray(splitParticipants.paymentStatus, ["unpaid", "rejected"])
+      ));
     });
     return twiml(ctx);
   }
@@ -87,8 +91,8 @@ async function inboundWebhook(ctx: Ctx) {
     const participant = outstanding[0]!.participant;
     await db.transaction(async (tx) => {
       const [bill] = await tx.select({ payerUserId: splitBills.payerUserId }).from(splitBills).where(eq(splitBills.id, participant.billId)).limit(1);
-      if (participant.userId) await tx.insert(splitPayments).values({
-        billId: participant.billId, participantId: participant.id, payerUserId: bill?.payerUserId ?? participant.userId,
+      if (bill?.payerUserId) await tx.insert(splitPayments).values({
+        billId: participant.billId, participantId: participant.id, payerUserId: bill.payerUserId,
         amountCents: participant.finalAmountCents, status: "reported_paid", reportSource: "sms", requestKey: `twilio:${sid}`,
         reportedAt: new Date()
       }).onConflictDoNothing();

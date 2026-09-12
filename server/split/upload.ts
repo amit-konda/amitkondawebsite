@@ -87,6 +87,22 @@ export async function handleSplitUpload(
     try {
       const extraction = await extractReceipt(`data:${contentType};base64,${bytes.toString("base64")}`);
       await db.transaction(async (tx) => {
+        // Claim the bill version before replacing any items. If a concurrent
+        // editor/upload won the race, the transaction rolls back without
+        // deleting the newer draft's items.
+        const updated = await tx.update(splitBills).set({
+          merchantName: extraction.merchant,
+          purchasedAt: extraction.purchasedAt ? new Date(extraction.purchasedAt) : null,
+          currency: extraction.currency,
+          subtotalCents: extraction.subtotalCents,
+          taxCents: extraction.taxCents,
+          tipCents: extraction.tipCents,
+          feeCents: extraction.feesCents,
+          discountCents: extraction.discountCents,
+          totalCents: extraction.totalCents,
+          version: bill.version + 1
+        }).where(and(eq(splitBills.id, bill.id), eq(splitBills.version, bill.version))).returning({ id: splitBills.id });
+        if (!updated.length) throw new ApiError(409, "receipt_changed", "The receipt changed while it was being scanned. Choose the latest draft and try again.");
         await tx.delete(splitItems).where(eq(splitItems.billId, bill.id));
         if (extraction.items.length) {
           await tx.insert(splitItems).values(extraction.items.map((item, index) => ({
@@ -99,18 +115,6 @@ export async function handleSplitUpload(
             ocrConfidenceBasisPoints: Math.round(item.confidence * 10_000)
           })));
         }
-        await tx.update(splitBills).set({
-          merchantName: extraction.merchant,
-          purchasedAt: extraction.purchasedAt ? new Date(extraction.purchasedAt) : null,
-          currency: extraction.currency,
-          subtotalCents: extraction.subtotalCents,
-          taxCents: extraction.taxCents,
-          tipCents: extraction.tipCents,
-          feeCents: extraction.feesCents,
-          discountCents: extraction.discountCents,
-          totalCents: extraction.totalCents,
-          version: bill.version + 1
-        }).where(and(eq(splitBills.id, bill.id), eq(splitBills.version, bill.version)));
         await tx.update(splitReceiptFiles).set({
           status: "ready",
           ocrProvider: process.env.OPENCODE_GO_API_KEY ? "opencode-go" : process.env.OPENAI_API_KEY ? "openai" : "development",

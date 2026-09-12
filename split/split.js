@@ -80,6 +80,11 @@ async function bootstrap() {
   } catch (error) {
     if (![401, 404].includes(error.status)) notice("Split couldn’t connect. You can still preview the experience.", "error");
   }
+  // Google returns to the app root. Preserve an invite opened before sign-in
+  // so a guest lands directly on the receipt instead of finding the invite
+  // again in a message.
+  const pendingInvite = sessionStorage.getItem("split_invite");
+  if (state.me && pendingInvite && !getRoute().length) return go(`invite/${encodeURIComponent(pendingInvite)}`);
   route();
 }
 
@@ -95,7 +100,7 @@ function authView(step = "phone") {
     <div class="auth-copy">
       <p class="eyebrow">Dinner math, done</p>
       <h1>Pass the plates.<br>Not the calculator.</h1>
-      <p class="lede">Upload a receipt, let everyone claim what they ordered, and gently nudge the stragglers.</p>
+      <p class="lede">Sign in once, then upload a receipt, let everyone claim what they ordered, and gently nudge the stragglers.</p>
       <div class="mini-receipt" aria-hidden="true"><strong>FRIDAY DINNER</strong><p>3 friends · good food<br>1 receipt · no awkward math</p><div class="row-between receipt-total"><span>TOTAL</span><span>settled ✓</span></div></div>
     </div>
     <div class="card auth-card">
@@ -105,8 +110,8 @@ function authView(step = "phone") {
           <label class="field"><span>Your name <em class="muted small">(new accounts)</em></span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex"></label>
           <button class="btn btn-primary btn-block" type="submit">Continue</button>
           <button class="demo-link" type="button" data-action="change-phone">Use a different number</button>
-        </form>` : `<p class="eyebrow">Welcome to Split</p><h2>What’s your number?</h2><p class="muted">We’ll text a code to sign you in. No passwords to remember.</p>
-        <a class="btn btn-google btn-block" href="${API}/auth/google"><span class="google-g">G</span> Continue with Google</a>
+        </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Use Google for the quickest sign-in, or use your phone if you prefer a code.</p>
+        <a class="btn btn-google btn-block" href="${API}/auth/google"><span class="google-g" aria-hidden="true">G</span> Continue with Google</a>
         <div class="auth-divider"><span>or use your phone</span></div>
         <form id="phone-form" class="stack">
           <label class="field"><span>Phone number</span><span class="phone-row"><input class="input country-code" value="+1" aria-label="Country code" readonly><input class="input" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(512) 555-0148" required autofocus></span></label>
@@ -255,6 +260,9 @@ function bindEditor(b) {
   form.addEventListener("input", e => { if (e.target.matches(".item-price,[name=tax],[name=tip]")) total(); });
   form.addEventListener("click", e => { const action = e.target.closest("[data-action]")?.dataset.action; if (action === "add-item") { list.insertAdjacentHTML("beforeend", itemEditor({},list.children.length)); list.lastElementChild.querySelector("input").focus(); } if (action === "remove-item") { e.target.closest(".item-row").remove(); total(); } if (action === "remove-person") e.target.closest(".person").remove(); if (action === "add-person") addPersonFromInputs(people); if (action === "pick-contact") pickContact(people); });
   form.addEventListener("submit", e => saveDraft(e,b));
+  // Reconcile the summary immediately, including OCR results with a missing
+  // subtotal or a receipt whose line items were corrected before submission.
+  total();
 }
 function addPersonFromInputs(people) { const name = document.querySelector("#person-name"), phone = document.querySelector("#person-phone"); if (!name.value.trim() || phone.value.replace(/\D/g,"").length < 10) return notice("Add a name and valid phone number.","error"); people.insertAdjacentHTML("beforeend", personEditor({name:name.value.trim(),phone:phone.value.trim()})); name.value="";phone.value=""; }
 async function pickContact(people) {
@@ -312,7 +320,7 @@ async function setPaymentStatus(event,participantId,status,b){setBusy(event.curr
 async function saveClaims(b){const ids=[...document.querySelectorAll(".claim-check:checked")].map(x=>x.value);const participant=state.invitation?.participant||b.currentParticipant;try{if(!state.demo){if(!participant?.id)throw new Error("This invitation is missing a participant.");await api(`/participants/${encodeURIComponent(participant.id)}/allocations`,{method:"POST",body:{allocations:ids.map(itemId=>({itemId,kind:"equal_share",shareUnits:1}))}});await api(`/participants/${encodeURIComponent(participant.id)}/selection/complete`,{method:"POST"});}notice("Your items are saved.");}catch(error){notice(error.message,"error");}}
 async function reportPaid(event,p){setBusy(event.currentTarget,true,"Updating…");try{if(!state.demo)await api(`/participants/${encodeURIComponent(p.id)}/report-paid`,{method:"POST",body:{requestKey:crypto.randomUUID()}});p.paymentStatus="reported_paid";notice("Payment reported. The payer will confirm it.");route();}catch(error){notice(error.message,"error");setBusy(event.currentTarget,false);}}
 
-async function inviteView(token){sessionStorage.setItem("split_invite",token);if(!state.me)return authView();try{const preview=await api(`/invites/${encodeURIComponent(token)}`);const accepted=await api(`/invites/${encodeURIComponent(token)}/accept`,{method:"POST"});state.invitation={...preview,...accepted};const bill=normalizeBill(state.invitation.bill?state.invitation:{...state.invitation,bill:preview.bill});bill.currentParticipant=accepted.participant||preview.participant;renderBill(bill);}catch(error){if(state.demo)return renderBill(demoBill("demo-1"));renderError("This invitation isn’t available.",error.message,()=>go("dashboard"));}}
+async function inviteView(token){sessionStorage.setItem("split_invite",token);if(!state.me)return authView();try{const preview=await api(`/invites/${encodeURIComponent(token)}`);const accepted=await api(`/invites/${encodeURIComponent(token)}/accept`,{method:"POST"});sessionStorage.removeItem("split_invite");state.invitation={...preview,...accepted};const bill=normalizeBill(state.invitation.bill?state.invitation:{...state.invitation,bill:preview.bill});bill.currentParticipant=accepted.participant||preview.participant;renderBill(bill);}catch(error){if(state.demo)return renderBill(demoBill("demo-1"));renderError("This invitation isn’t available.",error.message,()=>go("dashboard"));}}
 function activityView(){dashboardView();}
 function renderError(title,detail,retry){shell(Boolean(state.me));app.innerHTML=`<div class="card empty-state"><div class="empty-icon">!</div><h1>${esc(title)}</h1><p class="muted">${esc(detail||"Try again in a moment.")}</p><button class="btn btn-primary" type="button" id="retry">Try again</button></div>`;document.querySelector("#retry").addEventListener("click",retry);}
 function bindCommon(){document.querySelectorAll('[data-action="new-bill"]').forEach(x=>x.addEventListener("click",()=>go("new")));}

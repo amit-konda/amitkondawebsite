@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../server/errors.js";
 import {
   allocateLargestRemainder,
@@ -168,5 +168,69 @@ describe("receipt OCR fallback", () => {
     });
     expect(receipt.items).toHaveLength(2);
     expect(receipt.warnings[0]).toContain("Development fallback");
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.OPENCODE_GO_API_KEY;
+    delete process.env.OPENCODE_GO_BASE_URL;
+    delete process.env.OPENCODE_GO_RECEIPT_MODEL;
+    process.env.SPLIT_DEV_MODE = "true";
+  });
+
+  it("sends a vision request to OpenCode Go and parses chat-completions JSON", async () => {
+    process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
+    process.env.OPENCODE_GO_BASE_URL = "https://opencode.example/v1";
+    process.env.OPENCODE_GO_RECEIPT_MODEL = "cheap-vision";
+    process.env.SPLIT_DEV_MODE = "false";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({
+        merchant: "Cafe",
+        purchasedAt: null,
+        currency: "USD",
+        subtotalCents: 1000,
+        taxCents: 80,
+        tipCents: 0,
+        feesCents: 0,
+        discountCents: 0,
+        totalCents: 1080,
+        items: [{ description: "Coffee", quantity: 1, unitPriceCents: 1000, lineTotalCents: 1000, confidence: 0.98 }],
+        confidence: 0.98,
+        warnings: []
+      }) } }]
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    vi.resetModules();
+    const { extractReceipt: extract } = await import("../../server/split/ocr.js");
+    const receipt = await extract("data:image/png;base64,receipt");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [endpoint, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(endpoint).toBe("https://opencode.example/v1/chat/completions");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer test-opencode-key");
+    const body = JSON.parse(String(init.body));
+    expect(body.model).toBe("cheap-vision");
+    expect(body.messages[0].content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "image_url", image_url: expect.objectContaining({ url: "data:image/png;base64,receipt" }) })
+    ]));
+    expect(receipt.items[0]?.description).toBe("Coffee");
+  });
+
+  it("turns provider failures and malformed model output into safe OCR errors", async () => {
+    process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
+    process.env.SPLIT_DEV_MODE = "false";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("upstream down", { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "not json" } }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ merchant: "Cafe" }) } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.resetModules();
+    const { extractReceipt: extract } = await import("../../server/split/ocr.js");
+
+    await expect(extract("data:image/png;base64,receipt")).rejects.toMatchObject({ status: 502, code: "ocr_failed" });
+    await expect(extract("data:image/png;base64,receipt")).rejects.toMatchObject({ status: 502, code: "ocr_failed" });
+    await expect(extract("data:image/png;base64,receipt")).rejects.toMatchObject({ status: 502, code: "ocr_failed" });
   });
 });

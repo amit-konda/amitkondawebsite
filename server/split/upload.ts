@@ -113,8 +113,10 @@ export async function handleSplitUpload(
         }).where(and(eq(splitBills.id, bill.id), eq(splitBills.version, bill.version)));
         await tx.update(splitReceiptFiles).set({
           status: "ready",
-          ocrProvider: process.env.OPENAI_API_KEY ? "openai" : "development",
-          ocrModel: process.env.OPENAI_RECEIPT_MODEL ?? null,
+          ocrProvider: process.env.OPENCODE_GO_API_KEY ? "opencode-go" : process.env.OPENAI_API_KEY ? "openai" : "development",
+          ocrModel: process.env.OPENCODE_GO_API_KEY
+            ? process.env.OPENCODE_GO_RECEIPT_MODEL ?? null
+            : process.env.OPENAI_RECEIPT_MODEL ?? null,
           ocrRawJson: extraction
         }).where(eq(splitReceiptFiles.id, receipt.id));
       });

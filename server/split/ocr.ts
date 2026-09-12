@@ -102,12 +102,22 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   }
   const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
   const chatContent = payload.choices?.[0]?.message?.content;
-  const chatText = typeof chatContent === "string" ? chatContent : chatContent?.find((c) => c.type === "text")?.text;
+  const chatText = typeof chatContent === "string"
+    ? chatContent
+    : chatContent?.find((c) => c.type === "text" || Boolean(c.text))?.text;
   const text = payload.output_text ?? payload.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text ?? chatText;
   if (!text) throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   let parsed: unknown;
-  try { parsed = JSON.parse(text); } catch { throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data."); }
-  return ReceiptExtractionSchema.parse(parsed);
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data.");
+  }
+  try {
+    return ReceiptExtractionSchema.parse(parsed);
+  } catch {
+    throw new ApiError(502, "ocr_failed", "The receipt scan returned incomplete data.");
+  }
 }
 
 function deterministicDevReceipt(): ReceiptExtraction {

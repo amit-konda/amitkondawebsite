@@ -263,6 +263,21 @@ describe("Split organizer and settlement flow", () => {
     expect(started!.remindersSnoozedUntil).toBeNull();
   });
 
+  it("marks an invitation failed when Twilio reports it undelivered", async () => {
+    const [delivery] = await tdb.db.select().from(splitSmsDeliveries).where(eq(splitSmsDeliveries.eventType, "invitation")).limit(1);
+    expect(delivery?.participantId).toBeDefined();
+    const sid = `SM-${randomUUID()}`;
+    await tdb.db.update(splitSmsDeliveries).set({ providerMessageId: sid, status: "sent" }).where(eq(splitSmsDeliveries.id, delivery!.id));
+    const values = { ErrorCode: "30007", MessageSid: sid, MessageStatus: "undelivered" };
+    const raw = new URLSearchParams(values).toString();
+    const url = `https://${new URL(server.url).host}/api/split/webhooks/twilio/status`;
+    const signature = createHmac("sha1", process.env.TWILIO_AUTH_TOKEN!).update(url + `ErrorCode${values.ErrorCode}MessageSid${sid}MessageStatus${values.MessageStatus}`).digest("base64");
+    const response = await fetch(`${server.url}/api/split/webhooks/twilio/status`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": signature }, body: raw });
+    expect(response.status).toBe(200);
+    const [participant] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, delivery!.participantId!));
+    expect(participant!.invitationStatus).toBe("failed");
+  });
+
   it("rejects a phone-less Google account before creating an orphaned bill", async () => {
     const [user] = await tdb.db.insert(splitUsers).values({
       displayName: "Google Preview", googleSubject: `google-${randomUUID()}`, email: `preview-${randomUUID()}@example.com`

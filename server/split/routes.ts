@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import {
@@ -19,7 +19,7 @@ import { allocateLargestRemainder, allocateReceiptTotals } from "./allocation.js
 import { optionalSplitUser, requireSplitUser, createSplitSession, revokeSplitSession, setSplitSessionCookie, googleConfigured, googleStartUrl, verifyGoogleState, googleCallback } from "./auth.js";
 import { splitAudit } from "./audit.js";
 import { clearSessionCookie, hashInviteToken, makeInviteToken, verifyInviteToken, SPLIT_INVITE_TTL_SECONDS, readCookie } from "./tokens.js";
-import { encryptPhone, normalizePhone, phoneHash } from "./phone.js";
+import { decryptPhone, encryptPhone, normalizePhone, phoneHash } from "./phone.js";
 import { checkPhoneVerification, startPhoneVerification } from "./sms.js";
 import { extractReceipt } from "./ocr.js";
 import { enqueueSms, processSmsOutbox } from "./outbox.js";
@@ -80,6 +80,7 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "get", "/auth/google", googleAuth);
   route(router, "get", "/auth/google/callback", googleAuthCallback);
   route(router, "get", "/dashboard", dashboard);
+  route(router, "get", "/contacts", contacts);
   route(router, "post", "/bills", createBill);
   route(router, "get", "/bills/:billId", getBill);
   route(router, "patch", "/bills/:billId", patchBill);
@@ -201,6 +202,27 @@ async function dashboard(ctx: Ctx) {
       ,outstandingCount: participantRows.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).length + receivables.length
     }
   };
+}
+
+/** Return the organizer's previously invited diners for quick, private lookup. */
+async function contacts(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const query = (ctx.query.get("q") || "").trim().slice(0, 80);
+  const rows = await db.select({
+    displayName: splitParticipants.displayName,
+    phoneEncrypted: splitParticipants.invitedPhoneEncrypted,
+    phoneHash: splitParticipants.invitedPhoneLookupHash
+  }).from(splitParticipants).where(and(
+    eq(splitParticipants.invitedByUserId, user.id),
+    query ? ilike(splitParticipants.displayName, `%${query.replace(/[%_]/g, "\\$&")}%`) : undefined
+  )).orderBy(desc(splitParticipants.createdAt)).limit(30);
+  const seen = new Set<string>();
+  const results = [] as Array<{ name: string; phone: string }>;
+  for (const row of rows) {
+    if (seen.has(row.phoneHash)) continue;
+    try { results.push({ name: row.displayName, phone: decryptPhone(row.phoneEncrypted) }); seen.add(row.phoneHash); } catch (_) { /* ignore malformed legacy contact */ }
+  }
+  return { contacts: results };
 }
 
 async function createBill(ctx: Ctx) {

@@ -516,6 +516,7 @@ async function retryInvitation(ctx: Ctx) {
   const [participant] = await db.select().from(splitParticipants).where(eq(splitParticipants.id, ctx.params.participantId!)).limit(1);
   if (!participant) throw notFound();
   const bill = await organizerBill(participant.billId, user.id);
+  if (!["open", "locked"].includes(bill.status)) throw conflict("Invites can only be retried for an active split.");
   if (participant.invitationStatus !== "failed") throw conflict("This invitation does not need a retry.");
   await db.transaction(async (tx) => {
     await enqueueSms(tx, {

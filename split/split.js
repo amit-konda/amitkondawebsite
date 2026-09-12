@@ -123,6 +123,10 @@ function authView(step = "phone") {
   </section>`;
   document.querySelector("#phone-form")?.addEventListener("submit", startAuth);
   document.querySelector("#verify-form")?.addEventListener("submit", verifyAuth);
+  document.querySelector('#verify-form input[name="code"]')?.addEventListener("input", event => {
+    const input = event.currentTarget;
+    if (/^\d{6}$/.test(input.value)) input.form?.requestSubmit();
+  });
   document.querySelector('[data-action="resend-code"]')?.addEventListener("click", resendCode);
   document.querySelector('[data-action="change-phone"]')?.addEventListener("click", () => authView());
   document.querySelector('[data-action="demo"]')?.addEventListener("click", () => { state.demo = true; state.me = { id: "demo-user", name: "Alex", hasPhone: true }; go("dashboard"); });

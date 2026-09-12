@@ -32,4 +32,14 @@ test.describe("Split browser smoke flows", () => {
     await page.getByRole("button", { name: "Text me a code" }).click();
     await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
   });
+
+  test("auto-submits a six-digit verification code", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.locator('input[name="phone"]').fill("214-940-0587");
+    await page.getByRole("button", { name: "Text me a code" }).click();
+    await page.locator('input[name="name"]').fill("Test User");
+    await page.locator('input[name="code"]').fill("000000");
+    await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Test\.$/ })).toBeVisible();
+  });
 });

@@ -236,6 +236,29 @@ describe("receipt OCR fallback", () => {
     await expect(extract("data:image/png;base64,receipt")).resolves.toMatchObject(extraction);
   });
 
+  it("falls through an empty output_text and flags arithmetic discrepancies for review", async () => {
+    process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
+    process.env.SPLIT_DEV_MODE = "false";
+    const extraction = {
+      merchant: "Cafe", purchasedAt: null, currency: "USD", subtotalCents: 1100,
+      taxCents: 88, tipCents: 0, feesCents: 0, discountCents: 0, totalCents: 1188,
+      items: [{ description: "Coffee", quantity: 1, unitPriceCents: 1000, lineTotalCents: 1000, confidence: 0.9 }],
+      confidence: 0.9, warnings: []
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: "",
+      output: [{ content: [{ type: "output_text", text: JSON.stringify(extraction) }] }]
+    }), { status: 200 })));
+    vi.resetModules();
+    const { extractReceipt: extract } = await import("../../server/split/ocr.js");
+    await expect(extract("data:image/png;base64,receipt")).resolves.toMatchObject({
+      ...extraction,
+      warnings: expect.arrayContaining([
+        "Line items do not exactly match the scanned subtotal. Please review the items."
+      ])
+    });
+  });
+
   it("maps provider connection failures to a retryable OCR error", async () => {
     process.env.OPENCODE_GO_API_KEY = "test-opencode-key";
     process.env.SPLIT_DEV_MODE = "false";

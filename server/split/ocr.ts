@@ -120,7 +120,14 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   const chatText = typeof chatContent === "string"
     ? chatContent
     : chatContent?.find((c) => c.type === "text" || Boolean(c.text))?.text;
-  const text = payload.output_text ?? payload.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text ?? chatText;
+  // Some OpenAI-compatible providers include an empty `output_text` field and
+  // put the actual response in the nested output/choices shape. Prefer the
+  // first non-empty candidate instead of letting an empty field mask it.
+  const text = [
+    payload.output_text,
+    payload.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text,
+    chatText
+  ].find((candidate): candidate is string => typeof candidate === "string" && candidate.trim().length > 0);
   if (!text) throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   let parsed: unknown;
   try {
@@ -129,10 +136,32 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
     throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data.");
   }
   try {
-    return ReceiptExtractionSchema.parse(parsed);
+    const extraction = ReceiptExtractionSchema.parse(parsed);
+    return addArithmeticWarnings(extraction);
   } catch {
     throw new ApiError(502, "ocr_failed", "The receipt scan returned incomplete data.");
   }
+}
+
+/**
+ * Keep mathematically inconsistent OCR as a reviewable draft, but make the
+ * discrepancy visible to the editor. Receipts can contain rounding, bundled
+ * items, or unreadable lines, so rejecting the scan here would strand the
+ * user before they can correct it.
+ */
+function addArithmeticWarnings(extraction: ReceiptExtraction): ReceiptExtraction {
+  const itemSubtotal = extraction.items.reduce((sum, item) => sum + item.lineTotalCents, 0);
+  const expectedTotal = extraction.subtotalCents + extraction.taxCents + extraction.tipCents + extraction.feesCents - extraction.discountCents;
+  const warnings = [...extraction.warnings];
+  if (itemSubtotal !== extraction.subtotalCents) {
+    warnings.push("Line items do not exactly match the scanned subtotal. Please review the items.");
+  }
+  if (expectedTotal !== extraction.totalCents) {
+    warnings.push("Tax, tip, discounts, and subtotal do not exactly match the scanned total. Please review the amounts.");
+  }
+  return warnings.length === extraction.warnings.length
+    ? extraction
+    : { ...extraction, warnings: warnings.slice(0, 20) };
 }
 
 /** Vision providers occasionally wrap otherwise-valid JSON in a markdown fence. */

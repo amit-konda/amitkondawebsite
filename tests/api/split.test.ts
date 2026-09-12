@@ -276,6 +276,12 @@ describe("Split organizer and settlement flow", () => {
     expect(response.status).toBe(200);
     const [participant] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, delivery!.participantId!));
     expect(participant!.invitationStatus).toBe("failed");
+    const organizerToken = await createSplitSession(participant!.invitedByUserId);
+    const organizerJar = new Map([[SPLIT_SESSION_COOKIE, organizerToken]]);
+    const retry = await api(server, organizerJar, `/participants/${participant!.id}/retry-invite`, { method: "POST" });
+    expect(retry.status).toBe(200);
+    const [retried] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, participant!.id));
+    expect(retried!.invitationStatus).toBe("sent");
   });
 
   it("rejects a phone-less Google account before creating an orphaned bill", async () => {

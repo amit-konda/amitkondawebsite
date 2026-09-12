@@ -96,6 +96,7 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/bills/:billId/lock", lockBill);
   route(router, "post", "/participants/:participantId/report-paid", reportPaid);
   route(router, "post", "/participants/:participantId/payment-status", setPaymentStatus);
+  route(router, "post", "/participants/:participantId/retry-invite", retryInvitation);
 }
 
 async function startAuth(ctx: Ctx) {
@@ -508,6 +509,24 @@ async function reportPaid(ctx: Ctx) {
     await tx.update(splitParticipants).set({ paymentStatus: "reported_paid", nextReminderAt: null }).where(eq(splitParticipants.id, participant.id));
   });
   return { status: "reported_paid" };
+}
+
+async function retryInvitation(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const [participant] = await db.select().from(splitParticipants).where(eq(splitParticipants.id, ctx.params.participantId!)).limit(1);
+  if (!participant) throw notFound();
+  const bill = await organizerBill(participant.billId, user.id);
+  if (participant.invitationStatus !== "failed") throw conflict("This invitation does not need a retry.");
+  await db.transaction(async (tx) => {
+    await enqueueSms(tx, {
+      eventType: "invitation", billId: bill.id, participantId: participant.id,
+      phoneEncrypted: participant.invitedPhoneEncrypted, phoneHash: participant.invitedPhoneLookupHash,
+      billVersion: bill.version, idempotencyKey: `invitation:retry:${participant.id}:${randomUUID()}`
+    });
+    await tx.update(splitParticipants).set({ invitationStatus: "queued" }).where(eq(splitParticipants.id, participant.id));
+  });
+  const delivery = await processSmsOutbox(db, 10);
+  return { delivery };
 }
 
 async function setPaymentStatus(ctx: Ctx) {

@@ -1,9 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { splitBills, splitItemAllocations, splitPayments, splitParticipants, splitSmsDeliveries, splitUsers } from "../../server/db/schema.js";
 import { createSplitSession } from "../../server/split/auth.js";
 import { SPLIT_SESSION_COOKIE } from "../../server/split/tokens.js";
 import { enqueueDueReminders } from "../../server/split/outbox.js";
+import { phoneHash } from "../../server/split/phone.js";
 import { openDb, resetDb } from "../helpers/db.js";
 import type { TestDb } from "../helpers/db.js";
 import { startTestServer } from "../helpers/server.js";
@@ -235,6 +237,30 @@ describe("Split organizer and settlement flow", () => {
     const paidParticipant = participantRows.find((row) => row.id === invitation.participant.id);
     expect(paidParticipant!.paymentStatus).toBe("confirmed");
     expect(paidParticipant!.nextReminderAt).toBeNull();
+  });
+
+  it("suspends reminders on STOP and resumes the 24-hour schedule on START", async () => {
+    const from = "+15550000002";
+    const [participant] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.invitedPhoneLookupHash, phoneHash(from))).limit(1);
+    expect(participant).toBeDefined();
+    await tdb.db.update(splitParticipants).set({ paymentStatus: "unpaid", nextReminderAt: new Date(), remindersSnoozedUntil: null }).where(eq(splitParticipants.id, participant!.id));
+    const postInbound = async (body: string, sid: string) => {
+      const raw = new URLSearchParams({ MessageSid: sid, From: from, Body: body }).toString();
+      // The handler defaults forwarded protocol to HTTPS, matching Twilio's
+      // production callback URL even when the local test server is HTTP.
+      const url = `https://${new URL(server.url).host}/api/split/webhooks/twilio/inbound`;
+      const signature = createHmac("sha1", process.env.TWILIO_AUTH_TOKEN!).update(url + `Body${body}From${from}MessageSid${sid}`).digest("base64");
+      return fetch(`${server.url}/api/split/webhooks/twilio/inbound`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "x-twilio-signature": signature }, body: raw });
+    };
+    expect((await postInbound("STOP", `SM-${randomUUID()}`)).status).toBe(200);
+    const [stopped] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, participant!.id));
+    expect(stopped!.nextReminderAt).toBeNull();
+    expect(stopped!.remindersSnoozedUntil).not.toBeNull();
+    expect((await postInbound("START", `SM-${randomUUID()}`)).status).toBe(200);
+    const [started] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, participant!.id));
+    expect(started!.nextReminderAt).not.toBeNull();
+    expect(started!.nextReminderAt!.getTime()).toBeGreaterThan(Date.now());
+    expect(started!.remindersSnoozedUntil).toBeNull();
   });
 
   it("rejects a phone-less Google account before creating an orphaned bill", async () => {

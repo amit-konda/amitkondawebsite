@@ -24,4 +24,12 @@ test.describe("Split browser smoke flows", () => {
     await page.getByRole("button", { name: /Account for Alex/i }).click();
     await expect(page.getByRole("heading", { name: "Alex" })).toBeVisible();
   });
+
+  test("accepts a pasted US country-code phone number", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.locator('input[name="phone"]').fill("+1 (214) 940-0587");
+    await page.getByRole("button", { name: "Text me a code" }).click();
+    await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
+  });
 });

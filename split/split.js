@@ -138,8 +138,12 @@ async function resendCode(event) {
 
 async function startAuth(event) {
   event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button[type=submit]");
-  const digits = new FormData(form).get("phone").replace(/\D/g, ""); state.phone = `+1${digits}`;
+  let digits = String(new FormData(form).get("phone") || "").replace(/\D/g, "");
+  // Accept the common pasted +1 format even though the country code has its
+  // own field in the compact phone form.
+  if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
   if (digits.length !== 10) return notice("Enter a 10-digit US phone number.", "error");
+  state.phone = `+1${digits}`;
   setBusy(button, true, "Sending…");
   try { await api("/auth/start", { method: "POST", body: { phone: state.phone } }); authView("verify"); }
   catch (error) { notice(error.message, "error"); setBusy(button, false); }

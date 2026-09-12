@@ -111,9 +111,7 @@ function authView(step = "phone") {
           <label class="field"><span>Your name <em class="muted small">(new accounts)</em></span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex"></label>
           <button class="btn btn-primary btn-block" type="submit">Continue</button>
           <button class="demo-link" type="button" data-action="change-phone">Use a different number</button>
-        </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Use Google for the quickest sign-in, or use your phone if you prefer a code.</p>
-        <a class="btn btn-google btn-block" href="${API}/auth/google"><span class="google-g" aria-hidden="true">G</span> Continue with Google</a>
-        <div class="auth-divider"><span>or use your phone</span></div>
+        </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Enter your phone number and we’ll text you a secure code. It takes a few seconds.</p>
         <form id="phone-form" class="stack">
           <label class="field"><span>Phone number</span><span class="phone-row"><input class="input country-code" value="+1" aria-label="Country code" readonly><input class="input" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(512) 555-0148" required autofocus></span></label>
           <button class="btn btn-primary btn-block" type="submit">Text me a code</button>

@@ -1,11 +1,11 @@
 import { expect, test } from "playwright/test";
 
 test.describe("Split browser smoke flows", () => {
-  test("anonymous user sees Google-first sign-in and can preview the complete flow", async ({ page }) => {
+  test("anonymous user sees phone sign-in and can preview the complete flow", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");
     await expect(page.getByRole("heading", { name: "Sign in to start splitting" })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Continue with Google/i })).toBeVisible();
+    await expect(page.locator('input[name="phone"]')).toBeVisible();
     await page.getByRole("button", { name: /Preview with sample data/i }).click();
     await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Alex\.$/ })).toBeVisible();
     await expect(page.getByText("Loro")).toBeVisible();

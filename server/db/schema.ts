@@ -600,8 +600,10 @@ export const splitUsers = pgTable(
     displayName: text("display_name").notNull(),
     // AES-GCM ciphertext for delivery; the keyed HMAC is used for equality
     // lookup without exposing the E.164 number in indexes or logs.
-    phoneEncrypted: text("phone_encrypted").notNull(),
-    phoneLookupHash: text("phone_lookup_hash").notNull(),
+    phoneEncrypted: text("phone_encrypted"),
+    phoneLookupHash: text("phone_lookup_hash"),
+    googleSubject: text("google_subject"),
+    email: text("email"),
     status: splitUserStatus("status").notNull().default("active"),
     paymentProvider: text("payment_provider"),
     paymentHandle: text("payment_handle"),
@@ -612,8 +614,8 @@ export const splitUsers = pgTable(
   },
   (t) => [
     check("split_users_display_name_len", sql`char_length(${t.displayName}) between 1 and 80`),
-    check("split_users_phone_encrypted_len", sql`char_length(${t.phoneEncrypted}) between 16 and 2048`),
-    check("split_users_phone_hash_len", sql`char_length(${t.phoneLookupHash}) between 32 and 128`),
+    check("split_users_phone_encrypted_len", sql`${t.phoneEncrypted} is null or char_length(${t.phoneEncrypted}) between 16 and 2048`),
+    check("split_users_phone_hash_len", sql`${t.phoneLookupHash} is null or char_length(${t.phoneLookupHash}) between 32 and 128`),
     check(
       "split_users_payment_provider_len",
       sql`${t.paymentProvider} is null or char_length(${t.paymentProvider}) between 1 and 30`
@@ -623,6 +625,7 @@ export const splitUsers = pgTable(
       sql`${t.paymentHandle} is null or char_length(${t.paymentHandle}) between 1 and 120`
     ),
     uniqueIndex("split_users_phone_lookup_hash_uidx").on(t.phoneLookupHash),
+    uniqueIndex("split_users_google_subject_uidx").on(t.googleSubject),
     index("split_users_status_idx").on(t.status)
   ]
 );

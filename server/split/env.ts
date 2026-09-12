@@ -9,6 +9,11 @@ const SplitEnvSchema = z.object({
   PUBLIC_APP_ORIGIN: z.string().url().default("https://amitkonda.com"),
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_RECEIPT_MODEL: z.string().min(1).default("gpt-5-mini"),
+  OPENCODE_GO_API_KEY: z.string().min(1).optional(),
+  OPENCODE_GO_BASE_URL: z.string().url().default("https://opencode.ai/zen/go/v1"),
+  // DeepSeek's Flash Vision model is the lowest-cost Go vision option and
+  // speaks the OpenAI-compatible chat-completions API.
+  OPENCODE_GO_RECEIPT_MODEL: z.string().min(1).default("deepseek-v4-flash-vision-exp"),
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
@@ -16,6 +21,8 @@ const SplitEnvSchema = z.object({
   CRON_SECRET: z.string().min(16).optional(),
   SPLIT_CRON_SECRET: z.string().min(16).optional(),
   SPLIT_DEV_MODE: z.enum(["true", "false"]).default("false")
+  ,GOOGLE_CLIENT_ID: z.string().min(1).optional()
+  ,GOOGLE_CLIENT_SECRET: z.string().min(1).optional()
 });
 
 export type SplitEnv = z.infer<typeof SplitEnvSchema>;
@@ -31,7 +38,8 @@ export function splitDevMode(): boolean {
 }
 
 export function isOpenAiConfigured(): boolean {
-  return Boolean(splitEnv().OPENAI_API_KEY);
+  const e = splitEnv();
+  return Boolean(e.OPENCODE_GO_API_KEY || e.OPENAI_API_KEY);
 }
 
 export function isTwilioConfigured(): boolean {

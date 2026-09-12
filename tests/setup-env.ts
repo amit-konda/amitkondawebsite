@@ -45,6 +45,7 @@ process.env.SPLIT_DEV_MODE = process.env.SPLIT_DEV_MODE ?? "true";
 // external OCR request. OCR's deterministic fallback is the intended test
 // behavior unless a test deliberately mocks the provider.
 delete process.env.OPENAI_API_KEY;
+delete process.env.OPENCODE_GO_API_KEY;
 delete process.env.TWILIO_ACCOUNT_SID;
 delete process.env.TWILIO_AUTH_TOKEN;
 delete process.env.TWILIO_VERIFY_SERVICE_SID;

@@ -1,4 +1,5 @@
 import { and, eq, gt, isNull } from "drizzle-orm";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { db } from "../db/client.js";
 import { splitSessions, splitUsers } from "../db/schema.js";
 import { unauthorized } from "../errors.js";
@@ -11,8 +12,38 @@ import {
   SPLIT_SESSION_COOKIE,
   SPLIT_SESSION_TTL_SECONDS
 } from "./tokens.js";
+import { splitEnv } from "./env.js";
 
 export interface SplitIdentity { id: string; displayName: string }
+
+export function googleConfigured(): boolean { const e = splitEnv(); return Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET); }
+export function googleStartUrl(origin: string): string {
+  const e = splitEnv(); if (!e.GOOGLE_CLIENT_ID) throw unauthorized();
+  const state = `${randomBytes(18).toString("base64url")}.${createHmac("sha256", e.SPLIT_SESSION_SECRET).update(origin).digest("hex")}`;
+  const params = new URLSearchParams({ client_id: e.GOOGLE_CLIENT_ID, redirect_uri: `${origin}/api/split/auth/google/callback`, response_type: "code", scope: "openid email profile", state, prompt: "select_account" });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+}
+export function verifyGoogleState(state: string, origin: string, expectedState?: string): boolean {
+  if (expectedState && state !== expectedState) return false;
+  const [, sig] = state.split("."); if (!sig) return false;
+  const expected = createHmac("sha256", splitEnv().SPLIT_SESSION_SECRET).update(origin).digest("hex");
+  return sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}
+export async function googleCallback(code: string, origin: string): Promise<string> {
+  const e = splitEnv(); if (!e.GOOGLE_CLIENT_ID || !e.GOOGLE_CLIENT_SECRET) throw unauthorized();
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: e.GOOGLE_CLIENT_ID, client_secret: e.GOOGLE_CLIENT_SECRET, redirect_uri: `${origin}/api/split/auth/google/callback`, grant_type: "authorization_code" }) });
+  if (!tokenResponse.ok) throw unauthorized();
+  const tokens = await tokenResponse.json() as { access_token?: string };
+  if (!tokens.access_token) throw unauthorized();
+  const profileResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+  if (!profileResponse.ok) throw unauthorized();
+  const profile = await profileResponse.json() as { sub?: string; name?: string; email?: string; email_verified?: boolean };
+  if (!profile.sub || !profile.email || profile.email_verified === false) throw unauthorized();
+  let [user] = await db.select().from(splitUsers).where(eq(splitUsers.googleSubject, profile.sub)).limit(1);
+  if (!user) [user] = await db.insert(splitUsers).values({ displayName: (profile.name || profile.email.split("@")[0]!).trim().slice(0, 80), googleSubject: profile.sub, email: profile.email.toLowerCase() }).onConflictDoNothing().returning();
+  if (!user || user.status !== "active") throw unauthorized();
+  return createSplitSession(user.id);
+}
 
 export async function createSplitSession(userId: string): Promise<string> {
   const token = generateOpaqueToken();

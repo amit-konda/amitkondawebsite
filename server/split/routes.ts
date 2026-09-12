@@ -16,13 +16,14 @@ import { ApiError, badRequest, conflict, forbidden, notFound, rateLimited } from
 import { checkRateLimit, clientKey } from "../rate-limit.js";
 import type { Ctx, Handler, Router } from "../router.js";
 import { allocateLargestRemainder, allocateReceiptTotals } from "./allocation.js";
-import { optionalSplitUser, requireSplitUser, createSplitSession, revokeSplitSession, setSplitSessionCookie } from "./auth.js";
+import { optionalSplitUser, requireSplitUser, createSplitSession, revokeSplitSession, setSplitSessionCookie, googleConfigured, googleStartUrl, verifyGoogleState, googleCallback } from "./auth.js";
 import { splitAudit } from "./audit.js";
-import { clearSessionCookie, hashInviteToken, makeInviteToken, verifyInviteToken, SPLIT_INVITE_TTL_SECONDS } from "./tokens.js";
+import { clearSessionCookie, hashInviteToken, makeInviteToken, verifyInviteToken, SPLIT_INVITE_TTL_SECONDS, readCookie } from "./tokens.js";
 import { encryptPhone, normalizePhone, phoneHash } from "./phone.js";
 import { checkPhoneVerification, startPhoneVerification } from "./sms.js";
 import { extractReceipt } from "./ocr.js";
 import { enqueueSms, processSmsOutbox } from "./outbox.js";
+import { splitEnv } from "./env.js";
 
 const SPLIT_AUTH_IP = { scope: "split_auth_ip", limit: 12, windowMs: 15 * 60_000, failClosed: true } as const;
 const SPLIT_AUTH_PHONE = { scope: "split_auth_phone", limit: 6, windowMs: 15 * 60_000, failClosed: true } as const;
@@ -72,6 +73,8 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/auth/verify", verifyAuth);
   route(router, "post", "/auth/logout", logout);
   route(router, "get", "/auth/status", authStatus);
+  route(router, "get", "/auth/google", googleAuth);
+  route(router, "get", "/auth/google/callback", googleAuthCallback);
   route(router, "get", "/dashboard", dashboard);
   route(router, "post", "/bills", createBill);
   route(router, "get", "/bills/:billId", getBill);
@@ -130,6 +133,27 @@ async function logout(ctx: Ctx) {
 
 async function authStatus(ctx: Ctx) { return { user: await optionalSplitUser(ctx) }; }
 
+function requestOrigin(ctx: Ctx): string {
+  const configured = splitEnv().PUBLIC_APP_ORIGIN.replace(/\/$/, "");
+  const forwarded = ctx.req.headers["x-forwarded-proto"] && ctx.req.headers.host;
+  return forwarded ? `${ctx.req.headers["x-forwarded-proto"]}://${ctx.req.headers.host}` : configured;
+}
+async function googleAuth(ctx: Ctx) {
+  if (!googleConfigured()) throw new ApiError(503, "google_not_configured", "Google sign-in is not configured yet.");
+  const location = googleStartUrl(requestOrigin(ctx));
+  const state = new URL(location).searchParams.get("state");
+  ctx.res.setHeader("Set-Cookie", `split_oauth_state=${encodeURIComponent(state || "")}; Path=/api/split/auth/google; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
+  ctx.res.statusCode = 302; ctx.res.setHeader("Location", location); ctx.res.end();
+  return null;
+}
+async function googleAuthCallback(ctx: Ctx) {
+  const code = ctx.query.get("code"); const state = ctx.query.get("state"); const origin = requestOrigin(ctx);
+  const expected = readCookie(ctx.req.headers.cookie, "split_oauth_state");
+  if (!code || !state || !verifyGoogleState(state, origin, expected || undefined)) throw new ApiError(400, "invalid_oauth_state", "That sign-in link has expired. Please try again.");
+  const token = await googleCallback(code, origin); setSplitSessionCookie(ctx, token);
+  ctx.res.statusCode = 302; ctx.res.setHeader("Location", `${origin}/split#/dashboard`); ctx.res.end(); return null;
+}
+
 async function dashboard(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const organized = await db.select().from(splitBills).where(eq(splitBills.organizerUserId, user.id)).orderBy(desc(splitBills.createdAt)).limit(100);
@@ -163,7 +187,7 @@ async function createBill(ctx: Ctx) {
   }).onConflictDoNothing().returning();
   if (bill) {
     const [account] = await db.select().from(splitUsers).where(eq(splitUsers.id, user.id)).limit(1);
-    if (!account) throw forbidden();
+    if (!account || !account.phoneEncrypted || !account.phoneLookupHash) throw badRequest("phone_required", "Add a phone number before creating a split so guests can receive texts.");
     const participantId = randomUUID();
     const inviteToken = makeInviteToken(participantId);
     await db.insert(splitParticipants).values({
@@ -298,7 +322,7 @@ async function getInvite(ctx: Ctx) {
 async function acceptInvite(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const participantId = verifyInviteToken(ctx.params.token!); if (!participantId) throw notFound();
   const [account] = await db.select({ phoneHash: splitUsers.phoneLookupHash }).from(splitUsers).where(eq(splitUsers.id, user.id)).limit(1);
-  if (!account) throw forbidden();
+  if (!account?.phoneHash) throw badRequest("phone_required", "Add a phone number before accepting an SMS invite.");
   const [participant] = await db.update(splitParticipants).set({ userId: user.id, invitationStatus: "accepted" })
     .where(and(eq(splitParticipants.id, participantId), eq(splitParticipants.inviteTokenHash, hashInviteToken(ctx.params.token!)), eq(splitParticipants.invitedPhoneLookupHash, account.phoneHash), gt(splitParticipants.createdAt, new Date(Date.now() - SPLIT_INVITE_TTL_SECONDS * 1000)), or(isNull(splitParticipants.userId), eq(splitParticipants.userId, user.id)))).returning();
   if (!participant) throw forbidden(); return { participant: publicParticipant(participant) };

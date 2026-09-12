@@ -82,6 +82,7 @@ h3 { margin-bottom: 4px; font-size: 1rem; }
 .btn-primary:hover:not(:disabled) { background: var(--tomato-dark); }
 .btn-dark { border-color: var(--ink); color: #fff; background: var(--ink); }
 .btn-ghost { background: transparent; }.btn-block { width: 100%; }.btn-sm { min-height: 38px; padding: 7px 12px; font-size: .85rem; }.btn-danger { color: var(--danger); }
+.btn-google { background: #fff; color: #252525; border: 1px solid var(--line); text-decoration: none; justify-content: center; }.google-g { color: #4285f4; font: 700 1.1rem Arial; margin-right: 8px; }.auth-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .75rem; margin: 18px 0; }.auth-divider::before, .auth-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
 .icon-btn { display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; }
 
 .field { display: grid; gap: 7px; }

@@ -66,26 +66,44 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
     throw new ApiError(503, "ocr_unavailable", "Receipt scanning is temporarily unavailable.");
   }
   const e = splitEnv();
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const openCode = Boolean(e.OPENCODE_GO_API_KEY);
+  const endpoint = openCode
+    ? `${e.OPENCODE_GO_BASE_URL.replace(/\/$/, "")}/chat/completions`
+    : "https://api.openai.com/v1/responses";
+  const requestBody = openCode ? {
+    model: e.OPENCODE_GO_RECEIPT_MODEL,
+    messages: [{ role: "user", content: [
+      { type: "text", text: "Extract merchant, date, every purchased line, adjustments, and total from this receipt." },
+      { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
+    ] }],
+    response_format: { type: "json_schema", json_schema: { name: "receipt", strict: true, schema: jsonSchema } }
+  } : {
+    model: e.OPENAI_RECEIPT_MODEL,
+    instructions: "Extract the receipt faithfully. Monetary values must be integer cents. Do not invent unreadable items; add a warning. The output is a draft that a person will review.",
+    input: [{ role: "user", content: [
+      { type: "input_text", text: "Extract merchant, date, every purchased line, adjustments, and total from this receipt." },
+      { type: "input_image", image_url: imageUrl, detail: "high" }
+    ] }],
+    text: { format: { type: "json_schema", name: "receipt", strict: true, schema: jsonSchema } }
+  };
+  const response = await fetch(endpoint, {
     method: "POST",
-    headers: { Authorization: `Bearer ${e.OPENAI_API_KEY!}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: e.OPENAI_RECEIPT_MODEL,
-      instructions: "Extract the receipt faithfully. Monetary values must be integer cents. Do not invent unreadable items; add a warning. The output is a draft that a person will review.",
-      input: [{ role: "user", content: [
-        { type: "input_text", text: "Extract merchant, date, every purchased line, adjustments, and total from this receipt." },
-        { type: "input_image", image_url: imageUrl, detail: "high" }
-      ] }],
-      text: { format: { type: "json_schema", name: "receipt", strict: true, schema: jsonSchema } }
-    }),
+    headers: {
+      Authorization: `Bearer ${e.OPENCODE_GO_API_KEY ?? e.OPENAI_API_KEY!}`,
+      "Content-Type": "application/json",
+      ...(openCode ? { "x-opencode-session": "split-ocr" } : {})
+    },
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(45_000)
   });
   if (!response.ok) {
     console.error("Split OCR provider failure", response.status);
     throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   }
-  const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }> };
-  const text = payload.output_text ?? payload.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text;
+  const payload = await response.json() as { output_text?: string; output?: Array<{ content?: Array<{ type?: string; text?: string }> }>; choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+  const chatContent = payload.choices?.[0]?.message?.content;
+  const chatText = typeof chatContent === "string" ? chatContent : chatContent?.find((c) => c.type === "text")?.text;
+  const text = payload.output_text ?? payload.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text")?.text ?? chatText;
   if (!text) throw new ApiError(502, "ocr_failed", "The receipt could not be scanned. Try again.");
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { throw new ApiError(502, "ocr_failed", "The receipt scan returned invalid data."); }

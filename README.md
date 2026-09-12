@@ -19,7 +19,8 @@ npm run db:migrate
 Production setup requires:
 
 - Neon `DATABASE_URL` and the four Split secrets in `.env.example`.
-- An OpenAI API key for receipt OCR.
+- An OpenCode Go API key and vision-capable model for receipt OCR (the default
+  is DeepSeek Flash Vision); an OpenAI key remains supported as a fallback.
 - A Twilio Verify service (OTP) and Messaging-enabled number for invitations,
   payment updates, and reminders. Configure Twilio status and inbound webhooks
   to `/api/split/webhooks/twilio/status` and `/api/split/webhooks/twilio/inbound`.

@@ -27,6 +27,16 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.getByRole("heading", { name: "Alex" })).toBeVisible();
   });
 
+  test("lets an organizer retry a failed invite in the demo flow", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.getByRole("button", { name: /Preview with sample data/i }).click();
+    await page.locator(".bill-row", { hasText: "Suerte" }).click();
+    await expect(page.getByRole("button", { name: "Retry invite" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry invite" }).click();
+    await expect(page.locator(".person", { hasText: "Sam" }).getByText(/Invite sent/)).toBeVisible();
+  });
+
   test("accepts a pasted US country-code phone number", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");

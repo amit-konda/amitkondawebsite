@@ -235,8 +235,12 @@ async function handleReceipt(file) {
   content.innerHTML = `${preview ? `<img class="receipt-preview" src="${esc(preview)}" alt="Receipt preview">` : `<span class="upload-icon">PDF</span>`}<h2>Reading your receipt…</h2><p class="muted">Finding items, tax, tip, and the total.</p><div class="progress" aria-label="Processing"><i></i></div>`;
   try {
     if (state.demo) { await new Promise(r => setTimeout(r, 900)); state.draft = demoDraft(); return editorView(); }
-    const created = await api("/bills", { method: "POST", body: { requestKey: crypto.randomUUID(), subtotalCents: 0, taxCents: 0, tipCents: 0, feeCents: 0, discountCents: 0, totalCents: 0 } });
-    state.draft = normalizeBill(created);
+    // Keep a review draft around when an upload fails so the next attempt
+    // retries the same bill instead of creating orphaned dashboard entries.
+    if (!state.draft?.id || state.draft.id === "demo-new" || state.draft.status !== "review") {
+      const created = await api("/bills", { method: "POST", body: { requestKey: crypto.randomUUID(), subtotalCents: 0, taxCents: 0, tipCents: 0, feeCents: 0, discountCents: 0, totalCents: 0 } });
+      state.draft = normalizeBill(created);
+    }
     const upload = await prepareReceipt(file);
     await api(`/upload?billId=${encodeURIComponent(state.draft.id)}&filename=${encodeURIComponent(upload.name || file.name)}`, {
       method: "POST",
@@ -355,7 +359,7 @@ async function reportPaid(event,p){setBusy(event.currentTarget,true,"Updating…
 async function inviteView(token){sessionStorage.setItem("split_invite",token);if(!state.me)return authView();try{const preview=await api(`/invites/${encodeURIComponent(token)}`);const accepted=await api(`/invites/${encodeURIComponent(token)}/accept`,{method:"POST"});sessionStorage.removeItem("split_invite");state.invitation={...preview,...accepted};const bill=normalizeBill(state.invitation.bill?state.invitation:{...state.invitation,bill:preview.bill});bill.currentParticipant=accepted.participant||preview.participant;renderBill(bill);}catch(error){if(state.demo)return renderBill(demoBill("demo-1"));renderError("This invitation isn’t available.",error.message,()=>go("dashboard"));}}
 function activityView(){dashboardView();}
 function renderError(title,detail,retry){shell(Boolean(state.me));app.innerHTML=`<div class="card empty-state"><div class="empty-icon">!</div><h1>${esc(title)}</h1><p class="muted">${esc(detail||"Try again in a moment.")}</p><button class="btn btn-primary" type="button" id="retry">Try again</button></div>`;document.querySelector("#retry").addEventListener("click",retry);}
-function bindCommon(){document.querySelectorAll('[data-action="new-bill"]').forEach(x=>x.addEventListener("click",()=>go("new")));}
+function bindCommon(){document.querySelectorAll('[data-action="new-bill"]').forEach(x=>x.addEventListener("click",()=>{state.draft=null;go("new");}));}
 
 function route(){const parts=getRoute();const routeName=parts[0]|| (state.me?"dashboard":"welcome");document.querySelectorAll("[data-nav]").forEach(x=>x.classList.toggle("active",x.dataset.nav===routeName));if(!state.me&&routeName!=="invite")return authView();if(routeName==="welcome")return state.me?go("dashboard"):authView();if(routeName==="dashboard")return dashboardView();if(routeName==="activity")return activityView();if(routeName==="profile")return profileView();if(routeName==="new")return uploadView();if(routeName==="edit")return editorView();if(routeName==="preview")return previewBill();if(routeName==="bill"&&parts[1])return billView(parts[1]);if(routeName==="invite"&&parts[1])return inviteView(parts[1]);go(state.me?"dashboard":"welcome");}
 

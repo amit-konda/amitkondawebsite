@@ -217,7 +217,7 @@ async function linkPhoneVerify(event, phone) {
 
 function uploadView() {
   shell(true); app.innerHTML = `<a class="back-link" href="#/dashboard">← Back to dashboard</a><div class="page-head"><div><p class="eyebrow">New split · 1 of 3</p><h1>Show us the receipt.</h1><p class="lede">A clear, flat photo works best. You’ll review every item before anyone gets a text.</p></div></div>
-    <div class="upload-layout"><label class="upload-zone" id="upload-zone"><input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp"><span id="upload-content"><span class="upload-icon">＋</span><h2>Choose from Photos, Camera, or Files</h2><p class="muted">JPG, PNG, or WebP · compressed automatically</p><span class="btn">Choose receipt</span></span></label>
+    <div class="upload-layout"><label class="upload-zone" id="upload-zone"><input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Receipt photo or file"><span id="upload-content"><span class="upload-icon">＋</span><h2>Choose from Photos, Camera, or Files</h2><p class="muted">JPG, PNG, or WebP · compressed automatically</p><span class="btn">Choose receipt</span></span></label>
       <aside class="card upload-details"><p class="eyebrow">A few tips</p><div class="stack"><div><h3>Find good light</h3><p class="muted small">Avoid hard shadows and glare across the prices.</p></div><div><h3>Get the whole receipt</h3><p class="muted small">Include the merchant, every item, tax, tip, and total.</p></div><div><h3>Check our work</h3><p class="muted small">OCR is a starting point. Nothing is sent until you approve it.</p></div></div></aside>
     </div>`;
   const input = document.querySelector("#receipt-file"), zone = document.querySelector("#upload-zone");

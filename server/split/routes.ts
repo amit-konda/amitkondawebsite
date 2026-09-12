@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import {
@@ -187,13 +187,17 @@ async function googleAuthCallback(ctx: Ctx) {
 async function dashboard(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const organized = await db.select().from(splitBills).where(eq(splitBills.organizerUserId, user.id)).orderBy(desc(splitBills.createdAt)).limit(100);
+  const participantCounts = organized.length ? await db.select({ billId: splitParticipants.billId, count: count() })
+    .from(splitParticipants).where(inArray(splitParticipants.billId, organized.map((bill) => bill.id)))
+    .groupBy(splitParticipants.billId) : [];
+  const countByBill = new Map(participantCounts.map((row) => [row.billId, Number(row.count)]));
   const participantRows = await db.select({ participant: splitParticipants, bill: splitBills })
     .from(splitParticipants).innerJoin(splitBills, eq(splitParticipants.billId, splitBills.id))
     .where(eq(splitParticipants.userId, user.id)).orderBy(desc(splitBills.createdAt)).limit(100);
   const receivables = organized.length ? await db.select({ participant: splitParticipants }).from(splitParticipants)
     .where(and(inArray(splitParticipants.billId, organized.map((bill) => bill.id)), inArray(splitParticipants.paymentStatus, ["unpaid", "rejected", "reported_paid"]))) : [];
   return {
-    organized,
+    organized: organized.map((bill) => ({ ...bill, participantCount: countByBill.get(bill.id) ?? 0 })),
     participating: participantRows,
     summary: {
       youOweCents: participantRows.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).reduce((s, r) => s + r.participant.finalAmountCents, 0),

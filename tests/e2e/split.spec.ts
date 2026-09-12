@@ -22,6 +22,7 @@ test.describe("Split browser smoke flows", () => {
     await page.getByRole("button", { name: /Preview with sample data/i }).click();
     await page.getByRole("link", { name: /Activity/i }).click();
     await expect(page.getByText("Loro")).toBeVisible();
+    await expect(page.locator(".bill-row", { hasText: "Suerte" }).getByText(/5 people/)).toBeVisible();
     await page.getByRole("button", { name: /Account for Alex/i }).click();
     await expect(page.getByRole("heading", { name: "Alex" })).toBeVisible();
   });

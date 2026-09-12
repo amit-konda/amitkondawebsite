@@ -156,7 +156,11 @@ async function renderSms(db: SplitDb, delivery: typeof splitSmsDeliveries.$infer
   const merchant = row.merchant ?? "dinner";
   const app = splitEnv().PUBLIC_APP_ORIGIN;
   if (delivery.eventType === "invitation") {
-    return `${payerName} invited you to split ${merchant}. Claim your items: ${app}/split/i/${makeInviteToken(row.participantId)} Reply STOP to unsubscribe.`;
+    // Keep the invite as a query parameter because the static Split client
+    // preserves it through Google/phone sign-in before routing to the invite
+    // view. A hash-only route would be stripped from SMS deep links.
+    const inviteUrl = `${app}/split?invite=${encodeURIComponent(makeInviteToken(row.participantId))}`;
+    return `${payerName} invited you to split ${merchant}. Claim your items: ${inviteUrl} Reply STOP to unsubscribe.`;
   }
   const amount = `$${(row.amountCents / 100).toFixed(2)}`;
   const payment = payer?.provider && payer.handle ? ` Pay via ${payer.provider}: ${payer.handle}.` : "";

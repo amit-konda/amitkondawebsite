@@ -135,6 +135,14 @@ describe("Split organizer and settlement flow", () => {
     const invitation = await json<{ participant: { id: string }; inviteToken: string }>(addParticipant);
     expect(invitation.inviteToken).toContain(invitation.participant.id);
 
+    // Re-adding a contact should produce a useful conflict instead of a raw
+    // database uniqueness error (common when contacts contain duplicates).
+    const duplicate = await api(server, organizerJar, `/bills/${billId}/participants`, {
+      method: "POST", body: { displayName: "Attendee again", phone: "(555) 000-0002" }
+    });
+    expect(duplicate.status).toBe(409);
+    expect((await duplicate.json() as { error: { message: string } }).error.message).toContain("already on this split");
+
     const publish = await api(server, organizerJar, `/bills/${billId}/publish`, { method: "POST" });
     expect(publish.status).toBe(200);
     const publishedRows = await tdb.db.select().from(splitSmsDeliveries);

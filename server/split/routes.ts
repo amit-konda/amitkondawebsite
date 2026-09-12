@@ -316,11 +316,17 @@ async function addParticipant(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const bill = await organizerBill(ctx.params.billId!, user.id);
   if (!["review", "open"].includes(bill.status)) throw conflict("Participants can no longer be added.");
   const input = ParticipantSchema.parse(ctx.body); const phone = normalizePhone(input.phone); const id = randomUUID();
-  const [existingUser] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneHash(phone))).limit(1);
+  const phoneLookupHash = phoneHash(phone);
+  const [existingParticipant] = await db.select({ id: splitParticipants.id }).from(splitParticipants).where(and(
+    eq(splitParticipants.billId, bill.id),
+    eq(splitParticipants.invitedPhoneLookupHash, phoneLookupHash)
+  )).limit(1);
+  if (existingParticipant) throw conflict("That person is already on this split.");
+  const [existingUser] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneLookupHash)).limit(1);
   const token = makeInviteToken(id);
   const [participant] = await db.insert(splitParticipants).values({
     id, billId: bill.id, userId: existingUser?.id ?? null, invitedByUserId: user.id,
-    displayName: input.displayName, invitedPhoneEncrypted: encryptPhone(phone), invitedPhoneLookupHash: phoneHash(phone), inviteTokenHash: hashInviteToken(token)
+    displayName: input.displayName, invitedPhoneEncrypted: encryptPhone(phone), invitedPhoneLookupHash: phoneLookupHash, inviteTokenHash: hashInviteToken(token)
   }).returning();
   return { participant: publicParticipant(participant!), inviteToken: token };
 }

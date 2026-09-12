@@ -13,6 +13,8 @@ const state = {
   draft: null,
   invitation: null,
   phone: "",
+  receiptFile: null,
+  receiptError: "",
 };
 
 const demoDashboard = {
@@ -219,12 +221,13 @@ function uploadView() {
   shell(true); app.innerHTML = `<a class="back-link" href="#/dashboard">← Back to dashboard</a><div class="page-head"><div><p class="eyebrow">New split · 1 of 3</p><h1>Show us the receipt.</h1><p class="lede">A clear, flat photo works best. You’ll review every item before anyone gets a text.</p></div></div>
     <div class="upload-layout"><label class="upload-zone" id="upload-zone"><input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Receipt photo or file"><span id="upload-content"><span class="upload-icon">＋</span><h2>Choose from Photos, Camera, or Files</h2><p class="muted">JPG, PNG, or WebP · compressed automatically</p><span class="btn">Choose receipt</span></span></label>
       <aside class="card upload-details"><p class="eyebrow">A few tips</p><div class="stack"><div><h3>Find good light</h3><p class="muted small">Avoid hard shadows and glare across the prices.</p></div><div><h3>Get the whole receipt</h3><p class="muted small">Include the merchant, every item, tax, tip, and total.</p></div><div><h3>Check our work</h3><p class="muted small">OCR is a starting point. Nothing is sent until you approve it.</p></div></div></aside>
-    </div>`;
+    </div>${state.receiptError ? `<div class="callout warning upload-error"><strong>We couldn’t read that receipt.</strong><p>${esc(state.receiptError)}</p>${state.receiptFile ? `<button class="btn btn-sm" type="button" data-action="retry-receipt">Try scanning again</button>` : ""}</div>` : ""}`;
   const input = document.querySelector("#receipt-file"), zone = document.querySelector("#upload-zone");
-  input.addEventListener("change", () => input.files[0] && handleReceipt(input.files[0]));
+  input.addEventListener("change", () => { if (input.files[0]) { state.receiptError = ""; handleReceipt(input.files[0]); } });
   ["dragenter","dragover"].forEach(name => zone.addEventListener(name, e => { e.preventDefault(); zone.classList.add("dragging"); }));
   ["dragleave","drop"].forEach(name => zone.addEventListener(name, e => { e.preventDefault(); zone.classList.remove("dragging"); }));
   zone.addEventListener("drop", e => e.dataTransfer.files[0] && handleReceipt(e.dataTransfer.files[0]));
+  document.querySelector('[data-action="retry-receipt"]')?.addEventListener("click", () => { state.receiptError = ""; if (state.receiptFile) handleReceipt(state.receiptFile); });
 }
 
 async function handleReceipt(file) {
@@ -233,11 +236,13 @@ async function handleReceipt(file) {
   // before upload; only reject unusually large files that would be expensive
   // to decode on a mobile device.
   if (file.size > 20 * 1024 * 1024) return notice("That file is over 20 MB. Try a smaller image.", "error");
+  state.receiptFile = file;
+  state.receiptError = "";
   const content = document.querySelector("#upload-content");
   const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
   content.innerHTML = `${preview ? `<img class="receipt-preview" src="${esc(preview)}" alt="Receipt preview">` : `<span class="upload-icon">PDF</span>`}<h2>Reading your receipt…</h2><p class="muted">Finding items, tax, tip, and the total.</p><div class="progress" aria-label="Processing"><i></i></div>`;
   try {
-    if (state.demo) { await new Promise(r => setTimeout(r, 900)); state.draft = demoDraft(); return editorView(); }
+    if (state.demo) { await new Promise(r => setTimeout(r, 900)); state.draft = demoDraft(); state.receiptFile = null; return editorView(); }
     // Keep a review draft around when an upload fails so the next attempt
     // retries the same bill instead of creating orphaned dashboard entries.
     if (!state.draft?.id || state.draft.id === "demo-new" || state.draft.status !== "review") {
@@ -252,8 +257,9 @@ async function handleReceipt(file) {
     });
     state.draft = normalizeBill(await api(`/bills/${encodeURIComponent(state.draft.id)}`));
     if (state.draft.status === "processing" && state.draft.id) await pollBill(state.draft.id);
+    state.receiptFile = null;
     editorView();
-  } catch (error) { notice(error.message, "error"); uploadView(); }
+  } catch (error) { state.receiptError = error.message; notice(error.message, "error"); uploadView(); }
 }
 async function prepareReceipt(file) {
   if (file.size <= 4 * 1024 * 1024) return file;

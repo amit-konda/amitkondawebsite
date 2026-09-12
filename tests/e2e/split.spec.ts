@@ -120,6 +120,28 @@ test.describe("Split browser smoke flows", () => {
     await expect(page.getByText("Review the scan")).toBeVisible();
   });
 
+  test("retries a transient receipt scan without reopening the file picker", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/split");
+    await page.locator('input[name="phone"]').fill("214-940-0589");
+    await page.getByRole("button", { name: "Text me a code" }).click();
+    await page.locator('input[name="name"]').fill("Retry Tester");
+    await page.locator('input[name="code"]').fill("000000");
+    await expect(page.getByRole("heading", { name: /^(Morning|Afternoon|Evening), Retry\.$/ })).toBeVisible();
+    await page.getByRole("button", { name: "Scan a receipt" }).click();
+    let firstAttempt = true;
+    await page.route("**/api/split/upload**", async route => {
+      if (firstAttempt) {
+        firstAttempt = false;
+        await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: { message: "The receipt could not be scanned. Try again." } }) });
+      } else await route.continue();
+    });
+    await page.locator('input[type="file"]').setInputFiles({ name: "receipt.png", mimeType: "image/png", buffer: Buffer.from("png") });
+    await expect(page.getByRole("button", { name: "Try scanning again" })).toBeVisible();
+    await page.getByRole("button", { name: "Try scanning again" }).click();
+    await expect(page.getByRole("heading", { name: "Check the details." })).toBeVisible();
+  });
+
   test("previews the diner claim flow with select-all and an immediate update state", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/split");

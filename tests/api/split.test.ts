@@ -135,6 +135,12 @@ describe("Split organizer and settlement flow", () => {
     const invitation = await json<{ participant: { id: string }; inviteToken: string }>(addParticipant);
     expect(invitation.inviteToken).toContain(invitation.participant.id);
 
+    const contactSearch = await api(server, organizerJar, "/contacts?q=att");
+    expect(contactSearch.status).toBe(200);
+    expect(await json<{ contacts: Array<{ name: string; phone: string }> }>(contactSearch)).toMatchObject({
+      contacts: [{ name: "Attendee", phone: attendeePhone }]
+    });
+
     // Re-adding a contact should produce a useful conflict instead of a raw
     // database uniqueness error (common when contacts contain duplicates).
     const duplicate = await api(server, organizerJar, `/bills/${billId}/participants`, {

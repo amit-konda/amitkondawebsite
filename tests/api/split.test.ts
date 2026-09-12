@@ -278,6 +278,9 @@ describe("Split organizer and settlement flow", () => {
     expect(participant!.invitationStatus).toBe("failed");
     const organizerToken = await createSplitSession(participant!.invitedByUserId);
     const organizerJar = new Map([[SPLIT_SESSION_COOKIE, organizerToken]]);
+    // The invitation recovery action is only available while the split is
+    // active; this test explicitly models that organizer state.
+    await tdb.db.update(splitBills).set({ status: "open" }).where(eq(splitBills.id, participant!.billId));
     const retry = await api(server, organizerJar, `/participants/${participant!.id}/retry-invite`, { method: "POST" });
     expect(retry.status).toBe(200);
     const [retried] = await tdb.db.select().from(splitParticipants).where(eq(splitParticipants.id, participant!.id));

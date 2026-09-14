@@ -82,6 +82,7 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/bills", createBill);
   route(router, "get", "/bills/:billId", getBill);
   route(router, "patch", "/bills/:billId", patchBill);
+  route(router, "delete", "/bills/:billId", deleteBill);
   route(router, "post", "/bills/:billId/items", createItem);
   route(router, "patch", "/items/:itemId", patchItem);
   route(router, "delete", "/items/:itemId", deleteItem);
@@ -315,6 +316,13 @@ async function patchBill(ctx: Ctx) {
   return { bill };
 }
 
+async function deleteBill(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const bill = await organizerBill(ctx.params.billId!, user.id);
+  await db.delete(splitBills).where(eq(splitBills.id, bill.id));
+  return { ok: true };
+}
+
 async function scanReceipt(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const bill = await organizerBill(ctx.params.billId!, user.id);
@@ -368,9 +376,7 @@ async function deleteItem(ctx: Ctx) {
 
 async function addParticipant(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const bill = await organizerBill(ctx.params.billId!, user.id);
-  // Participants are invited as part of publish. Keeping this review-only
-  // avoids creating a post-publish row that never receives an invitation.
-  if (bill.status !== "review") throw conflict("Add everyone before publishing this split.");
+  if (bill.status === "settled") throw conflict("Settled receipts can’t have new diners added.");
   const input = ParticipantSchema.parse(ctx.body); const phone = normalizePhone(input.phone); const id = randomUUID();
   const phoneLookupHash = phoneHash(phone);
   const [existingParticipant] = await db.select({ id: splitParticipants.id }).from(splitParticipants).where(and(
@@ -388,6 +394,13 @@ async function addParticipant(ctx: Ctx) {
   // unique index remains the authority when two tabs add the same diner at
   // the same time.
   if (!participant) throw conflict("That person is already on this split.");
+  if (bill.status !== "review") {
+    await enqueueSms(db, { eventType: "invitation", billId: bill.id, participantId: participant.id,
+      phoneEncrypted: participant.invitedPhoneEncrypted, phoneHash: participant.invitedPhoneLookupHash,
+      billVersion: bill.version, idempotencyKey: `invitation:${participant.id}:${bill.version}` });
+    await db.update(splitParticipants).set({ invitationStatus: "queued" }).where(eq(splitParticipants.id, participant.id));
+    await processSmsOutbox(db, 10);
+  }
   return { participant: publicParticipant(participant!), inviteToken: token };
 }
 

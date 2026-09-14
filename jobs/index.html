@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/jobs/jobs.css">
 </head>
 <body>
-  <header class="topbar"><a href="/" aria-label="Back to amitkonda.com">← amitkonda.com</a><span>180 Jobs</span><button id="logout" class="text-button" hidden>Log out</button></header>
+  <header class="topbar"><a href="/" aria-label="Back to amitkonda.com">← amitkonda.com</a><span>180 Member Hub</span><button id="logout" class="text-button" hidden>Log out</button></header>
   <main>
     <section id="gate" class="gate card" hidden>
       <p class="eyebrow">For 180 members</p><h1>Good opportunities travel fast.</h1>
@@ -20,7 +20,10 @@
       <p class="eyebrow">One quick detail</p><h1>Who are you?</h1><p>Your name is shown on jobs you share, so members know who can make the connection.</p>
       <form id="identity-form"><label for="member-search">Your name</label><div class="row"><input id="member-search" list="member-options" autocomplete="off" placeholder="Start typing your name…" required><datalist id="member-options"></datalist><input id="member-id" type="hidden"><button class="primary">Continue</button></div><p class="error" id="identity-error"></p></form>
     </section>
-    <section id="board" hidden>
+    <nav id="hub-tabs" class="hub-tabs" aria-label="180 member tools" hidden>
+      <button class="hub-tab is-active" data-hub-tab="jobs">Jobs</button><button class="hub-tab" data-hub-tab="alumni">Alumni</button><button class="hub-tab" data-hub-tab="case-prep">Case Prep</button><button class="hub-tab" data-hub-tab="attendance">Attendance</button><button class="hub-tab" data-hub-tab="schedule">Schedule</button>
+    </nav>
+    <section id="board" class="hub-panel" data-hub-panel="jobs" hidden>
       <div class="hero"><div><p class="eyebrow">180 opportunity board</p><h1>Open doors for each other.</h1><p>Share a role you found or a connection you can make. Every post stays inside the group.</p></div><button id="show-form" class="primary">+ Share a job</button></div>
       <p id="notice" class="notice" role="status"></p>
       <section id="job-form-card" class="card form-card" hidden>
@@ -34,6 +37,25 @@
         </form>
       </section>
       <section><div class="list-head"><div><h2>Opportunities</h2><p id="count" class="muted"></p></div><select id="type-filter" aria-label="Filter job type"><option value="all">All job types</option><option value="software_engineering">Software engineering</option><option value="data_ai">Data & AI</option><option value="product">Product</option><option value="design">Design</option><option value="finance">Finance</option><option value="consulting">Consulting</option><option value="sales">Sales</option><option value="marketing">Marketing</option><option value="operations">Operations</option><option value="legal_policy">Legal & policy</option><option value="other">Other</option></select></div><div id="jobs" class="jobs" aria-live="polite"></div></section>
+    </section>
+    <section class="hub-panel" data-hub-panel="alumni" hidden>
+      <div class="panel-hero"><p class="eyebrow">Alumni network</p><h1>Find the person who’s been there.</h1><p>Mock directory for warm introductions, candid advice, and city-specific context.</p></div>
+      <div class="search-shell"><input type="search" placeholder="Search by name, company, industry, or city…" aria-label="Search alumni"><button class="primary">Search</button></div>
+      <div class="profile-grid"><article class="profile-card card"><span class="avatar-lg">PS</span><div><h3>Priyanka Parkar</h3><p>Product · Microsoft</p><small>Austin · Open to coffee chats</small></div><button class="secondary">Request intro</button></article><article class="profile-card card"><span class="avatar-lg">DR</span><div><h3>Diego Vares</h3><p>Strategy · Deloitte</p><small>Dallas · Recruiting advice</small></div><button class="secondary">Request intro</button></article><article class="profile-card card"><span class="avatar-lg">EZ</span><div><h3>Esther Zhou</h3><p>Data Science · Capital One</p><small>New York · Referrals available</small></div><button class="secondary">Request intro</button></article><article class="profile-card card"><span class="avatar-lg">KM</span><div><h3>Kartik Mathur</h3><p>Finance · JPMorgan</p><small>Houston · Industry questions</small></div><button class="secondary">Request intro</button></article></div>
+    </section>
+    <section class="hub-panel" data-hub-panel="case-prep" hidden>
+      <div class="panel-hero"><p class="eyebrow">Case prep</p><h1>Practice with purpose.</h1><p>Mock pairing flow that matches availability, target firms, and case experience.</p></div>
+      <div class="two-col"><div class="card"><h2>Find a partner</h2><label>Case type<select><option>Any case type</option><option>Market sizing</option><option>Profitability</option><option>Market entry</option></select></label><label>Availability<select><option>This week</option><option>Tonight</option><option>This weekend</option></select></label><button class="primary wide">Auto-pair me</button></div><div class="card"><h2>Your next session</h2><div class="match-card"><span class="avatar-lg">SB</span><div><b>Simran Bajwa</b><small>Market sizing · Intermediate</small></div></div><p class="session-time">Tuesday, 7:30 PM · 45 minutes</p><div class="button-row"><button class="secondary">Open case pack</button><button class="primary">Join room</button></div></div></div>
+      <div class="card resource-card"><div class="list-head"><div><h2>Resource library</h2><p class="muted">Curated mock materials from members</p></div><button class="secondary">View all</button></div><div class="resource-list"><span><b>Case interview fundamentals</b><small>Guide · 12 min</small></span><span><b>30 market-sizing drills</b><small>Practice set · Beginner</small></span><span><b>BCG-style exhibit pack</b><small>Slides · Advanced</small></span></div></div>
+    </section>
+    <section class="hub-panel" data-hub-panel="attendance" hidden>
+      <div class="panel-hero"><p class="eyebrow">Auto-attendance</p><h1>Show up without the spreadsheet.</h1><p>Mock RSVP dashboard with reminders and attendance captured automatically.</p></div>
+      <div class="stats-grid"><article class="stat card"><strong>4</strong><span>Events this month</span></article><article class="stat card"><strong>87%</strong><span>Your attendance</span></article><article class="stat card"><strong>28</strong><span>Members active</span></article></div>
+      <div class="card"><h2>Upcoming events</h2><div class="event-list"><article><time><b>18</b><small>SEP</small></time><div><h3>Fall kickoff dinner</h3><p>6:30 PM · Scholz Garten</p></div><span class="rsvp yes">Going</span></article><article><time><b>22</b><small>SEP</small></time><div><h3>Consulting recruiting panel</h3><p>7:00 PM · GSB 2.126</p></div><span class="rsvp">RSVP</span></article><article><time><b>27</b><small>SEP</small></time><div><h3>Alumni coffee chats</h3><p>10:00 AM · Rowling Hall</p></div><span class="rsvp">RSVP</span></article></div></div>
+    </section>
+    <section class="hub-panel" data-hub-panel="schedule" hidden>
+      <div class="panel-hero"><p class="eyebrow">180 schedule</p><h1>One calendar for the whole community.</h1><p>Mock weekly view for workshops, recruiting, office hours, and socials.</p></div>
+      <div class="calendar card"><div class="calendar-head"><button class="secondary">←</button><h2>September 14–20</h2><button class="secondary">→</button></div><div class="week-grid"><div><b>MON 14</b><span class="calendar-event green">Officer office hours<small>4:00 PM</small></span></div><div><b>TUE 15</b><span class="calendar-event blue">Case prep pairs<small>7:30 PM</small></span></div><div><b>WED 16</b><span class="calendar-event gold">Resume workshop<small>6:00 PM</small></span></div><div><b>THU 17</b></div><div><b>FRI 18</b><span class="calendar-event green">Fall kickoff<small>6:30 PM</small></span></div></div></div>
     </section>
   </main>
   <script src="/jobs/jobs.js"></script>

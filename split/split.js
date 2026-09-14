@@ -312,6 +312,18 @@ function bindEditor(b) {
   const nameInput = document.querySelector("#person-name"), phoneInput = document.querySelector("#person-phone"), suggestions = document.querySelector("#contact-suggestions");
   let searchTimer, searchVersion = 0, activeSuggestion = -1;
   const setSuggestionsOpen = open => { suggestions.hidden = !open; nameInput.setAttribute("aria-expanded", String(open)); if (!open) { activeSuggestion = -1; nameInput.removeAttribute("aria-activedescendant"); } };
+  suggestions?.addEventListener("click", event => {
+    const target = event.target.closest('[role="option"]');
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const chosenName = target.dataset.name || "", chosenPhone = target.dataset.phone || "", key = phoneKey(chosenPhone);
+    const duplicate = [...people.querySelectorAll(".person-phone-value")].some(input => phoneKey(input.value) === key);
+    if (key.length !== 10) return notice("That contact does not have a usable phone number.", "error");
+    if (duplicate) return notice("That person is already on this split.", "error");
+    people.insertAdjacentHTML("beforeend", personEditor({ name: chosenName, phone: chosenPhone }));
+    nameInput.value = ""; phoneInput.value = ""; setSuggestionsOpen(false); notice(`${chosenName} added.`);
+  });
   nameInput?.addEventListener("input", () => {
     clearTimeout(searchTimer);
     const version = ++searchVersion;

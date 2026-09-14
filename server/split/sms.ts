@@ -57,6 +57,26 @@ export async function checkPhoneVerification(phone: string, code: string): Promi
 
 export async function sendSms(toInput: string, message: string, statusCallbackUrl?: string): Promise<SmsResult> {
   const to = normalizePhone(toInput);
+  // Twilio is the production default. Keep Telnyx as a fallback so an
+  // existing Telnyx-only deployment can still send without a migration.
+  if (isTwilioMessagingConfigured()) {
+    const e = splitEnv();
+    const values: Record<string, string> = { To: to, From: e.TWILIO_MESSAGING_FROM!, Body: message };
+    if (statusCallbackUrl) values.StatusCallback = statusCallbackUrl;
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(e.TWILIO_ACCOUNT_SID!)}/Messages.json`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${twilioAuth(e)}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(values),
+      signal: AbortSignal.timeout(15_000)
+    });
+    if (!response.ok) {
+      console.error("Twilio Messaging failure", response.status);
+      throw new ApiError(502, "sms_failed", "Could not send the text message.");
+    }
+    const result = await response.json() as { sid?: string; status?: string };
+    if (!result.sid) throw new ApiError(502, "sms_failed", "Could not send the text message.");
+    return { providerId: result.sid, status: result.status ?? "queued" };
+  }
   if (isTelnyxMessagingConfigured()) {
     const e = splitEnv();
     const callback = statusCallbackUrl?.replace(/\/webhooks\/twilio\//g, "/webhooks/telnyx/");
@@ -78,28 +98,10 @@ export async function sendSms(toInput: string, message: string, statusCallbackUr
     if (!result.data?.id) throw new ApiError(502, "sms_failed", "Could not send the text message.");
     return { providerId: result.data.id, status: result.data.status ?? "queued" };
   }
-  if (!isTwilioMessagingConfigured()) {
-    if (splitDevMode() || process.env.NODE_ENV === "test") {
-      return { providerId: `dev-${createHmac("sha256", "split-dev").update(`${to}:${message}`).digest("hex").slice(0, 24)}`, status: "sent" };
-    }
-    throw unavailable();
+  if (splitDevMode() || process.env.NODE_ENV === "test") {
+    return { providerId: `dev-${createHmac("sha256", "split-dev").update(`${to}:${message}`).digest("hex").slice(0, 24)}`, status: "sent" };
   }
-  const e = splitEnv();
-  const values: Record<string, string> = { To: to, From: e.TWILIO_MESSAGING_FROM!, Body: message };
-  if (statusCallbackUrl) values.StatusCallback = statusCallbackUrl;
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(e.TWILIO_ACCOUNT_SID!)}/Messages.json`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${twilioAuth(e)}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(values),
-    signal: AbortSignal.timeout(15_000)
-  });
-  if (!response.ok) {
-    console.error("Twilio Messaging failure", response.status);
-    throw new ApiError(502, "sms_failed", "Could not send the text message.");
-  }
-  const result = await response.json() as { sid?: string; status?: string };
-  if (!result.sid) throw new ApiError(502, "sms_failed", "Could not send the text message.");
-  return { providerId: result.sid, status: result.status ?? "queued" };
+  throw unavailable();
 }
 
 /** Parse Twilio's application/x-www-form-urlencoded webhook body. */

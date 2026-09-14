@@ -375,7 +375,7 @@ async function saveDraft(event,b) {
   const payload = { version:b.version, merchantName:form.elements.merchant.value.trim(), purchasedAt:form.elements.date.value, subtotalCents:parseCents(form.elements.subtotal.value),taxCents:parseCents(form.elements.tax.value),tipCents:parseCents(form.elements.tip.value),feeCents:Number(b.feeCents||0),discountCents:Number(b.discountCents||0) }; payload.totalCents = payload.subtotalCents+payload.taxCents+payload.tipCents+payload.feeCents-payload.discountCents;
   if (!items.length || items.some(x => !x.description || x.lineTotalCents < 0)) return notice("Check each item name and price.","error");
   if ([payload.subtotalCents, payload.taxCents, payload.tipCents, payload.feeCents, payload.discountCents].some(value => value < 0)) return notice("Receipt amounts can’t be negative.", "error");
-  const phoneKeys = participants.map(p => p.phone.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, ""));
+  const phoneKeys = participants.filter(p => !p.id || p.phone.trim()).map(p => p.phone.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, ""));
   if (phoneKeys.some((phone, index) => phone.length !== 10 || phoneKeys.indexOf(phone) !== index)) return notice("Each person needs a unique 10-digit phone number.", "error");
   setBusy(button,true,"Saving…");
   try { if(state.demo) state.draft={...b,...payload,items,participants}; else { const updated=await api(`/bills/${encodeURIComponent(b.id)}`,{method:"PATCH",body:payload}); await saveItemsAndPeople(b,items,participants); const fresh=await api(`/bills/${encodeURIComponent(b.id)}`);state.draft=normalizeBill(fresh); if(!state.draft.version)state.draft.version=(updated.bill||updated).version; } previewBill(); }
@@ -390,6 +390,9 @@ async function saveItemsAndPeople(b,items,participants) {
   for(const person of participants) {
     const previous = person.id ? previousParticipants.get(String(person.id)) : null;
     if (previous?.userId === b.organizerUserId) continue;
+    // Existing invitees may only expose a masked phone number. Preserve
+    // their stored phone when no editable number is present.
+    if (previous && !person.phone.trim()) continue;
     const body = { displayName: person.name, phone: person.phone };
     calls.push(person.id
       ? api(`/participants/${encodeURIComponent(person.id)}`, { method: "PATCH", body })

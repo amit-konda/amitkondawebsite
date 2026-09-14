@@ -116,7 +116,7 @@ function authView(step = "phone") {
           <button class="demo-link" type="button" data-action="change-phone">Use a different number</button>
         </form>` : `<p class="eyebrow">Welcome to Split</p><h2>Sign in to start splitting</h2><p class="muted">Enter your phone number and we’ll text you a secure code. It takes a few seconds.</p>
         <form id="phone-form" class="stack">
-          <label class="field"><span>Your name</span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex" required autofocus></label>
+          <label class="field"><span>Your name <em class="muted small">(new accounts only)</em></span><input class="input" name="name" autocomplete="name" maxlength="80" placeholder="Alex" autofocus></label>
           <label class="field"><span>Phone number</span><span class="phone-row"><input class="input country-code" value="+1" aria-label="Country code" readonly><input class="input" name="phone" type="tel" autocomplete="tel-national" inputmode="tel" placeholder="(512) 555-0148" required></span></label>
           <button class="btn btn-primary btn-block" type="submit">Continue</button>
           <p class="fine-print">No verification step for now. By continuing, you agree to receive transactional texts about bills you join. Message and data rates may apply. Reply STOP to opt out.</p>
@@ -146,7 +146,6 @@ async function resendCode(event) {
 async function startAuth(event) {
   event.preventDefault(); const form = event.currentTarget; const button = form.querySelector("button[type=submit]");
   const name = String(new FormData(form).get("name") || "").trim();
-  if (!name) return notice("Enter your name to continue.", "error");
   let digits = String(new FormData(form).get("phone") || "").replace(/\D/g, "");
   // Accept the common pasted +1 format even though the country code has its
   // own field in the compact phone form.
@@ -155,7 +154,8 @@ async function startAuth(event) {
   state.phone = `+1${digits}`;
   setBusy(button, true, "Opening Split…");
   try {
-    const result = await api("/auth/continue", { method: "POST", body: { phone: state.phone, displayName: name } });
+    const result = await api("/auth/continue", { method: "POST", body: { phone: state.phone, ...(name ? { displayName: name } : {}) } });
+    if (result.needsName) { notice("New number—enter your name to create your account.", "error"); document.querySelector('#phone-form input[name="name"]')?.focus(); setBusy(button, false); return; }
     state.me = result.user || result.me || result; notice("You’re in.");
     const invite = sessionStorage.getItem("split_invite"); go(invite ? `invite/${invite}` : "dashboard");
   }

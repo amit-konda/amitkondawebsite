@@ -28,7 +28,7 @@ const uuid = z.string().uuid();
 const cents = z.number().int().min(0).max(100_000_000);
 const StartAuthSchema = z.object({ phone: z.string().min(7).max(40) });
 const VerifyAuthSchema = StartAuthSchema.extend({ code: z.string().min(4).max(10), displayName: z.string().trim().min(1).max(80).optional() });
-const ContinueAuthSchema = StartAuthSchema.extend({ displayName: z.string().trim().min(1).max(80) });
+const ContinueAuthSchema = StartAuthSchema.extend({ displayName: z.string().trim().min(1).max(80).optional() });
 const LinkPhoneSchema = z.object({ phone: z.string().min(7).max(40) });
 const LinkPhoneVerifySchema = LinkPhoneSchema.extend({ code: z.string().min(4).max(10) });
 const BillSchema = z.object({
@@ -114,9 +114,10 @@ async function continueAuth(ctx: Ctx) {
   const phone = normalizePhone(input.phone);
   const lookup = phoneHash(phone);
   let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  if (!user && !input.displayName) return { needsName: true };
   if (!user) {
     [user] = await db.insert(splitUsers).values({
-      displayName: input.displayName, phoneEncrypted: encryptPhone(phone), phoneLookupHash: lookup, smsConsentAt: new Date()
+      displayName: input.displayName!, phoneEncrypted: encryptPhone(phone), phoneLookupHash: lookup, smsConsentAt: new Date()
     }).onConflictDoNothing({ target: splitUsers.phoneLookupHash }).returning();
     if (!user) [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
   }

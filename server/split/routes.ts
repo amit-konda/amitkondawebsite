@@ -95,6 +95,7 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/participants/:participantId/allocations", updateAllocations);
   route(router, "post", "/participants/:participantId/selection/complete", completeSelection);
   route(router, "post", "/bills/:billId/lock", lockBill);
+  route(router, "post", "/bills/:billId/even-split", evenSplitBill);
   route(router, "post", "/participants/:participantId/report-paid", reportPaid);
   route(router, "post", "/participants/:participantId/payment-status", setPaymentStatus);
   route(router, "post", "/participants/:participantId/retry-invite", retryInvitation);
@@ -568,6 +569,23 @@ async function lockBill(ctx: Ctx) {
   });
   const delivery = await processSmsOutbox(db, 50);
   return { allocations: finals, delivery };
+}
+
+async function evenSplitBill(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const bill = await organizerBill(ctx.params.billId!, user.id);
+  if (!["review", "open"].includes(bill.status)) throw conflict("This expense is no longer editable.");
+  const participants = await db.select().from(splitParticipants).where(eq(splitParticipants.billId, bill.id));
+  const items = await db.select().from(splitItems).where(eq(splitItems.billId, bill.id));
+  if (!participants.length || items.length !== 1) throw conflict("An even split needs everyone and one expense amount.");
+  const item = items[0]!;
+  await db.transaction(async (tx) => {
+    if (bill.status === "review") await tx.update(splitBills).set({ status: "open" }).where(eq(splitBills.id, bill.id));
+    await tx.delete(splitItemAllocations).where(eq(splitItemAllocations.itemId, item.id));
+    await tx.insert(splitItemAllocations).values(participants.map((participant) => ({ itemId: item.id, participantId: participant.id, kind: "equal_share" as const, shareUnits: 1, amountCents: 0 })));
+    await tx.update(splitParticipants).set({ selectionStatus: "complete", selectionCompletedAt: new Date() }).where(eq(splitParticipants.billId, bill.id));
+  });
+  return lockBill(ctx);
 }
 
 async function reportPaid(ctx: Ctx) {

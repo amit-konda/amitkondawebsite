@@ -236,6 +236,17 @@ async function contacts(ctx: Ctx) {
     if (seen.has(row.phoneHash)) continue;
     try { results.push({ name: row.displayName, phone: decryptPhone(row.phoneEncrypted) }); seen.add(row.phoneHash); } catch (_) { /* ignore malformed legacy contact */ }
   }
+  // Also surface existing Split accounts so organizers can add a diner by
+  // name alone; the phone field remains a fallback for brand-new guests.
+  const users = await db.select({ displayName: splitUsers.displayName, phoneEncrypted: splitUsers.phoneEncrypted, phoneHash: splitUsers.phoneLookupHash })
+    .from(splitUsers).where(and(
+      eq(splitUsers.status, "active"),
+      query ? ilike(splitUsers.displayName, `%${query.replace(/[%_]/g, "\\$&")}%`) : undefined
+    )).orderBy(asc(splitUsers.displayName)).limit(30);
+  for (const row of users) {
+    if (!row.phoneHash || !row.phoneEncrypted || seen.has(row.phoneHash)) continue;
+    try { results.push({ name: row.displayName, phone: decryptPhone(row.phoneEncrypted) }); seen.add(row.phoneHash); } catch (_) { /* ignore malformed legacy account */ }
+  }
   return { contacts: results };
 }
 

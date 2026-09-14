@@ -12,8 +12,7 @@ import {
   splitSessions,
   splitUsers
 } from "../db/schema.js";
-import { ApiError, badRequest, conflict, forbidden, notFound, rateLimited } from "../errors.js";
-import { checkRateLimit, clientKey } from "../rate-limit.js";
+import { ApiError, badRequest, conflict, forbidden, notFound } from "../errors.js";
 import type { Ctx, Handler, Router } from "../router.js";
 import { allocateLargestRemainder, allocateReceiptTotals } from "./allocation.js";
 import { optionalSplitUser, requireSplitUser, createSplitSession, revokeSplitSession, setSplitSessionCookie, googleConfigured, googleStartUrl, verifyGoogleState, googleCallback } from "./auth.js";
@@ -25,13 +24,11 @@ import { extractReceipt } from "./ocr.js";
 import { enqueueSms, processSmsOutbox } from "./outbox.js";
 import { splitEnv } from "./env.js";
 
-const SPLIT_AUTH_IP = { scope: "split_auth_ip", limit: 12, windowMs: 15 * 60_000, failClosed: true } as const;
-const SPLIT_AUTH_PHONE = { scope: "split_auth_phone", limit: 6, windowMs: 15 * 60_000, failClosed: true } as const;
-
 const uuid = z.string().uuid();
 const cents = z.number().int().min(0).max(100_000_000);
 const StartAuthSchema = z.object({ phone: z.string().min(7).max(40) });
 const VerifyAuthSchema = StartAuthSchema.extend({ code: z.string().min(4).max(10), displayName: z.string().trim().min(1).max(80).optional() });
+const ContinueAuthSchema = StartAuthSchema.extend({ displayName: z.string().trim().min(1).max(80) });
 const LinkPhoneSchema = z.object({ phone: z.string().min(7).max(40) });
 const LinkPhoneVerifySchema = LinkPhoneSchema.extend({ code: z.string().min(4).max(10) });
 const BillSchema = z.object({
@@ -72,6 +69,7 @@ function route(router: Router, method: "get" | "post" | "patch" | "delete", path
 
 export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/auth/start", startAuth);
+  route(router, "post", "/auth/continue", continueAuth);
   route(router, "post", "/auth/verify", verifyAuth);
   route(router, "post", "/auth/logout", logout);
   route(router, "get", "/auth/status", authStatus);
@@ -84,6 +82,7 @@ export function registerSplitRoutes(router: Router): void {
   route(router, "post", "/bills", createBill);
   route(router, "get", "/bills/:billId", getBill);
   route(router, "patch", "/bills/:billId", patchBill);
+  route(router, "delete", "/bills/:billId", deleteBill);
   route(router, "post", "/bills/:billId/items", createItem);
   route(router, "patch", "/items/:itemId", patchItem);
   route(router, "delete", "/items/:itemId", deleteItem);
@@ -104,20 +103,31 @@ export function registerSplitRoutes(router: Router): void {
 async function startAuth(ctx: Ctx) {
   const { phone } = StartAuthSchema.parse(ctx.body);
   const normalized = normalizePhone(phone);
-  const [perIp, perPhone] = await Promise.all([
-    checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req)),
-    checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(normalized).slice(0, 32))
-  ]);
-  if (!perIp.ok || !perPhone.ok) throw rateLimited(Math.max(perIp.ok ? 0 : perIp.retryAfterSec, perPhone.ok ? 0 : perPhone.retryAfterSec));
   await startPhoneVerification(normalized);
   return { ok: true };
+}
+
+/** Primary low-friction path: account access does not require phone verification. */
+async function continueAuth(ctx: Ctx) {
+  const input = ContinueAuthSchema.parse(ctx.body);
+  const phone = normalizePhone(input.phone);
+  const lookup = phoneHash(phone);
+  let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  if (!user) {
+    [user] = await db.insert(splitUsers).values({
+      displayName: input.displayName, phoneEncrypted: encryptPhone(phone), phoneLookupHash: lookup, smsConsentAt: new Date()
+    }).onConflictDoNothing({ target: splitUsers.phoneLookupHash }).returning();
+    if (!user) [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
+  }
+  if (!user || user.status !== "active") throw new ApiError(403, "account_disabled", "This account is unavailable.");
+  const token = await createSplitSession(user.id);
+  setSplitSessionCookie(ctx, token);
+  return { user: { id: user.id, displayName: user.displayName, hasPhone: Boolean(user.phoneLookupHash) } };
 }
 
 async function verifyAuth(ctx: Ctx) {
   const input = VerifyAuthSchema.parse(ctx.body);
   const phone = normalizePhone(input.phone);
-  const limited = await checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req));
-  if (!limited.ok) throw rateLimited(limited.retryAfterSec);
   if (!await checkPhoneVerification(phone, input.code)) throw new ApiError(401, "invalid_code", "Invalid or expired verification code.");
   const lookup = phoneHash(phone);
   let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
@@ -137,8 +147,6 @@ async function linkPhoneStart(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const { phone } = LinkPhoneSchema.parse(ctx.body);
   const normalized = normalizePhone(phone);
-  const limited = await checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(normalized).slice(0, 32));
-  if (!limited.ok) throw rateLimited(limited.retryAfterSec);
   const [existing] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneHash(normalized))).limit(1);
   if (existing && existing.id !== user.id) throw conflict("That phone number is already linked to another account.");
   await startPhoneVerification(normalized);
@@ -229,6 +237,17 @@ async function contacts(ctx: Ctx) {
     if (seen.has(row.phoneHash)) continue;
     try { results.push({ name: row.displayName, phone: decryptPhone(row.phoneEncrypted) }); seen.add(row.phoneHash); } catch (_) { /* ignore malformed legacy contact */ }
   }
+  // Also surface existing Split accounts so organizers can add a diner by
+  // name alone; the phone field remains a fallback for brand-new guests.
+  const users = await db.select({ displayName: splitUsers.displayName, phoneEncrypted: splitUsers.phoneEncrypted, phoneHash: splitUsers.phoneLookupHash })
+    .from(splitUsers).where(and(
+      eq(splitUsers.status, "active"),
+      query ? ilike(splitUsers.displayName, `%${query.replace(/[%_]/g, "\\$&")}%`) : undefined
+    )).orderBy(asc(splitUsers.displayName)).limit(30);
+  for (const row of users) {
+    if (!row.phoneHash || !row.phoneEncrypted || seen.has(row.phoneHash)) continue;
+    try { results.push({ name: row.displayName, phone: decryptPhone(row.phoneEncrypted) }); seen.add(row.phoneHash); } catch (_) { /* ignore malformed legacy account */ }
+  }
   return { contacts: results };
 }
 
@@ -297,6 +316,13 @@ async function patchBill(ctx: Ctx) {
   return { bill };
 }
 
+async function deleteBill(ctx: Ctx) {
+  const user = await requireSplitUser(ctx);
+  const bill = await organizerBill(ctx.params.billId!, user.id);
+  await db.delete(splitBills).where(eq(splitBills.id, bill.id));
+  return { ok: true };
+}
+
 async function scanReceipt(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const bill = await organizerBill(ctx.params.billId!, user.id);
@@ -350,9 +376,7 @@ async function deleteItem(ctx: Ctx) {
 
 async function addParticipant(ctx: Ctx) {
   const user = await requireSplitUser(ctx); const bill = await organizerBill(ctx.params.billId!, user.id);
-  // Participants are invited as part of publish. Keeping this review-only
-  // avoids creating a post-publish row that never receives an invitation.
-  if (bill.status !== "review") throw conflict("Add everyone before publishing this split.");
+  if (bill.status === "settled") throw conflict("Settled receipts can’t have new diners added.");
   const input = ParticipantSchema.parse(ctx.body); const phone = normalizePhone(input.phone); const id = randomUUID();
   const phoneLookupHash = phoneHash(phone);
   const [existingParticipant] = await db.select({ id: splitParticipants.id }).from(splitParticipants).where(and(
@@ -370,6 +394,13 @@ async function addParticipant(ctx: Ctx) {
   // unique index remains the authority when two tabs add the same diner at
   // the same time.
   if (!participant) throw conflict("That person is already on this split.");
+  if (bill.status !== "review") {
+    await enqueueSms(db, { eventType: "invitation", billId: bill.id, participantId: participant.id,
+      phoneEncrypted: participant.invitedPhoneEncrypted, phoneHash: participant.invitedPhoneLookupHash,
+      billVersion: bill.version, idempotencyKey: `invitation:${participant.id}:${bill.version}` });
+    await db.update(splitParticipants).set({ invitationStatus: "queued" }).where(eq(splitParticipants.id, participant.id));
+    await processSmsOutbox(db, 10);
+  }
   return { participant: publicParticipant(participant!), inviteToken: token };
 }
 

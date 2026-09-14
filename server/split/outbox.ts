@@ -182,7 +182,7 @@ async function renderSms(db: SplitDb, delivery: typeof splitSmsDeliveries.$infer
     return `Split reminder: You still owe ${payerName} ${amount} for ${merchant}.${payment} ${app}/split Reply PAID after sending payment.`;
   }
   if (delivery.eventType === "payment_clarification") {
-    return `You have multiple unpaid dinners. Choose the one you paid: ${app}/split`;
+    return `You have multiple unpaid dinners. Open Split to choose the one you paid: ${app}/split Reply STOP to unsubscribe.`;
   }
   return `Your share for ${merchant} is ${amount}.${payment} ${app}/split Reply PAID after sending payment.`;
 }

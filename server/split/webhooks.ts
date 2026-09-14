@@ -29,7 +29,7 @@ async function statusWebhook(ctx: Ctx) {
     const [delivery] = await tx.select().from(splitSmsDeliveries).where(eq(splitSmsDeliveries.providerMessageId, sid)).limit(1);
     if (!delivery) return;
     await tx.update(splitWebhookEvents).set({ deliveryId: delivery.id }).where(eq(splitWebhookEvents.id, inserted[0]!.id));
-    if (status && statusRank(status) >= statusRank(delivery.status)) {
+    if (status && shouldAdvanceSmsStatus(delivery.status, status)) {
       await tx.update(splitSmsDeliveries).set({
         status,
         deliveredAt: status === "delivered" ? new Date() : undefined,
@@ -81,6 +81,9 @@ async function inboundWebhook(ctx: Ctx) {
     });
     return twiml(ctx);
   }
+  if (body === "HELP") {
+    return twiml(ctx, "Split helps your dinner group claim receipt items and settle up. Open your Split link for details. Reply STOP to unsubscribe.");
+  }
   if (!/^PAID(?:\s+[A-Z0-9-]{2,12})?$/.test(body)) return twiml(ctx);
   const outstanding = await db.select({ participant: splitParticipants, billStatus: splitBills.status })
     .from(splitParticipants)
@@ -113,12 +116,17 @@ async function inboundWebhook(ctx: Ctx) {
   return twiml(ctx);
 }
 
-function twiml(ctx: Ctx): null {
+function twiml(ctx: Ctx, message?: string): null {
   ctx.res.statusCode = 200;
   ctx.res.setHeader("Content-Type", "application/xml; charset=utf-8");
   ctx.res.setHeader("Cache-Control", "no-store");
-  ctx.res.end("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>");
+  const body = message ? `<Message>${escapeXml(message)}</Message>` : "";
+  ctx.res.end(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
   return null;
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/[<>&'\"]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '\"': "&quot;" })[character] ?? character);
 }
 
 function verify(ctx: Ctx): Record<string, string> {
@@ -146,4 +154,11 @@ function statusRank(status: string): number {
   if (status === "delivered") return 3;
   if (status === "sent") return 2;
   return 1;
+}
+
+/** Carrier callbacks can arrive out of order; once terminal, never regress. */
+export function shouldAdvanceSmsStatus(current: string, next: string): boolean {
+  const terminal = new Set(["delivered", "failed", "undelivered", "dead_letter"]);
+  if (terminal.has(current)) return current === next;
+  return statusRank(next) >= statusRank(current);
 }

@@ -1,4 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { shouldAdvanceSmsStatus } from "../../server/split/webhooks.js";
+
+describe("Split Twilio delivery ordering", () => {
+  it("never regresses a terminal delivery state", () => {
+    expect(shouldAdvanceSmsStatus("sent", "delivered")).toBe(true);
+    expect(shouldAdvanceSmsStatus("delivered", "failed")).toBe(false);
+    expect(shouldAdvanceSmsStatus("failed", "delivered")).toBe(false);
+    expect(shouldAdvanceSmsStatus("delivered", "delivered")).toBe(true);
+  });
+});
 
 describe("Split Twilio product configuration", () => {
   afterEach(() => {

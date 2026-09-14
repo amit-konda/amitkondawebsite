@@ -70,7 +70,8 @@ export async function sendSms(toInput: string, message: string, statusCallbackUr
       signal: AbortSignal.timeout(15_000)
     });
     if (!response.ok) {
-      console.error("Telnyx Messaging failure", response.status);
+      const detail = await response.text().catch(() => "");
+      console.error("Telnyx Messaging failure", response.status, detail.slice(0, 500));
       throw new ApiError(502, "sms_failed", "Could not send the text message.");
     }
     const result = await response.json() as { data?: { id?: string; status?: string } };

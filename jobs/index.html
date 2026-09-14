@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>180 Jobs</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/jobs/jobs.css">
+</head>
+<body>
+  <header class="topbar"><a href="/" aria-label="Back to amitkonda.com">← amitkonda.com</a><span>180 Jobs</span><button id="logout" class="text-button" hidden>Log out</button></header>
+  <main>
+    <section id="gate" class="gate card" hidden>
+      <p class="eyebrow">For 180 members</p><h1>Good opportunities travel fast.</h1>
+      <p>Enter the group password to see and share jobs from the 180 community.</p>
+      <form id="login-form"><label for="password">Group password</label><div class="row"><input id="password" type="password" autocomplete="current-password" required><button class="primary">Enter</button></div><p class="error" id="login-error"></p></form>
+    </section>
+    <section id="identity" class="gate card" hidden>
+      <p class="eyebrow">One quick detail</p><h1>Who are you?</h1><p>Your name is shown on jobs you share, so members know who can make the connection.</p>
+      <form id="identity-form"><label for="member">Your name</label><div class="row"><select id="member" required><option value="">Select your name</option></select><button class="primary">Continue</button></div><p class="error" id="identity-error"></p></form>
+    </section>
+    <section id="board" hidden>
+      <div class="hero"><div><p class="eyebrow">180 opportunity board</p><h1>Open doors for each other.</h1><p>Share a role you found or a connection you can make. Every post stays inside the group.</p></div><button id="show-form" class="primary">+ Share a job</button></div>
+      <p id="notice" class="notice" role="status"></p>
+      <section id="job-form-card" class="card form-card" hidden>
+        <div class="section-head"><div><h2>Share an opportunity</h2><p>Required: role, application link, company, and type.</p></div><button id="close-form" class="text-button" type="button">Close</button></div>
+        <form id="job-form">
+          <div class="form-grid"><label>Role name<input name="title" maxlength="180" required placeholder="e.g. Product Manager, New Grad"></label><label>Company<input name="company" maxlength="160" required placeholder="Company name"></label></div>
+          <label>Application link<input name="applicationUrl" type="url" maxlength="2000" required placeholder="https://…"></label>
+          <div class="form-grid"><label>Job type<select name="jobType" required><option value="software_engineering">Software engineering</option><option value="data_ai">Data & AI</option><option value="product">Product</option><option value="design">Design</option><option value="finance">Finance</option><option value="consulting">Consulting</option><option value="sales">Sales</option><option value="marketing">Marketing</option><option value="operations">Operations</option><option value="legal_policy">Legal & policy</option><option value="other">Other</option></select></label><label>Application deadline <span class="muted">optional</span><input name="applicationDeadline" type="date"></label></div>
+          <label>Context or connection <span class="muted">optional</span><textarea name="description" rows="4" maxlength="4000" placeholder="Referral details, team context, who to reach out to, etc."></textarea></label>
+          <div class="form-actions"><button id="suggest" class="secondary" type="button">Find deadline & type</button><span class="muted">Suggestions are optional—always double-check the listing.</span><button id="submit" class="primary" type="submit">Post job</button></div><p class="error" id="form-error"></p>
+        </form>
+      </section>
+      <section><div class="list-head"><div><h2>Opportunities</h2><p id="count" class="muted"></p></div><select id="type-filter" aria-label="Filter job type"><option value="all">All job types</option><option value="software_engineering">Software engineering</option><option value="data_ai">Data & AI</option><option value="product">Product</option><option value="design">Design</option><option value="finance">Finance</option><option value="consulting">Consulting</option><option value="sales">Sales</option><option value="marketing">Marketing</option><option value="operations">Operations</option><option value="legal_policy">Legal & policy</option><option value="other">Other</option></select></div><div id="jobs" class="jobs" aria-live="polite"></div></section>
+    </section>
+  </main>
+  <script src="/jobs/jobs.js"></script>
+</body>
+</html>

@@ -30,6 +30,19 @@ export const liveSessionEventKind = pgEnum("live_session_event_kind", ["buy_in",
 export const disputeStatus = pgEnum("dispute_status", ["open", "resolved", "dismissed"]);
 export const gameDisputeEntity = pgEnum("game_dispute_entity", ["handshake_bet", "golf_round"]);
 export const settlementStatus = pgEnum("settlement_status", ["pending", "confirmed", "voided"]);
+export const jobType = pgEnum("job_type", [
+  "software_engineering",
+  "data_ai",
+  "product",
+  "design",
+  "finance",
+  "consulting",
+  "sales",
+  "marketing",
+  "operations",
+  "legal_policy",
+  "other"
+]);
 export const emailStatus = pgEnum("email_status", [
   "queued",
   "sent",
@@ -251,6 +264,34 @@ export const handshakeBets = pgTable(
     index("handshake_bets_status_idx").on(t.status),
     index("handshake_bets_member_idx").on(t.firstMemberId, t.secondMemberId),
     index("handshake_bets_category_idx").on(t.categoryId)
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// jobs — private member-submitted opportunities
+// ---------------------------------------------------------------------------
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    company: text("company").notNull(),
+    applicationUrl: text("application_url").notNull(),
+    jobType: jobType("job_type").notNull(),
+    description: text("description"),
+    applicationDeadline: timestamp("application_deadline", { withTimezone: true, mode: "date" }),
+    submittedByMemberId: uuid("submitted_by_member_id").notNull().references(() => members.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+    updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())
+  },
+  (t) => [
+    check("jobs_title_len", sql`char_length(${t.title}) between 1 and 180`),
+    check("jobs_company_len", sql`char_length(${t.company}) between 1 and 160`),
+    check("jobs_url_len", sql`char_length(${t.applicationUrl}) between 8 and 2000`),
+    check("jobs_description_len", sql`${t.description} is null or char_length(${t.description}) <= 4000`),
+    index("jobs_type_created_idx").on(t.jobType, t.createdAt),
+    index("jobs_deadline_idx").on(t.applicationDeadline),
+    index("jobs_submitter_idx").on(t.submittedByMemberId)
   ]
 );
 
@@ -929,6 +970,7 @@ export type NewMemberRow = typeof members.$inferInsert;
 export type JoinRequestRow = typeof joinRequests.$inferSelect;
 export type PokerSessionRow = typeof pokerSessions.$inferSelect;
 export type GolfRoundRow = typeof golfRounds.$inferSelect;
+export type JobRow = typeof jobs.$inferSelect;
 export type SessionResultRow = typeof sessionResults.$inferSelect;
 export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;

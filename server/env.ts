@@ -28,6 +28,13 @@ const EnvSchema = z.object({
   // Optional: address that receives dispute-opened notifications (the admin).
   POKER_ADMIN_NOTIFY_EMAIL: z.string().email().optional(),
 
+  // Jobs uses the inexpensive text-only OpenCode Go model to suggest a
+  // category and application deadline from an application page. It is fully
+  // optional: members can always submit a job manually.
+  OPENCODE_GO_API_KEY: z.string().min(1).optional(),
+  OPENCODE_GO_BASE_URL: z.string().url().default("https://opencode.ai/zen/go/v1"),
+  OPENCODE_GO_JOBS_MODEL: z.string().min(1).default("deepseek-v3.2"),
+
   PUBLIC_APP_ORIGIN: z.string().url().default("https://amitkonda.com")
 });
 

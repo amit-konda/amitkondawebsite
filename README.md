@@ -16,6 +16,17 @@ the committed migration before the first production use:
 npm run db:migrate
 ```
 
+## 180 Jobs
+
+`https://amitkonda.com/jobs` is a private jobs board for the group. It reuses
+the Poker group password and member selector, so every post is attributed to a
+member; only that member or an admin can remove it. Apply migration `0013` with
+`npm run db:migrate` before deploying the page. The optional “Find deadline &
+type” button reads a public application page and uses the low-cost
+`OPENCODE_GO_JOBS_MODEL` (`deepseek-v3.2` by default) through OpenCode Go.
+Set `OPENCODE_GO_API_KEY` in Vercel's Preview and Production environment
+settings—never commit it. When it is unavailable, manual posting still works.
+
 Production setup requires:
 
 - Neon `DATABASE_URL` and the four Split secrets in `.env.example`.

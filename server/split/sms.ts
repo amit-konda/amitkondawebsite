@@ -60,7 +60,7 @@ export async function sendSms(toInput: string, message: string, statusCallbackUr
   if (isTelnyxMessagingConfigured()) {
     const e = splitEnv();
     const callback = statusCallbackUrl?.replace(/\/webhooks\/twilio\//g, "/webhooks/telnyx/");
-    const payload: Record<string, string> = { from: e.TELNYX_MESSAGING_FROM!, to, text: message };
+    const payload: Record<string, string> = { from: normalizePhone(e.TELNYX_MESSAGING_FROM!), to, text: message };
     if (e.TELNYX_MESSAGING_PROFILE_ID) payload.messaging_profile_id = e.TELNYX_MESSAGING_PROFILE_ID;
     if (callback) payload.webhook_url = callback;
     const response = await fetch("https://api.telnyx.com/v2/messages", {

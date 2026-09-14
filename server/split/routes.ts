@@ -12,8 +12,7 @@ import {
   splitSessions,
   splitUsers
 } from "../db/schema.js";
-import { ApiError, badRequest, conflict, forbidden, notFound, rateLimited } from "../errors.js";
-import { checkRateLimit, clientKey } from "../rate-limit.js";
+import { ApiError, badRequest, conflict, forbidden, notFound } from "../errors.js";
 import type { Ctx, Handler, Router } from "../router.js";
 import { allocateLargestRemainder, allocateReceiptTotals } from "./allocation.js";
 import { optionalSplitUser, requireSplitUser, createSplitSession, revokeSplitSession, setSplitSessionCookie, googleConfigured, googleStartUrl, verifyGoogleState, googleCallback } from "./auth.js";
@@ -24,9 +23,6 @@ import { checkPhoneVerification, startPhoneVerification } from "./sms.js";
 import { extractReceipt } from "./ocr.js";
 import { enqueueSms, processSmsOutbox } from "./outbox.js";
 import { splitEnv } from "./env.js";
-
-const SPLIT_AUTH_IP = { scope: "split_auth_ip", limit: 12, windowMs: 15 * 60_000, failClosed: true } as const;
-const SPLIT_AUTH_PHONE = { scope: "split_auth_phone", limit: 6, windowMs: 15 * 60_000, failClosed: true } as const;
 
 const uuid = z.string().uuid();
 const cents = z.number().int().min(0).max(100_000_000);
@@ -106,11 +102,6 @@ export function registerSplitRoutes(router: Router): void {
 async function startAuth(ctx: Ctx) {
   const { phone } = StartAuthSchema.parse(ctx.body);
   const normalized = normalizePhone(phone);
-  const [perIp, perPhone] = await Promise.all([
-    checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req)),
-    checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(normalized).slice(0, 32))
-  ]);
-  if (!perIp.ok || !perPhone.ok) throw rateLimited(Math.max(perIp.ok ? 0 : perIp.retryAfterSec, perPhone.ok ? 0 : perPhone.retryAfterSec));
   await startPhoneVerification(normalized);
   return { ok: true };
 }
@@ -119,11 +110,6 @@ async function startAuth(ctx: Ctx) {
 async function continueAuth(ctx: Ctx) {
   const input = ContinueAuthSchema.parse(ctx.body);
   const phone = normalizePhone(input.phone);
-  const [perIp, perPhone] = await Promise.all([
-    checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req)),
-    checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(phone).slice(0, 32))
-  ]);
-  if (!perIp.ok || !perPhone.ok) throw rateLimited(Math.max(perIp.ok ? 0 : perIp.retryAfterSec, perPhone.ok ? 0 : perPhone.retryAfterSec));
   const lookup = phoneHash(phone);
   let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
   if (!user) {
@@ -141,8 +127,6 @@ async function continueAuth(ctx: Ctx) {
 async function verifyAuth(ctx: Ctx) {
   const input = VerifyAuthSchema.parse(ctx.body);
   const phone = normalizePhone(input.phone);
-  const limited = await checkRateLimit(db, SPLIT_AUTH_IP, clientKey(ctx.req));
-  if (!limited.ok) throw rateLimited(limited.retryAfterSec);
   if (!await checkPhoneVerification(phone, input.code)) throw new ApiError(401, "invalid_code", "Invalid or expired verification code.");
   const lookup = phoneHash(phone);
   let [user] = await db.select().from(splitUsers).where(eq(splitUsers.phoneLookupHash, lookup)).limit(1);
@@ -162,8 +146,6 @@ async function linkPhoneStart(ctx: Ctx) {
   const user = await requireSplitUser(ctx);
   const { phone } = LinkPhoneSchema.parse(ctx.body);
   const normalized = normalizePhone(phone);
-  const limited = await checkRateLimit(db, SPLIT_AUTH_PHONE, phoneHash(normalized).slice(0, 32));
-  if (!limited.ok) throw rateLimited(limited.retryAfterSec);
   const [existing] = await db.select({ id: splitUsers.id }).from(splitUsers).where(eq(splitUsers.phoneLookupHash, phoneHash(normalized))).limit(1);
   if (existing && existing.id !== user.id) throw conflict("That phone number is already linked to another account.");
   await startPhoneVerification(normalized);

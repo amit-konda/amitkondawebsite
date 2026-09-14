@@ -135,6 +135,9 @@ a:visited {
 .feature-kicker { margin: 0 0 10px; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; font-weight: 700; }
 .feature-lab h2 { margin: 0 0 10px; font-size: clamp(1.8rem, 4vw, 3rem); letter-spacing: -.03em; font-weight: 700; }
 .feature-lab-intro > p:last-child { margin: 0; color: var(--muted); font-size: 1.05rem; }
+.feature-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; }
+.feature-tabs a { border: 1px solid #c9c7bf; border-radius: 99px; padding: 7px 13px; color: var(--ink); text-decoration: none; font-size: .8rem; }
+.feature-tabs a:hover, .feature-tabs a:focus-visible { background: #111; color: #fff; }
 .feature-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; max-width: 1280px; }
 .feature-card { grid-column: span 2; min-height: 270px; padding: 22px; background: #fff; border: 1px solid #deddd6; border-radius: 3px; box-shadow: 0 8px 18px rgba(0,0,0,.035); }
 .feature-card:nth-child(4), .feature-card:nth-child(5) { grid-column: span 3; }

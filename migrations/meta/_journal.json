@@ -99,6 +99,13 @@
       "when": 1789423922410,
       "tag": "0014_jobs_board",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789425191369,
+      "tag": "0015_stormy_maggott",
+      "breakpoints": true
     }
   ]
 }

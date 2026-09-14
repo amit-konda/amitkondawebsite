@@ -267,6 +267,16 @@ export const handshakeBets = pgTable(
   ]
 );
 
+export const jobsMembers = pgTable(
+  "jobs_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull().unique(),
+    createdAt: ts("created_at").notNull().defaultNow()
+  },
+  (t) => [check("jobs_members_name_len", sql`char_length(${t.name}) between 1 and 80`)]
+);
+
 // ---------------------------------------------------------------------------
 // jobs — private member-submitted opportunities
 // ---------------------------------------------------------------------------
@@ -280,7 +290,8 @@ export const jobs = pgTable(
     jobType: jobType("job_type").notNull(),
     description: text("description"),
     applicationDeadline: timestamp("application_deadline", { withTimezone: true, mode: "date" }),
-    submittedByMemberId: uuid("submitted_by_member_id").notNull().references(() => members.id),
+    submittedByMemberId: uuid("submitted_by_member_id").references(() => members.id),
+    submittedByJobsMemberId: uuid("submitted_by_jobs_member_id").notNull().references(() => jobsMembers.id),
     createdAt: ts("created_at").notNull().defaultNow(),
     updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date())
   },
@@ -971,6 +982,7 @@ export type JoinRequestRow = typeof joinRequests.$inferSelect;
 export type PokerSessionRow = typeof pokerSessions.$inferSelect;
 export type GolfRoundRow = typeof golfRounds.$inferSelect;
 export type JobRow = typeof jobs.$inferSelect;
+export type JobsMemberRow = typeof jobsMembers.$inferSelect;
 export type SessionResultRow = typeof sessionResults.$inferSelect;
 export type DisputeTokenRow = typeof disputeTokens.$inferSelect;
 export type DisputeRow = typeof disputes.$inferSelect;

@@ -18,7 +18,7 @@
     </section>
     <section id="identity" class="gate card" hidden>
       <p class="eyebrow">One quick detail</p><h1>Who are you?</h1><p>Your name is shown on jobs you share, so members know who can make the connection.</p>
-      <form id="identity-form"><label for="member">Your name</label><div class="row"><select id="member" required><option value="">Select your name</option></select><button class="primary">Continue</button></div><p class="error" id="identity-error"></p></form>
+      <form id="identity-form"><label for="member-search">Your name</label><div class="row"><input id="member-search" list="member-options" autocomplete="off" placeholder="Start typing your name…" required><datalist id="member-options"></datalist><input id="member-id" type="hidden"><button class="primary">Continue</button></div><p class="error" id="identity-error"></p></form>
     </section>
     <section id="board" hidden>
       <div class="hero"><div><p class="eyebrow">180 opportunity board</p><h1>Open doors for each other.</h1><p>Share a role you found or a connection you can make. Every post stays inside the group.</p></div><button id="show-form" class="primary">+ Share a job</button></div>

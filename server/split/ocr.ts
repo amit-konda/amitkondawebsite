@@ -73,7 +73,7 @@ export async function extractReceipt(imageUrl: string): Promise<ReceiptExtractio
   const requestBody = openCode ? {
     model: e.OPENCODE_GO_RECEIPT_MODEL,
     messages: [{ role: "user", content: [
-      { type: "text", text: "Extract this receipt and return only a valid JSON object with exactly these keys: merchant (string or null), purchasedAt (ISO date string or null), currency (3-letter code), subtotalCents, taxCents, tipCents, feesCents, discountCents, totalCents (integer cents), items (array of objects with description, quantity, unitPriceCents, lineTotalCents, confidence), confidence (0 to 1), and warnings (array of strings). Do not use markdown fences. Do not invent unreadable values; put a warning in warnings." },
+      { type: "text", text: "Extract this receipt and return only a valid JSON object with exactly these keys: merchant (string or null), purchasedAt (ISO date string or null), currency (3-letter code), subtotalCents, taxCents, tipCents, feesCents, discountCents, totalCents (integer cents), items (array of objects with description, quantity, unitPriceCents, lineTotalCents, confidence), confidence (0 to 1), and warnings (array of strings). Preserve quantities exactly: if a receipt says 2 beers, return one item with quantity 2 and the per-item unit price, or separate the units when they have distinct descriptions. lineTotalCents must be the total for the quantity. Do not use markdown fences. Do not invent unreadable values; put a warning in warnings." },
       { type: "image_url", image_url: { url: imageUrl, detail: "high" } }
     ] }],
     // OpenCode Go's current gateway supports json_object but not the newer

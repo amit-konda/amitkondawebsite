@@ -72,7 +72,7 @@ export async function sendSms(toInput: string, message: string, statusCallbackUr
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       console.error("Telnyx Messaging failure", response.status, detail.slice(0, 500));
-      throw new ApiError(502, "sms_failed", "Could not send the text message.");
+      throw new ApiError(502, "sms_failed", `Telnyx rejected the text (${response.status}): ${detail.slice(0, 240)}`);
     }
     const result = await response.json() as { data?: { id?: string; status?: string } };
     if (!result.data?.id) throw new ApiError(502, "sms_failed", "Could not send the text message.");

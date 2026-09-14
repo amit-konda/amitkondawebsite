@@ -191,7 +191,7 @@ function normalizeBills(data) {
 }
 function renderDashboard(data) {
   shell(true); const bills = normalizeBills(data); const summary = data.summary || data.totals || {};
-  app.innerHTML = `<div class="page-head"><div class="page-head-copy"><p class="eyebrow">Your table</p><h1>${greeting()}, ${esc((state.me?.displayName || state.me?.name || "friend").split(" ")[0])}.</h1><p class="lede">Here’s who owes what—without digging through the group chat.</p></div><div class="page-head-actions"><button class="btn" type="button" data-action="new-expense">Add another expense</button><button class="btn btn-primary" type="button" data-action="new-bill">Scan a receipt</button></div></div>
+  app.innerHTML = `<div class="page-head"><div class="page-head-copy"><p class="eyebrow">Your table</p><h1>${esc((state.me?.displayName || state.me?.name || "friend").split(" ")[0])}’s Table</h1><p class="lede">Here’s who owes what—without digging through the group chat.</p></div><div class="page-head-actions"><button class="btn" type="button" data-action="new-expense">Add another expense</button><button class="btn btn-primary" type="button" data-action="new-bill">Scan a receipt</button></div></div>
     <section class="summary-grid" aria-label="Balance summary">
       <div class="card summary-card"><span class="muted small">Open balances</span><strong class="amount">${Number(summary.outstandingCount ?? bills.filter(x => !["paid","settled"].includes(x.status)).length)}</strong></div>
       <div class="card summary-card owe"><span class="muted small">You owe</span><strong class="amount">${money(summary.owedByYouCents ?? summary.youOweCents)}</strong></div>

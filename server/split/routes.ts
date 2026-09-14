@@ -437,7 +437,7 @@ async function deleteParticipant(ctx: Ctx) {
     .from(splitParticipants).innerJoin(splitBills, eq(splitParticipants.billId, splitBills.id))
     .where(eq(splitParticipants.id, ctx.params.participantId!)).limit(1);
   if (!row || row.bill.organizerUserId !== user.id) throw notFound();
-  if (row.bill.status !== "review") throw conflict("Diners can only be removed before publishing.");
+  if (!["review", "open"].includes(row.bill.status)) throw conflict("Diners can only be removed while this split is open.");
   if (row.participant.userId === row.bill.organizerUserId) throw conflict("The payer stays on the split.");
   await db.delete(splitParticipants).where(eq(splitParticipants.id, row.participant.id));
   return { ok: true };

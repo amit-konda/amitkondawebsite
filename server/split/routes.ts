@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
 import {
@@ -208,15 +208,15 @@ async function dashboard(ctx: Ctx) {
     .from(splitParticipants).innerJoin(splitBills, eq(splitParticipants.billId, splitBills.id))
     .where(eq(splitParticipants.userId, user.id)).orderBy(desc(splitBills.createdAt)).limit(100);
   const receivables = organized.length ? await db.select({ participant: splitParticipants }).from(splitParticipants)
-    .where(and(inArray(splitParticipants.billId, organized.map((bill) => bill.id)), inArray(splitParticipants.paymentStatus, ["unpaid", "rejected", "reported_paid"]))) : [];
+    .where(and(inArray(splitParticipants.billId, organized.map((bill) => bill.id)), ne(splitParticipants.userId, user.id), inArray(splitParticipants.paymentStatus, ["unpaid", "rejected", "reported_paid"]))) : [];
   return {
     organized: organized.map((bill) => ({ ...bill, participantCount: countByBill.get(bill.id) ?? 0 })),
     participating: participantRows,
     summary: {
-      youOweCents: participantRows.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).reduce((s, r) => s + r.participant.finalAmountCents, 0),
-      owedToYouCents: receivables.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).reduce((s, r) => s + r.participant.finalAmountCents, 0),
-      reportedPaidCents: receivables.filter((r) => r.participant.paymentStatus === "reported_paid").reduce((s, r) => s + r.participant.finalAmountCents, 0)
-      ,outstandingCount: participantRows.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).length + receivables.length
+      youOweCents: participantRows.filter((r) => r.bill.organizerUserId !== user.id && ["unpaid", "rejected"].includes(r.participant.paymentStatus)).reduce((s, r) => s + Number(r.participant.finalAmountCents || 0), 0),
+      owedToYouCents: receivables.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).reduce((s, r) => s + Number(r.participant.finalAmountCents || 0), 0),
+      reportedPaidCents: receivables.filter((r) => r.participant.paymentStatus === "reported_paid").reduce((s, r) => s + Number(r.participant.finalAmountCents || 0), 0),
+      outstandingCount: participantRows.filter((r) => r.bill.organizerUserId !== user.id && ["unpaid", "rejected"].includes(r.participant.paymentStatus)).length + receivables.filter((r) => ["unpaid", "rejected"].includes(r.participant.paymentStatus)).length
     }
   };
 }

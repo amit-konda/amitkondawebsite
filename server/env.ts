@@ -34,6 +34,8 @@ const EnvSchema = z.object({
   OPENCODE_GO_API_KEY: z.string().min(1).optional(),
   OPENCODE_GO_BASE_URL: z.string().url().default("https://opencode.ai/zen/go/v1"),
   OPENCODE_GO_JOBS_MODEL: z.string().min(1).default("deepseek-v3.2"),
+  JOBS_PASSWORD_HASH: z.string().min(1).optional(),
+  JOBS_SESSION_SECRET: z.string().min(32).optional(),
 
   PUBLIC_APP_ORIGIN: z.string().url().default("https://amitkonda.com")
 });

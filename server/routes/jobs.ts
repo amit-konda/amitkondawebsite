@@ -1,13 +1,14 @@
 import { and, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireGroup, requireViewer, verifyAdmin } from "../auth.js";
+import { verifyAdmin, clearCookie } from "../auth.js";
 import { db } from "../db/client.js";
 import { jobs, members } from "../db/schema.js";
 import { writeAudit } from "../domain/audit.js";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import { JOB_TYPES, suggestJobMetadata } from "../jobs/suggest.js";
 import type { Ctx, Router } from "../router.js";
+import { JOBS_COOKIE, requireJobs, setJobsToken, verifyJobs, verifyJobsPassword } from "../jobs/auth.js";
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(180),
@@ -20,8 +21,31 @@ const createSchema = z.object({
 const suggestSchema = z.object({ applicationUrl: z.url().max(2000).refine((value) => /^https?:\/\//i.test(value), "Use an http(s) URL.") });
 
 export function registerJobsRoutes(router: Router): void {
+  router.get("/api/poker/jobs/auth/status", async (ctx) => {
+    const claims = verifyJobs(ctx);
+    return { authenticated: Boolean(claims), viewer: claims?.mid ?? null };
+  });
+  router.post("/api/poker/jobs/auth/login", async (ctx) => {
+    const password = z.object({ password: z.string() }).parse(ctx.body).password;
+    if (!verifyJobsPassword(password)) throw new (await import("../errors.js")).ApiError(401, "invalid_credentials", "Invalid jobs password.");
+    setJobsToken(ctx, null);
+    return { ok: true };
+  });
+  router.post("/api/poker/jobs/auth/logout", (ctx) => { clearCookie(ctx.res, JOBS_COOKIE); return { ok: true }; });
+  router.get("/api/poker/jobs/members", async (ctx) => {
+    requireJobs(ctx);
+    return { members: await db.select({ id: members.id, name: members.displayName }).from(members).where(eq(members.status, "active")).orderBy(members.displayName) };
+  });
+  router.post("/api/poker/jobs/viewer", async (ctx) => {
+    const claims = requireJobs(ctx);
+    const body = z.object({ memberId: z.string().uuid() }).parse(ctx.body);
+    const member = (await db.select({ id: members.id }).from(members).where(and(eq(members.id, body.memberId), eq(members.status, "active"))).limit(1))[0];
+    if (!member) throw badRequest("invalid_member", "Choose an active member.");
+    setJobsToken(ctx, member.id);
+    return { viewer: { id: member.id } };
+  });
   router.get("/api/poker/jobs", async (ctx) => {
-    requireGroup(ctx);
+    requireJobs(ctx);
     const showExpired = ctx.query.get("includeExpired") === "true";
     const rows = await db.select({
       id: jobs.id, title: jobs.title, company: jobs.company, applicationUrl: jobs.applicationUrl,
@@ -34,24 +58,25 @@ export function registerJobsRoutes(router: Router): void {
   });
 
   router.post("/api/poker/jobs/suggest", async (ctx) => {
-    requireGroup(ctx);
+    requireJobs(ctx);
     const body = suggestSchema.safeParse(ctx.body);
     if (!body.success) throw badRequest("invalid_job", "Enter a valid application link.");
     return suggestJobMetadata(body.data.applicationUrl);
   });
 
   router.post("/api/poker/jobs", async (ctx) => {
-    const claims = requireViewer(ctx);
+    const claims = requireJobs(ctx);
+    if (!claims.mid) throw badRequest("viewer_required", "Choose your name before posting.");
     const body = createSchema.safeParse(ctx.body);
     if (!body.success) throw badRequest("invalid_job", "Check the job details and try again.");
     const id = randomUUID();
-    await db.insert(jobs).values({ id, title: body.data.title, company: body.data.company, applicationUrl: body.data.applicationUrl, jobType: body.data.jobType, description: body.data.description || null, applicationDeadline: body.data.applicationDeadline ? new Date(`${body.data.applicationDeadline}T23:59:59.999Z`) : null, submittedByMemberId: claims.mid! });
+    await db.insert(jobs).values({ id, title: body.data.title, company: body.data.company, applicationUrl: body.data.applicationUrl, jobType: body.data.jobType, description: body.data.description || null, applicationDeadline: body.data.applicationDeadline ? new Date(`${body.data.applicationDeadline}T23:59:59.999Z`) : null, submittedByMemberId: claims.mid });
     await writeAudit(db, { actorLabel: `member:${claims.mid}`, action: "job.create", entityType: "job", entityId: id, afterJson: { title: body.data.title, company: body.data.company, jobType: body.data.jobType } });
     return { created: true, id };
   });
 
   router.delete("/api/poker/jobs/:id", async (ctx: Ctx) => {
-    const claims = requireViewer(ctx);
+    const claims = requireJobs(ctx);
     const existing = (await db.select().from(jobs).where(eq(jobs.id, ctx.params.id!)).limit(1))[0];
     if (!existing) throw notFound();
     const isAdmin = Boolean(verifyAdmin(ctx.req));

@@ -12,6 +12,60 @@ export function registerSplitWebhookRoutes(router: Router): void {
   router.post("/api/split/webhooks/twilio/status", statusWebhook);
   router.post("/webhooks/twilio/inbound", inboundWebhook);
   router.post("/api/split/webhooks/twilio/inbound", inboundWebhook);
+  router.post("/webhooks/telnyx/status", telnyxWebhook);
+  router.post("/api/split/webhooks/telnyx/status", telnyxWebhook);
+  router.post("/webhooks/telnyx/inbound", telnyxWebhook);
+  router.post("/api/split/webhooks/telnyx/inbound", telnyxWebhook);
+}
+
+/** Telnyx sends JSON event envelopes for both delivery callbacks and inbound SMS. */
+async function telnyxWebhook(ctx: Ctx) {
+  let body: any;
+  try { body = JSON.parse(ctx.rawBody || "{}"); } catch { throw new ApiError(400, "invalid_payload", "Invalid webhook payload."); }
+  const data = body?.data ?? {};
+  const payload = data.payload ?? {};
+  const eventId = String(data.id ?? payload.id ?? "");
+  const messageId = String(payload.id ?? "");
+  if (!eventId) throw new ApiError(400, "invalid_payload", "Missing webhook event id.");
+  const eventType = String(data.event_type ?? "");
+  if (eventType === "message.received") {
+    const from = payload.from?.phone_number;
+    const text = String(payload.text ?? "").trim().toUpperCase();
+    if (!from || !messageId) throw new ApiError(400, "invalid_payload", "Missing inbound message fields.");
+    const inserted = await db.insert(splitWebhookEvents).values({
+      provider: "telnyx", eventId, eventType, providerMessageId: messageId,
+      payloadSha256: createHash("sha256").update(ctx.rawBody).digest("hex")
+    }).onConflictDoNothing().returning({ id: splitWebhookEvents.id });
+    if (!inserted.length) return { ok: true };
+    if (!/^PAID(?:\s+[A-Z0-9-]{2,12})?$/.test(text)) return { ok: true };
+    const { normalizePhone, phoneHash } = await import("./phone.js");
+    const hash = phoneHash(normalizePhone(from));
+    const outstanding = await db.select({ participant: splitParticipants, billStatus: splitBills.status })
+      .from(splitParticipants).innerJoin(splitBills, eq(splitBills.id, splitParticipants.billId))
+      .where(and(eq(splitParticipants.invitedPhoneLookupHash, hash), inArray(splitParticipants.paymentStatus, ["unpaid", "rejected"]), inArray(splitBills.status, ["locked", "settled"]))).limit(10);
+    if (outstanding.length === 1) {
+      const participant = outstanding[0]!.participant;
+      await db.transaction(async (tx) => {
+        const [bill] = await tx.select({ payerUserId: splitBills.payerUserId }).from(splitBills).where(eq(splitBills.id, participant.billId)).limit(1);
+        if (bill?.payerUserId) await tx.insert(splitPayments).values({ billId: participant.billId, participantId: participant.id, payerUserId: bill.payerUserId, amountCents: participant.finalAmountCents, status: "reported_paid", reportSource: "sms", requestKey: `telnyx:${messageId}`, reportedAt: new Date() }).onConflictDoNothing();
+        await tx.update(splitParticipants).set({ paymentStatus: "reported_paid", nextReminderAt: null }).where(eq(splitParticipants.id, participant.id));
+      });
+    }
+    return { ok: true };
+  }
+  if (["message.sent", "message.finalized"].includes(eventType) && messageId) {
+    const rawStatus = String(payload.to?.[0]?.status ?? payload.status ?? "");
+    const status = eventType === "message.sent" ? "sent" : (rawStatus === "delivered" ? "delivered" : ["failed", "undelivered", "delivery_failed"].includes(rawStatus) ? "failed" : "sent");
+    await db.transaction(async (tx) => {
+      const inserted = await tx.insert(splitWebhookEvents).values({ provider: "telnyx", eventId, eventType, providerMessageId: messageId, payloadSha256: createHash("sha256").update(ctx.rawBody).digest("hex") }).onConflictDoNothing().returning({ id: splitWebhookEvents.id });
+      if (!inserted.length) return;
+      const [delivery] = await tx.select().from(splitSmsDeliveries).where(eq(splitSmsDeliveries.providerMessageId, messageId)).limit(1);
+      if (!delivery) return;
+      await tx.update(splitWebhookEvents).set({ deliveryId: delivery.id }).where(eq(splitWebhookEvents.id, inserted[0]!.id));
+      if (shouldAdvanceSmsStatus(delivery.status, status)) await tx.update(splitSmsDeliveries).set({ status, deliveredAt: status === "delivered" ? new Date() : undefined, errorCode: status === "failed" ? (payload.errors?.[0]?.code ?? "provider_failure") : null }).where(eq(splitSmsDeliveries.id, delivery.id));
+    });
+  }
+  return { ok: true };
 }
 
 async function statusWebhook(ctx: Ctx) {

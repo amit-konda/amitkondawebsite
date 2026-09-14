@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { ApiError } from "../errors.js";
-import { isTwilioMessagingConfigured, isTwilioVerifyConfigured, splitDevMode, splitEnv } from "./env.js";
+import { isTelnyxMessagingConfigured, isTwilioMessagingConfigured, isTwilioVerifyConfigured, splitDevMode, splitEnv } from "./env.js";
 import { normalizePhone } from "./phone.js";
 
 export interface SmsResult { providerId: string; status: string }
@@ -57,6 +57,26 @@ export async function checkPhoneVerification(phone: string, code: string): Promi
 
 export async function sendSms(toInput: string, message: string, statusCallbackUrl?: string): Promise<SmsResult> {
   const to = normalizePhone(toInput);
+  if (isTelnyxMessagingConfigured()) {
+    const e = splitEnv();
+    const callback = statusCallbackUrl?.replace(/\/webhooks\/twilio\//g, "/webhooks/telnyx/");
+    const payload: Record<string, string> = { from: e.TELNYX_MESSAGING_FROM!, to, text: message };
+    if (e.TELNYX_MESSAGING_PROFILE_ID) payload.messaging_profile_id = e.TELNYX_MESSAGING_PROFILE_ID;
+    if (callback) payload.webhook_url = callback;
+    const response = await fetch("https://api.telnyx.com/v2/messages", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${e.TELNYX_API_KEY!}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000)
+    });
+    if (!response.ok) {
+      console.error("Telnyx Messaging failure", response.status);
+      throw new ApiError(502, "sms_failed", "Could not send the text message.");
+    }
+    const result = await response.json() as { data?: { id?: string; status?: string } };
+    if (!result.data?.id) throw new ApiError(502, "sms_failed", "Could not send the text message.");
+    return { providerId: result.data.id, status: result.data.status ?? "queued" };
+  }
   if (!isTwilioMessagingConfigured()) {
     if (splitDevMode() || process.env.NODE_ENV === "test") {
       return { providerId: `dev-${createHmac("sha256", "split-dev").update(`${to}:${message}`).digest("hex").slice(0, 24)}`, status: "sent" };

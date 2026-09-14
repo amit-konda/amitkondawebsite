@@ -18,6 +18,9 @@ const SplitEnvSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().min(1).optional(),
   TWILIO_MESSAGING_FROM: z.string().min(1).optional(),
+  TELNYX_API_KEY: z.string().min(1).optional(),
+  TELNYX_MESSAGING_PROFILE_ID: z.string().min(1).optional(),
+  TELNYX_MESSAGING_FROM: z.string().min(1).optional(),
   CRON_SECRET: z.string().min(16).optional(),
   SPLIT_CRON_SECRET: z.string().min(16).optional(),
   SPLIT_DEV_MODE: z.enum(["true", "false"]).default("false")
@@ -56,6 +59,11 @@ export function isTwilioVerifyConfigured(): boolean {
 export function isTwilioMessagingConfigured(): boolean {
   const e = splitEnv();
   return Boolean(e.TWILIO_ACCOUNT_SID && e.TWILIO_AUTH_TOKEN && e.TWILIO_MESSAGING_FROM);
+}
+
+export function isTelnyxMessagingConfigured(): boolean {
+  const e = splitEnv();
+  return Boolean(e.TELNYX_API_KEY && e.TELNYX_MESSAGING_FROM);
 }
 
 /** Backwards-compatible aggregate check for callers that need both products. */
